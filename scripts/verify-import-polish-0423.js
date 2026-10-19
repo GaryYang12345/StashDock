@@ -1,0 +1,87 @@
+async page => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('http://127.0.0.1:5173/tests/fixtures/desktop-import.html', { waitUntil: 'domcontentloaded' });
+  await page.setViewportSize({ width: 1063, height: 684 });
+  await page.getByRole('button', { name: 'Open import fixture', exact: true }).click();
+  await page.getByRole('dialog').waitFor();
+  const results = [];
+  for (const mode of ['Note', 'Link', 'Note', 'File', 'Note']) {
+    await page.getByRole('tab', { name: mode, exact: true }).click();
+    const frames = await page.evaluate(async () => {
+      const frames = [];
+      for (let i = 0; i < 36; i++) {
+        await new Promise(requestAnimationFrame);
+        const d = document.querySelector('[role="dialog"]');
+        frames.push({ height: d.getBoundingClientRect().height, overflow: getComputedStyle(d).overflowY, scrollable: d.dataset.scrollable });
+      }
+      return frames;
+    });
+    if (frames.some(f => f.overflow !== 'hidden' || f.scrollable !== 'false')) throw Error(`${mode}: transient scrollbar on a fitting form`);
+    results.push({ mode, from: frames[0].height, to: frames.at(-1).height });
+  }
+  if (Math.abs(results[0].to - results[1].to) < 100) throw Error('Import height no longer fits actual content');
+  await page.waitForTimeout(1000);
+  await page.screenshot({ path: 'output/playwright/note-import-0423.png' });
+  await page.setViewportSize({ width: 390, height: 450 });
+  await page.waitForTimeout(600);
+  const small = await page.getByRole('dialog').evaluate(el => ({ scrollable: el.dataset.scrollable, overflow: getComputedStyle(el).overflowY, client: el.clientHeight, total: el.scrollHeight }));
+  if (small.scrollable !== 'true' || small.overflow !== 'auto' || small.total <= small.client) throw Error(`Short-screen scrolling lost: ${JSON.stringify(small)}`);
+  await page.getByRole('button', { name: 'Save note', exact: true }).scrollIntoViewIfNeeded();
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await page.waitForTimeout(300);
+  await page.setViewportSize({ width: 1063, height: 684 });
+  await page.goto('http://127.0.0.1:18747', { waitUntil: 'domcontentloaded' });
+  const shelf = page.frameLocator('iframe');
+  await shelf.getByRole('button', { name: /^Add .* to chat$/ }).first().waitFor();
+  const first = shelf.getByRole('button', { name: /^Add .* to chat$/ }).first();
+  await shelf.getByRole('article').first().hover();
+  await first.click();
+  await page.waitForFunction(() => document.querySelectorAll('#attachments > *').length === 1);
+  await page.waitForTimeout(300);
+  const success = await first.evaluate(el => ({state:el.dataset.addState, background:getComputedStyle(el).backgroundColor}));
+  if(success.state !== 'success' || await first.isDisabled()) throw Error('Original success feedback missing');
+  await page.mouse.move(0,0);
+  await page.waitForTimeout(200);
+  if(await first.evaluate(el => Number(getComputedStyle(el).opacity)) > .01) throw Error('Success button remains visible outside hover');
+  await page.waitForTimeout(2200);
+  const ready = await first.evaluate(el => ({state:el.dataset.addState,background:getComputedStyle(el).backgroundColor}));
+  if (ready.state !== 'ready' || await first.isDisabled() || ready.background === success.background) throw Error('Black Add did not return');
+  await page.getByRole('button',{name:'Remove test attachment',exact:true}).click();
+  await shelf.getByRole('article').first().hover();
+  await first.click();
+  await page.waitForFunction(() => document.querySelectorAll('#attachments > *').length === 1);
+  await first.click();
+  await page.waitForFunction(() => document.querySelectorAll('#attachments > *').length === 2);
+  await shelf.getByRole('article').nth(0).hover();
+  await shelf.getByRole('button', { name: /^Add .* to context$/ }).nth(0).click();
+  await shelf.getByRole('article').nth(1).hover();
+  await shelf.getByRole('article').nth(1).getByRole('button', { name: /^Add .* to context$/ }).click();
+  await shelf.getByRole('button', { name: 'Add to chat', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('#attachments > *').length === 3);
+  const titles = await page.locator('#attachments > *').allTextContents();
+  if (!titles.some(title => title.includes('Multiple contexts'))) throw Error('Intentional bulk repeat was omitted');
+  await shelf.getByRole('button', { name: 'Clear selection', exact: true }).click();
+  await shelf.getByRole('button', { name: 'Tags', exact: true }).click();
+  const options = shelf.getByRole('menuitemradio');
+  await options.nth(1).hover(); await page.waitForTimeout(450);
+  const a = await shelf.locator('[data-menu-highlight]').first().evaluate(el => ({ transform: getComputedStyle(el).transform, opacity: getComputedStyle(el).opacity }));
+  await options.nth(2).hover(); await page.waitForTimeout(40);
+  const mid = await shelf.locator('[data-menu-highlight]').first().evaluate(el => getComputedStyle(el).transform);
+  await page.waitForTimeout(450);
+  const b = await shelf.locator('[data-menu-highlight]').first().evaluate(el => getComputedStyle(el).transform);
+  if (Number(a.opacity) < .9 || a.transform === b || mid === b) throw Error(`Tag highlight does not glide with the shared spring: ${JSON.stringify({a,mid,b})}`);
+  await options.nth(1).click({ button: 'right' });
+  await shelf.getByRole('menuitem', { name: 'Rename tag', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await shelf.getByRole('button', { name: 'Import references', exact: true }).click();
+  await shelf.getByRole('button', { name: 'Import from', exact: true }).click();
+  await shelf.getByRole('menuitem', { name: 'Chrome', exact: true }).click();
+  await shelf.getByRole('checkbox', { name: 'Select New browser link', exact: true }).waitFor();
+  await page.waitForTimeout(800);
+  const icons = await shelf.getByRole('dialog').locator('img[src^="data:image/png"]').evaluateAll(images => images.map(image => ({ loaded: image.complete && image.naturalWidth > 0, src: image.src.slice(0, 22) })));
+  if (icons.length < 3 || icons.some(icon => !icon.loaded)) throw Error(`Import icons not rendered inside CSP: ${JSON.stringify(icons)}`);
+  await page.waitForTimeout(1000);
+  await page.screenshot({ path: 'output/playwright/mcp-import-icons-0423.png' });
+  return { naturalHeightFrames: results, shortScreen: small, originalAddFeedback: {success,ready}, hiddenOutsideHover:true, removalThenAdd:true, intentionalRepeats:true, tagHover: { a, mid, b }, importedIcons: icons.length };
+}

@@ -1,0 +1,15 @@
+.field { display: inline-flex; align-items: flex-start; gap: 0; min-width: 0; }
+.box { position: relative; flex: 0 0 auto; display: grid; place-items: center; width: var(--control-height-md); height: var(--control-height-md); border: 0; border-radius: var(--radius-control); padding: 0; background: transparent; color: var(--control-glyph); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* The square is the only part that reacts to a press, so the hit area and label never move. */
+.visual { position: relative; display: block; width: 18px; height: 18px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); transition: border-color var(--duration-fast) var(--ease-standard), transform var(--duration-spring) var(--ease-spring); }
+.fill { position: absolute; inset: -1px; border-radius: inherit; background: var(--control-on); }
+.mark { position: absolute; inset: -1px; width: 18px; height: 18px; overflow: visible; }
+.box[data-state="checked"] .visual, .box[data-state="indeterminate"] .visual { border-color: var(--control-on); }
+@media (hover: hover) and (pointer: fine) { .box[data-state="unchecked"]:hover:not(:disabled) .visual { border-color: var(--text-muted); } }
+.box:active:not(:disabled) .visual { transform: scale(.95); transition: border-color var(--duration-fast) var(--ease-standard), transform var(--duration-instant) var(--ease-standard); }
+.box:disabled { opacity: .5; cursor: not-allowed; }
+/* The label's first line centers on the square: (44px box - 19.6px line) / 2. */
+.copy { display: grid; gap: 2px; min-width: 0; margin-left: 1px; padding-top: calc((var(--control-height-md) - var(--text-sm) * 1.4) / 2); }
+.copy label { color: var(--foreground); font-size: var(--text-sm); font-weight: 500; line-height: var(--leading-body); cursor: pointer; }
+.copy span { color: var(--text-muted); font-size: var(--text-xs); line-height: var(--leading-body); }
+@media (prefers-reduced-motion: reduce) { .visual, .box:active:not(:disabled) .visual { transition: none; transform: none; } }

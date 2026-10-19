@@ -1,0 +1,11 @@
+.field { display: grid; min-width: 0; }
+.input { min-width: 0; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--control-height-sm); }
+.header label { font-size: var(--text-sm); font-weight: 500; }
+.picker { flex: none; }
+.surface { min-width: 0; width: min(352px, var(--radix-popover-content-available-width)); max-width: var(--radix-popover-content-available-width); max-height: var(--radix-popover-content-available-height); }
+.panel { display: grid; gap: var(--space-4); min-width: 0; }
+.suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; padding-block: var(--space-1); }
+.tagText { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
+@media (pointer: coarse) { .field { --control-height-sm: var(--control-height-md); } }

@@ -1,0 +1,34 @@
+.group { border: 0; padding: 0; margin: 0; min-width: 0; width: min(360px, 100%); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.option { position: relative; display: flex; flex-direction: column; min-width: 0; cursor: pointer; }
+.radio { appearance: none; position: absolute; z-index: 1; inset: 0 0 auto; width: 100%; height: 76px; padding: 0; margin: 0; border: 2px solid transparent; border-radius: var(--radius-control); background: transparent; cursor: inherit; transition: border-color var(--duration-fast) var(--ease-standard); }
+.radio:checked { border-color: var(--accent); }
+.option:hover .radio:not(:checked):not([aria-disabled="true"]) { border-color: var(--border-strong); }
+.radio[aria-disabled="true"] { cursor: default; }
+.group[aria-disabled="true"] .option { cursor: default; opacity: .5; }
+.preview { position: relative; display: block; height: 76px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-control); isolation: isolate; }
+.label { position: relative; display: flex; align-items: flex-start; justify-content: center; gap: var(--space-1); padding-top: var(--space-2); min-height: calc(var(--space-2) + var(--text-xs) * var(--leading-body) * 2); font-size: var(--text-xs); line-height: var(--leading-body); color: var(--text-secondary); text-align: center; overflow-wrap: anywhere; }
+.check { flex: none; visibility: hidden; margin-top: 2px; }
+.option:has(:checked) .label { color: var(--foreground); font-weight: 500; }
+.option:has(:checked) .check { visibility: visible; }
+.miniature { position: absolute; inset: 0; display: flex; gap: 6px; padding: 8px 6px 0; background: var(--preview-shell); color: var(--preview-ink); pointer-events: none; }
+.miniature[data-preview-theme="light"] { --preview-shell: var(--theme-preview-light-shell); --preview-surface: var(--theme-preview-light-surface); --preview-muted: var(--theme-preview-light-muted); --preview-ink: var(--theme-preview-light-ink); --preview-line: var(--theme-preview-light-line); }
+.miniature[data-preview-theme="dark"] { --preview-shell: var(--theme-preview-dark-shell); --preview-surface: var(--theme-preview-dark-surface); --preview-muted: var(--theme-preview-dark-muted); --preview-ink: var(--theme-preview-dark-ink); --preview-line: var(--theme-preview-dark-line); }
+.preview[data-mode="system"] > :first-child { clip-path: inset(0 50% 0 0); }
+.preview[data-mode="system"] > :last-child { clip-path: inset(0 0 0 50%); }
+.sidebar { width: 20%; flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; padding-top: 2px; }
+.brand { height: 5px; width: 90%; border-radius: 2px; background: var(--preview-ink); margin-bottom: 3px; }
+.nav { height: 4px; width: 80%; border-radius: 2px; background: var(--preview-line); }
+.nav:nth-child(2) { width: 100%; background: var(--preview-muted); }
+.shelf { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px 6px; border-radius: 8px 8px 0 0; background: var(--preview-surface); }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.toolbar > span:first-child { height: 4px; width: 45%; background: var(--preview-ink); border-radius: 2px; }
+.toolbar > span:last-child { height: 5px; width: 20%; background: var(--preview-muted); border-radius: 3px; }
+.search { height: 6px; border: 1px solid var(--preview-line); border-radius: 3px; }
+.cards { display: flex; gap: 4px; }
+.card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 3px; border: 1px solid var(--preview-line); border-radius: 5px; }
+.cover { height: 13px; border-radius: 2px; background: color-mix(in oklab, var(--reference-violet) 15%, var(--preview-surface)); }
+.card:nth-child(2) .cover { background: color-mix(in oklab, var(--reference-blue) 15%, var(--preview-surface)); }
+.line { height: 3px; width: 85%; border-radius: 2px; background: var(--preview-ink); opacity: .7; }
+.caption { height: 2px; width: 60%; border-radius: 2px; background: var(--preview-line); }
+@media (prefers-reduced-motion: reduce) { .radio { transition: none; } }

@@ -1,0 +1,2 @@
+/* One native-scrollbar treatment for desktop, Codex and browser save forms. */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }

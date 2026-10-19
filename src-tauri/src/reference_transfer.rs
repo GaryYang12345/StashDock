@@ -1,0 +1,489 @@
+//! Immutable outgoing copies, shared by native clipboard and drag. No parsing.
+use crate::library::{self, StashItem};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
+
+const MAX_FILES: usize = 100;
+const MAX_BYTES: u64 = 100_000_000;
+
+#[derive(Clone, Debug)]
+pub(crate) struct Transfer {
+    pub files: Vec<PathBuf>,
+    pub context_file: PathBuf,
+}
+
+fn original_name(item: &StashItem, path: &Path) -> String {
+    let raw = item
+        .origin
+        .as_ref()
+        .and_then(|value| value.get("fileName"))
+        .and_then(|value| value.as_str())
+        .or_else(|| path.file_name().and_then(|name| name.to_str()))
+        .unwrap_or("File");
+    let name: String = raw
+        .chars()
+        .take(300)
+        .map(|c| {
+            if c.is_control() || "<>:\"/\\|?*".contains(c) {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let name = name.trim_matches([' ', '.']);
+    // Keep the extension when shortening an unusually long name for Shell.
+    let path = Path::new(name);
+    let stem: String = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("File")
+        .chars()
+        .take(100)
+        .collect();
+    let extension: String = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .chars()
+        .take(16)
+        .collect();
+    let name = if extension.is_empty() {
+        stem
+    } else {
+        format!("{stem}.{extension}")
+    };
+    let name = name.trim_matches([' ', '.']);
+    let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    if name.is_empty() {
+        "File".into()
+    } else if [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ]
+    .contains(&stem.as_str())
+    {
+        format!("File - {name}")
+    } else {
+        name.into()
+    }
+}
+
+fn unique_name(name: &str, used: &mut HashSet<String>) -> String {
+    let path = Path::new(name);
+    let stem = path.file_stem().and_then(|v| v.to_str()).unwrap_or("File");
+    let extension = path
+        .extension()
+        .and_then(|v| v.to_str())
+        .map(|v| format!(".{v}"))
+        .unwrap_or_default();
+    let mut candidate = name.to_string();
+    let mut index = 1;
+    while !used.insert(candidate.to_lowercase()) {
+        index += 1;
+        candidate = format!("{stem} ({index}){extension}");
+    }
+    candidate
+}
+
+pub(crate) fn export(database: &Path, ids: &[String], root: &Path) -> Result<Transfer, String> {
+    let mut items = library::reference_transfer_snapshot(database, ids)?;
+    let assets = database
+        .parent()
+        .ok_or("The file library is unavailable.")?
+        .join("assets");
+    let mut originals = Vec::new();
+    let mut reference_paths = Vec::new();
+    let mut seen = HashSet::new();
+    for (index, item) in items.iter().enumerate() {
+        if item.asset_path.is_none() && !["file", "pdf", "image"].contains(&item.kind.as_str()) {
+            continue;
+        }
+        let raw = match item.asset_path.as_deref() {
+            Some(raw) => raw,
+            // Some legacy PDF/image references are links, not managed files.
+            None if item.url.is_some() => continue,
+            None => return Err("A selected original file is missing. Import it again.".into()),
+        };
+        let path = library::file_payload::managed_asset_path(&assets, raw)?;
+        reference_paths.push((index, path.clone()));
+        if seen.insert(path.clone()) {
+            originals.push((index, path));
+        }
+    }
+    if originals.len() > MAX_FILES {
+        return Err("Select up to 100 original files at a time.".into());
+    }
+    fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    let folder = root.join(format!("StashDock transfer - {}", uuid::Uuid::new_v4()));
+    fs::create_dir(&folder).map_err(|e| e.to_string())?;
+    let result = (|| {
+        let mut used = HashSet::new();
+        let naming_context = items
+            .first()
+            .map(|item| {
+                item.context_override
+                    .clone()
+                    .unwrap_or_else(|| format!("## {}", item.title))
+            })
+            .unwrap_or_default();
+        let context_name = unique_name(
+            &crate::reference_drag::export_filename(&naming_context, ids.len()),
+            &mut used,
+        );
+        let context_file = folder.join(context_name);
+        let mut files = Vec::new();
+        let mut total = 0;
+        let mut actual_names = HashMap::new();
+        for (index, path) in originals {
+            let name = unique_name(&original_name(&items[index], &path), &mut used);
+            let destination = folder.join(&name);
+            let source = fs::File::open(&path)
+                .map_err(|_| "An original file could not be read. Import it again.")?;
+            let length = source.metadata().map_err(|e| e.to_string())?.len();
+            if length > MAX_BYTES - total {
+                return Err("Select original files under 100 MB in total.".into());
+            }
+            let mut output = fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&destination)
+                .map_err(|e| e.to_string())?;
+            let copied = std::io::copy(&mut source.take(length + 1), &mut output)
+                .map_err(|e| e.to_string())?;
+            if copied != length {
+                return Err("An original file changed while copying. Try again.".into());
+            }
+            total += copied;
+            actual_names.insert(path, name);
+            files.push(destination);
+        }
+        // Names belong to this outgoing snapshot, never the saved library.
+        // Match every section (including shared originals) to the actual flat,
+        // collision-safe attachment name before formatting its context.
+        let mut manifest = Vec::new();
+        for (index, path) in reference_paths {
+            let name = &actual_names[&path];
+            let item = &mut items[index];
+            let origin = item.origin.get_or_insert_with(|| serde_json::json!({}));
+            if !origin.is_object() {
+                *origin = serde_json::json!({});
+            }
+            origin["fileName"] = serde_json::json!(name);
+            manifest.push(format!(
+                "- {}: {name}",
+                item.title.replace(['\r', '\n'], " ")
+            ));
+        }
+        let context = library::reference_transfer_context(&items)?;
+        let mut output = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&context_file)
+            .map_err(|e| e.to_string())?;
+        output
+            .write_all(context.as_bytes())
+            .map_err(|e| e.to_string())?;
+        if !manifest.is_empty() {
+            write!(
+                output,
+                "\n\n---\n\n## Attached original files\nRead these files for their contents; file descriptions are supplemental.\n{}\n",
+                manifest.join("\n")
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        files.push(context_file.clone());
+        Ok(Transfer {
+            files,
+            context_file,
+        })
+    })();
+    if result.is_err() {
+        discard_folder(root, &folder);
+    }
+    result
+}
+
+fn generated_folder(root: &Path, folder: &Path) -> bool {
+    folder.parent() == Some(root)
+        && folder
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("StashDock transfer - "))
+            .and_then(|id| uuid::Uuid::parse_str(id).ok())
+            .is_some()
+}
+
+fn discard_folder(root: &Path, folder: &Path) {
+    if !generated_folder(root, folder)
+        || fs::symlink_metadata(folder).is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        return;
+    }
+    if let Ok(entries) = fs::read_dir(folder) {
+        for entry in entries.flatten() {
+            // Flat owned export copies only. Never traverse a child directory.
+            if entry.file_type().is_ok_and(|kind| kind.is_file()) {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+    let _ = fs::remove_dir(folder);
+}
+
+pub(crate) fn discard(transfer: &Transfer) {
+    if let Some(folder) = transfer.context_file.parent() {
+        if let Some(root) = folder.parent() {
+            discard_folder(root, folder);
+        }
+    }
+}
+
+pub(crate) fn prune(root: &Path, keep: &Path) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let folder = entry.path();
+        if !keep.starts_with(&folder)
+            && generated_folder(root, &folder)
+            && entry.file_type().is_ok_and(|kind| kind.is_dir())
+            && entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|time| time.elapsed().ok())
+                .is_some_and(|age| age.as_secs() > 7 * 86400)
+        {
+            discard_folder(root, &folder);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Fixture {
+        root: PathBuf,
+        database: PathBuf,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let root = std::env::temp_dir()
+                .join(format!("stashdock-transfer-test-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(root.join("assets")).unwrap();
+            let database = root.join("stashdock.sqlite3");
+            let db = rusqlite::Connection::open(&database).unwrap();
+            db.execute_batch(include_str!("../../plugins/stashdock/server/schema.sql"))
+                .unwrap();
+            db.execute_batch("CREATE VIRTUAL TABLE stash_fts USING fts5(id UNINDEXED,title,source,excerpt,tags,content)").unwrap();
+            Self { root, database }
+        }
+        fn add(
+            &self,
+            id: &str,
+            kind: &str,
+            path: Option<&Path>,
+            name: &str,
+            override_text: Option<&str>,
+        ) {
+            let db = rusqlite::Connection::open(&self.database).unwrap();
+            db.execute("INSERT INTO stash_items(id,title,kind,source,excerpt,tags_json,created_at,updated_at,asset_path,content,origin_json,context_override) VALUES(?1,?2,?3,'Fixture','','[\"Research\"]','2026-10-15','2026-10-15',?4,'User supplemental content',?5,?6)", rusqlite::params![id,format!("Title {id}"),kind,path.map(|p|p.to_string_lossy().into_owned()),serde_json::json!({"fileName":name}).to_string(),override_text]).unwrap();
+        }
+        fn output(&self) -> PathBuf {
+            self.root.join("exports")
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            // Exact fresh UUID test root only, never an application data root.
+            assert!(self
+                .root
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("stashdock-transfer-test-"));
+            fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
+    #[test]
+    fn copies_original_bytes_and_context_in_one_flat_group_without_mutating_the_library() {
+        let fixture = Fixture::new();
+        let original = fixture.root.join("assets/original.pdf");
+        let bytes = b"%PDF-1.4\0 original bytes, not parsed";
+        fs::write(&original, bytes).unwrap();
+        fixture.add("a", "pdf", Some(&original), "资料.pdf", None);
+        let transfer = export(&fixture.database, &["a".into()], &fixture.output()).unwrap();
+        assert_eq!(transfer.files.len(), 2);
+        assert_eq!(transfer.files[0].file_name().unwrap(), "资料.pdf");
+        assert_ne!(transfer.files[0], original);
+        assert_eq!(fs::read(&transfer.files[0]).unwrap(), bytes);
+        let context = fs::read_to_string(&transfer.context_file).unwrap();
+        assert!(
+            context.contains("User supplemental content")
+                && context.contains("Research")
+                && context.contains("Title a: 资料.pdf")
+        );
+        assert!(transfer
+            .files
+            .iter()
+            .all(|p| p.parent() == transfer.context_file.parent()));
+        fs::write(&transfer.files[0], "Receiver edit").unwrap();
+        assert_eq!(fs::read(&original).unwrap(), bytes);
+        discard(&transfer);
+        assert!(!transfer.context_file.exists());
+        assert!(original.exists());
+    }
+    #[test]
+    fn mixed_selection_preserves_order_renames_collisions_and_deduplicates_shared_originals() {
+        let fixture = Fixture::new();
+        let a = fixture.root.join("assets/first.pdf");
+        let b = fixture.root.join("assets/second.pdf");
+        fs::write(&a, b"first").unwrap();
+        fs::write(&b, b"second").unwrap();
+        fixture.add("a", "pdf", Some(&a), "Same.pdf", None);
+        fixture.add("b", "file", Some(&b), "same.PDF", None);
+        fixture.add(
+            "c",
+            "pdf",
+            Some(&a),
+            "Same.pdf",
+            Some("Exact edited context"),
+        );
+        fixture.add("n", "note", None, "", None);
+        let transfer = export(
+            &fixture.database,
+            &["b".into(), "n".into(), "c".into(), "a".into()],
+            &fixture.output(),
+        )
+        .unwrap();
+        assert_eq!(transfer.files.len(), 4);
+        assert_eq!(fs::read(&transfer.files[0]).unwrap(), b"second");
+        assert_eq!(fs::read(&transfer.files[2]).unwrap(), b"first");
+        assert_ne!(
+            transfer.files[0]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_lowercase(),
+            transfer.files[2]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_lowercase()
+        );
+        let context = fs::read_to_string(transfer.context_file).unwrap();
+        assert!(context.contains("Exact edited context") && context.contains("Title n"));
+    }
+    #[test]
+    fn non_file_references_keep_the_exact_existing_markdown() {
+        let fixture = Fixture::new();
+        fixture.add("n", "web", None, "", Some("Exact override\n  whitespace"));
+        let transfer = export(&fixture.database, &["n".into()], &fixture.output()).unwrap();
+        assert_eq!(transfer.files, [transfer.context_file.clone()]);
+        assert_eq!(
+            fs::read_to_string(transfer.context_file).unwrap(),
+            "Exact override\n  whitespace"
+        );
+    }
+    #[test]
+    fn sections_use_actual_collision_safe_names_and_note_text_stays_in_the_original() {
+        let fixture = Fixture::new();
+        for (id, filename) in [("a", "one.pdf"), ("b", "two.pdf")] {
+            let path = fixture.root.join("assets").join(filename);
+            fs::write(&path, id.as_bytes()).unwrap();
+            fixture.add(id, "pdf", Some(&path), "Report.pdf", None);
+        }
+        fixture.add("n", "note", None, "", None);
+        let db = rusqlite::Connection::open(&fixture.database).unwrap();
+        db.execute(
+            "UPDATE stash_items SET title='Same title' WHERE id IN ('a','b')",
+            [],
+        )
+        .unwrap();
+        let transfer = export(
+            &fixture.database,
+            &["a".into(), "b".into(), "n".into()],
+            &fixture.output(),
+        )
+        .unwrap();
+        let text = fs::read_to_string(&transfer.context_file).unwrap();
+        assert!(text.contains("File: Report.pdf") && text.contains("File: Report (2).pdf"));
+        assert!(!text.contains(&fixture.root.to_string_lossy().to_string()));
+        // Two file annotations remain; the identical Note projection does not.
+        assert_eq!(text.matches("User supplemental content").count(), 2);
+        assert!(transfer.files.iter().any(|file| file
+            .extension()
+            .is_some_and(|extension| extension == "txt")
+            && fs::read_to_string(file).unwrap() == "User supplemental content"));
+        let origin: String = db
+            .query_row(
+                "SELECT origin_json FROM stash_items WHERE id='b'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&origin).unwrap()["fileName"],
+            "Report.pdf"
+        );
+    }
+    #[test]
+    fn missing_and_external_assets_fail_without_falling_back_to_path_text() {
+        let fixture = Fixture::new();
+        let outside = fixture.root.join("outside.pdf");
+        fs::write(&outside, "secret").unwrap();
+        fixture.add("a", "pdf", Some(&outside), "outside.pdf", None);
+        fixture.add(
+            "b",
+            "file",
+            Some(&fixture.root.join("assets/missing.pdf")),
+            "missing.pdf",
+            None,
+        );
+        fixture.add("c", "file", None, "missing.pdf", None);
+        for id in ["a", "b", "c", "not-found"] {
+            assert!(export(&fixture.database, &[id.into()], &fixture.output()).is_err());
+        }
+        assert!(!fixture.output().exists());
+        assert_eq!(fs::read_to_string(outside).unwrap(), "secret");
+    }
+    #[test]
+    fn oversized_originals_clean_up_partial_exports_and_leave_originals_untouched() {
+        let fixture = Fixture::new();
+        let original = fixture.root.join("assets/large.pdf");
+        fs::File::create(&original)
+            .unwrap()
+            .set_len(MAX_BYTES + 1)
+            .unwrap();
+        fixture.add("a", "pdf", Some(&original), "large.pdf", None);
+        assert!(export(&fixture.database, &["a".into()], &fixture.output())
+            .unwrap_err()
+            .contains("100 MB"));
+        assert_eq!(fs::read_dir(fixture.output()).unwrap().count(), 0);
+        assert_eq!(original.metadata().unwrap().len(), MAX_BYTES + 1);
+    }
+    #[test]
+    fn filename_and_cleanup_guards_keep_paths_flat_and_do_not_traverse_directories() {
+        let fixture = Fixture::new();
+        let path = fixture.root.join("assets/one.pdf");
+        fixture.add("a", "pdf", Some(&path), "../CON: secret.pdf", None);
+        let items = library::reference_transfer_snapshot(&fixture.database, &["a".into()]).unwrap();
+        let name = original_name(&items[0], &path);
+        assert!(!name.contains('/') && !name.contains('\\') && !name.contains(':'));
+        let mut item = items[0].clone();
+        item.origin = Some(serde_json::json!({"fileName":"CON.pdf"}));
+        assert_eq!(original_name(&item, &path), "File - CON.pdf");
+        let root = fixture.output();
+        fs::create_dir(&root).unwrap();
+        let unrelated = root.join("Keep me");
+        fs::create_dir(&unrelated).unwrap();
+        fs::write(unrelated.join("original.pdf"), "Keep").unwrap();
+        discard_folder(&root, &unrelated);
+        assert!(unrelated.join("original.pdf").exists());
+    }
+}

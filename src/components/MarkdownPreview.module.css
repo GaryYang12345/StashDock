@@ -1,0 +1,25 @@
+.document { min-width: 0; color: var(--foreground); font-size: var(--text-sm); line-height: var(--leading-body); overflow-wrap: anywhere; }
+.document > :first-child { margin-top: 0; }
+.document > :last-child { margin-bottom: 0; }
+.document :is(h1, h2, h3, h4, h5, h6) { margin: var(--space-6) 0 var(--space-3); font-weight: 500; line-height: var(--leading-body); }
+.document h1 { font-size: var(--text-2xl); }
+.document h2 { font-size: var(--text-xl); }
+.document :is(h3, h4, h5, h6) { font-size: var(--text-lg); }
+.document :is(p, ul, ol, pre, blockquote) { margin: var(--space-3) 0; }
+.document :is(ul, ol) { padding-inline-start: var(--space-6); }
+.document ul { list-style: disc; }
+.document ol { list-style: decimal; }
+.document ul:has(> li > input[type="checkbox"]) { list-style: none; padding-inline-start: 0; }
+.document input[type="checkbox"] { appearance: auto; margin-inline-end: var(--space-2); }
+.document li + li { margin-top: var(--space-1); }
+.document :is(strong, th) { font-weight: 500; }
+.document a { color: var(--foreground); text-decoration: underline; text-underline-offset: var(--space-1); }
+.document blockquote { padding-inline-start: var(--space-4); border-inline-start: 2px solid var(--border-strong); color: var(--text-secondary); }
+.document pre { max-width: 100%; overflow-x: auto; padding: var(--space-3); background: var(--surface-muted); border-radius: var(--space-2); }
+.document code { font-family: monospace; white-space: break-spaces; }
+.document pre code { white-space: pre; }
+.document hr { border: 0; border-top: 1px solid var(--border); margin-block: var(--space-4); }
+.table { overflow-x: auto; margin-block: var(--space-3); }
+.table table { width: 100%; border-collapse: collapse; }
+.table :is(th, td) { padding: var(--space-2) var(--space-3); border: 1px solid var(--border); text-align: start; }
+.image { color: var(--text-secondary); }

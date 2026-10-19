@@ -1,0 +1,6 @@
+.header { flex-shrink: 0; padding: var(--space-4); border-bottom: 1px solid var(--border); background: var(--surface); color: var(--foreground); font-family: var(--font-body); }
+.top { display: flex; align-items: center; gap: var(--space-2); }
+.brand { min-width: 0; flex: 1; }
+.search { margin-top: var(--space-4); }
+.filters { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-3); min-width: 0; }
+.filterOptions { min-width: 0; overflow-x: auto; scrollbar-width: thin; }

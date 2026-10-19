@@ -1,0 +1,28 @@
+{
+  "name": "stashdock",
+  "version": "0.4.27",
+  "description": "Find reusable AI context, browse tag groups and save useful notes and links to StashDock.",
+  "author": {
+    "name": "StashDock contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "StashDock",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png",
+    "shortDescription": "Find saved context and keep useful work for next time.",
+    "longDescription": "Browse and manage your local StashDock library inside your AI app. Find references for a task, use existing tags as context groups, save context notes or links when you ask, and review AI-proposed tag organization before it is applied. Other edits and deletion stay in the visual App. Import files and add visible references to the draft in compatible hosts. No desktop application is required.",
+    "developerName": "StashDock contributors",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Find relevant references in my StashDock.",
+      "Open my StashDock beside this task.",
+      "Recommend StashDock references for this project and explain where to use them.",
+      "Use the references under a StashDock tag as context.",
+      "Review my StashDock tags and suggest a clearer organization.",
+      "Save this context to StashDock for next time."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

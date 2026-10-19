@@ -1,0 +1,5 @@
+.button {
+  --surface: color-mix(in oklab, var(--danger) 8%, var(--surface-raised));
+  --surface-muted: color-mix(in oklab, var(--danger) 14%, var(--surface-raised));
+  --border: color-mix(in oklab, var(--danger) 24%, var(--surface-raised));
+}

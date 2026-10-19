@@ -1,0 +1,53 @@
+[package]
+name = "stashdock"
+version = "0.2.5"
+description = "A local-first context dock for AI coding agents"
+authors = ["StashDock contributors"]
+edition = "2021"
+default-run = "stashdock"
+license = "MIT"
+repository = "https://github.com/GaryYang12345/StashDock"
+
+[[bin]]
+name = "stashdock-preview"
+path = "src/bin/preview-helper.rs"
+
+[[bin]]
+name = "stashdock-storage"
+path = "src/bin/storage-helper.rs"
+
+[lib]
+name = "stashdock_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rusqlite = { version = "0.40.0", features = ["bundled", "backup"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "json"] }
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "ico"] }
+resvg = { version = "0.45", default-features = false }
+scraper = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "=0.8.2"
+sha2 = "0.10"
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tiny_http = "0.12"
+time = { version = "0.3", features = ["formatting"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "=0.39.1"
+windows-webview = { package = "windows", version = "=0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json"] }
+windows = { version = "0.52", features = ["implement", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Ole", "Win32_System_SystemServices", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_Input_KeyboardAndMouse"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Registry", "Win32_Security"] }

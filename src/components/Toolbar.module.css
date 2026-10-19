@@ -1,0 +1,33 @@
+.toolbar {
+  flex-shrink: 0;
+  padding: var(--space-6) var(--space-6);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
+.headingRow, .actions, .title { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.headingRow { justify-content: space-between; gap: var(--space-6); }
+.title { flex-wrap: wrap; }
+.title h1 { margin: 0; font-size: var(--text-2xl); font-weight: 500; line-height: var(--leading-display); letter-spacing: var(--tracking-display); }
+.viewActions { grid-area: views; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.searchField { grid-area: search; min-width: 0; }
+.collectionControls, .tagControls, .compactSettings { display: none; }
+.refreshAction { grid-area: refresh; display: flex; }
+.actions { flex-shrink: 0; gap: var(--space-2); }
+.searchRow { display: grid; grid-template-areas: "search views refresh"; grid-template-columns: minmax(0, 1fr) auto auto; align-items: end; gap: var(--space-4); margin-top: var(--space-5); }
+@container stashdock-shell (max-width: 880px) {
+  .toolbar { padding: var(--space-4); }
+  .headingRow { gap: var(--space-3); }
+  .title h1 { font-size: var(--text-lg); line-height: var(--leading-body); letter-spacing: var(--tracking-body); }
+  .searchRow { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "search views views" "filters tags refresh"; gap: var(--space-2); margin-top: var(--space-3); }
+  .collectionControls { grid-area: filters; display: block; min-width: 0; }
+  .tagControls { grid-area: tags; display: flex; min-width: 0; max-width: 144px; }
+  .tagControls > :first-child { max-width: 100%; }
+  .viewActions { justify-content: flex-end; }
+  .compactSettings { display: inline-flex; }
+}
+@container stashdock-shell (max-width: 480px) {
+  .headingRow { flex-wrap: wrap; }
+  .actions { margin-inline-start: auto; }
+}

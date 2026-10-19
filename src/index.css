@@ -1,0 +1,149 @@
+@import "tailwindcss" source("./");
+@import "./styles/product-tokens.css";
+@import "./styles/scrollbars.css";
+
+:root {
+  --font-geist: "Geist Variable", "Segoe UI Variable", "Segoe UI", sans-serif;
+  --font-inter: "Inter Variable", "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-family: var(--font-inter);
+  color: var(--foreground);
+  background: var(--background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Arc owns the outline. Modifier-only presses must not promote mouse focus.
+   The root token also covers native and body-portaled menus/dialogs. */
+:root[data-desktop-focus="pointer"] { --focus-outline-width: 0px; }
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100dvh;
+}
+
+html.desktop-native, body.desktop-native, body.desktop-native #root {
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface-muted);
+}
+.desktop-panel { position: relative; height: 100dvh; width: 100dvw; }
+.desktop-window-error { position: absolute; inset: 56px 24px auto; z-index: 100; }
+html.desktop-folder, body.desktop-folder, body.desktop-folder #root {
+  min-width: 0;
+  min-height: 0;
+  width: 144px;
+  height: 144px;
+  overflow: hidden;
+  background: transparent;
+}
+.desktop-folder-content { width: 144px; height: 144px; }
+
+.floating-folder-root {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  overflow: hidden;
+  background: transparent;
+}
+
+.floating-folder-button {
+  position: relative;
+  display: block;
+  width: 160px;
+  height: 160px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.floating-folder-surface {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  scale: .9;
+  transform-origin: 0 0;
+  transition: transform var(--duration-standard) var(--ease-standard);
+}
+
+.folder-artwork {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.folder-reference {
+  transform: translateY(0);
+  transition: transform var(--duration-standard) var(--ease-standard);
+}
+
+.floating-folder-root:hover .floating-folder-surface {
+  transform: translateY(-2px) scale(1.012);
+}
+
+.floating-folder-root:hover .folder-reference {
+  transform: translateY(-3px);
+}
+
+.floating-folder-root:has(.floating-folder-button:active) .floating-folder-surface {
+  transform: scale(.985);
+}
+
+.floating-folder-button:focus-visible {
+  outline: none;
+}
+
+.floating-folder-button:focus-visible .folder-pocket-outline {
+  stroke: #878787;
+  stroke-opacity: .5;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+[draggable="true"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--accent-subtle);
+  color: var(--foreground);
+}
+.window-titlebar { cursor: grab; user-select: none; }
+.window-titlebar:active { cursor: grabbing; }
+.window-titlebar button, .window-titlebar input { cursor: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-folder-root:hover .floating-folder-surface,
+  .floating-folder-root:has(.floating-folder-button:active) .floating-folder-surface,
+  .floating-folder-root:hover .folder-reference { transform: none; }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

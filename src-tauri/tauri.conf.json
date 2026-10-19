@@ -1,0 +1,67 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "StashDock",
+  "version": "0.2.5",
+  "identifier": "app.stashdock.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "StashDock",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 560,
+        "minHeight": 640,
+        "center": false,
+        "resizable": true,
+        "dragDropEnabled": false,
+        "maximizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false,
+        "backgroundColor": "#f7f7f7",
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "shadow": true,
+        "visible": false
+      },
+      {
+        "label": "folder",
+        "url": "index.html?surface=folder",
+        "title": "StashDock folder",
+        "width": 144,
+        "height": 144,
+        "resizable": false,
+        "dragDropEnabled": false,
+        "maximizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "resources": { "pdf-runtime/LICENSE": "licenses/pdfjs-dist-LICENSE", "../public/licenses/WebView2Com-MIT.txt": "licenses/WebView2Com-MIT.txt", "../public/licenses/WindowsRs-MIT.txt": "licenses/WindowsRs-MIT.txt" },
+    "windows": { "nsis": { "compression": "zlib" } },
+    "shortDescription": "Local context dock for AI coding agents",
+    "longDescription": "Save useful material once and move it into Codex or another AI coding agent as structured context.",
+    "category": "Productivity"
+  }
+}

@@ -1,0 +1,37 @@
+// Read-only release smoke check; never exercises app-only writes on real data.
+import assert from 'node:assert/strict';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { SHELF_URI } from '../plugins/stashdock/server/create-server.mjs';
+const folder = 'C:/Users/86137/.codex/plugins/cache/personal/stashdock/0.4.27';
+const client = new Client({ name: 'StashDock release verification', version: '1' });
+const transport = new StdioClientTransport({ command: process.execPath, args: [folder + '/scripts/mcp-server.mjs'], cwd: folder, env: { ...process.env, STASHDOCK_DATA_DIR: 'D:/StashDockData' }, stderr: 'pipe' });
+try {
+  await client.connect(transport);
+  assert.equal(client.getServerVersion().version, '0.4.27');
+  const { tools } = await client.listTools();
+  for (const name of ['get_stashdock_context', 'edit_stashdock_context', 'edit_stashdock_reference', 'select_stashdock_shelf', 'list_stashdock_import_sources', 'read_stashdock_browser_bookmarks', 'preview_stashdock_link', 'open_stashdock_capture_site']) assert.deepEqual(tools.find(tool => tool.name === name)._meta.ui.visibility, ['app']);
+  assert.ok(!tools.some(tool => /^(read|connect|disconnect)_stashdock_platform$/.test(tool.name)));
+  assert.ok(!tools.some(tool => tool.name === 'get_stashdock_dock_url'));
+  assert.equal(tools.find(tool => tool.name === 'get_stashdock_file').annotations.readOnlyHint, true);
+  assert.deepEqual(tools.find(tool => tool.name === 'open_stashdock')._meta['openai/ui'].entrypoints, [{ type: 'global' }, { type: 'thread' }]);
+  const uri = tools.find(tool => tool.name === 'open_stashdock')._meta.ui.resourceUri;
+  assert.equal(uri, SHELF_URI);
+  const resource = await client.readResource({ uri });
+  assert.match(resource.contents[0].text, /Edit content/);
+  assert.match(resource.contents[0].text, /Press Enter to add a tag/);
+  assert.match(resource.contents[0].text, /openai\/title/);
+  assert.match(resource.contents[0].text, /Multiple contexts/);
+  assert.match(resource.contents[0].text, /data-menu-open/);
+  assert.match(resource.contents[0].text, /Import from/);
+  assert.match(resource.contents[0].text, /preview_stashdock_link/);
+  assert.match(resource.contents[0].text, /Reference view/);
+  assert.doesNotMatch(resource.contents[0].text, /Bookmarks HTML|Separate tags with commas|Export bookmarks as HTML|Original files stay unchanged/);
+  assert.ok(/@container shelf\s*\(min-width:\s*380px\)/.test(resource.contents[0].text), 'Installed two-column breakpoint');
+  assert.ok(/@container shelf\s*\(min-width:\s*720px\)/.test(resource.contents[0].text), 'Installed three-column breakpoint');
+  assert.ok(!resource.contents[0].text.includes('Manage tags') && !resource.contents[0].text.includes('Browse all tags'), 'Legacy tag entries removed');
+  const result = await client.callTool({ name: 'list_stashdock_shelf', arguments: {} });
+  assert.equal(result.isError, undefined);
+  assert.ok(result._meta.items.every(item => item.content === undefined && item.contextOverride === undefined));
+  console.log(JSON.stringify({ installedVersion: client.getServerVersion().version, resourceUri: uri, count: result.structuredContent.count, finalEditorTools: true, bodiesExcludedFromList: true }));
+} finally { await client.close(); }

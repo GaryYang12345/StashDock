@@ -1,0 +1,4 @@
+.list { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); }
+/* Keep rows below the curved corner. All data rows stay the same height. */
+.list::before { content: ''; display: block; height: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.list > button { display: flex; margin: var(--space-4) auto; }

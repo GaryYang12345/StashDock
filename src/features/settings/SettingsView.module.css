@@ -1,0 +1,36 @@
+.root { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; color: var(--foreground); font-family: var(--font-body); container-type: inline-size; container-name: settings; }
+.header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-6); flex: none; }
+.headerInner { width: 100%; max-width: 720px; margin-inline: auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.header h1 { margin: 0; font-size: var(--text-xl); font-weight: 500; line-height: var(--leading-body); }
+.scroller { flex: 1; min-height: 0; }
+.viewport { padding: 0 var(--space-6) var(--space-8); }
+.page { width: 100%; max-width: 720px; margin-inline: auto; display: grid; gap: var(--space-8); }
+.section { display: grid; gap: var(--space-4); min-width: 0; }
+.section h2 { margin: 0; font-size: var(--text-base); font-weight: 500; }
+.group { border: 1px solid var(--border); border-radius: var(--radius-panel); overflow: hidden; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-width: 0; min-height: 72px; padding: var(--space-4) var(--space-5); }
+.row + .row, .location { border-top: 1px solid var(--border-subtle); }
+.copy { display: grid; min-width: 0; gap: var(--space-1); }
+.brandIdentity { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.locationLabel { display: flex; align-items: center; gap: var(--space-1); }
+.helpButton { display: inline-flex; align-items: center; justify-content: center; width: var(--space-6); height: var(--space-6); flex: none; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.helpButton:hover, .helpButton:focus-visible { color: var(--foreground); }
+.label { font-size: var(--text-sm); font-weight: 500; }
+.description { color: var(--text-secondary); font-size: var(--text-xs); line-height: var(--leading-body); }
+.control { min-width: 0; flex-shrink: 0; max-width: 100%; }
+.control:has(fieldset) { width: min(360px, 100%); }
+.number { font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.location { display: grid; gap: var(--space-3); padding: var(--space-5); }
+.path { margin: 0; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); user-select: text; }
+.actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
+.location .actions { justify-content: flex-start; }
+.loading { display: grid; gap: var(--space-4); }
+.update { color: var(--text-secondary); font-size: var(--text-sm); }
+.update p { margin: 0 0 var(--space-2); }
+@container settings (max-width: 560px) {
+  .header { padding: var(--space-4); }
+  .viewport { padding-inline: var(--space-4); }
+  .row { padding: var(--space-4); flex-wrap: wrap; }
+  .control { margin-left: auto; max-width: 100%; }
+  .location { padding: var(--space-4); }
+}

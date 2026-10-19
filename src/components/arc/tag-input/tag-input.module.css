@@ -1,0 +1,32 @@
+.field { display: grid; width: 100%; min-width: 0; }
+.field label { margin-bottom: var(--space-2); font-size: var(--text-sm); font-weight: 500; }
+/* The shell animates its height to .content, which carries the wrapping rows. The ring contracts onto the border on focus. */
+.control { box-sizing: content-box; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); box-shadow: 0 0 0 6px transparent; transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-standard) var(--ease-standard); }
+@media (hover: hover) and (pointer: fine) { .control:hover:not(:focus-within) { border-color: var(--border-strong); } }
+.control:focus-within { border-color: var(--foreground); box-shadow: 0 0 0 3px var(--focus-ring); outline: 2px solid transparent; outline-offset: 2px; }
+/* Equal 7px padding makes one row fill the minimum height exactly, so existing tags hold their line when a second row opens. */
+.content { position: relative; display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 6px; min-height: calc(var(--control-height-md) - 2px); box-sizing: border-box; padding: 7px; cursor: text; }
+.tag { position: relative; display: inline-flex; align-items: center; gap: 3px; min-height: 28px; box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 0 4px 0 9px; background: var(--surface-muted); color: var(--foreground); font-size: var(--text-sm); white-space: nowrap; cursor: default; }
+.tag button { display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text-secondary); cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-spring) var(--ease-spring); }
+@media (hover: hover) and (pointer: fine) { .tag button:hover { background: var(--surface); color: var(--foreground); } }
+.tag button:focus-visible { background: var(--surface); color: var(--foreground); outline: none; box-shadow: inset 0 0 0 1.5px var(--focus-ring); }
+/* Quick press, spring release. */
+.tag button:active { transform: scale(.96); transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-instant) var(--ease-standard); }
+.content input { flex: 1 1 100px; min-width: 80px; min-height: 28px; box-sizing: border-box; border: 0; padding: 0 5px; background: transparent; color: var(--foreground); font: inherit; font-size: var(--text-sm); }
+.content input:focus, .content input:focus-visible { outline: none; }
+.content input::placeholder { color: transparent; }
+/* The visible placeholder is drawn here so it can rise in when the last tag leaves. The native one stays for assistive tech. Inset matches the content and input padding. */
+.placeholder { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; padding: 0 12px; color: var(--text-muted); font-size: var(--text-sm); white-space: nowrap; pointer-events: none; }
+/* The pick ring rides above the pills and sizes itself to the picked tag, so it can glide between tags without scaling its border. */
+.ring { position: absolute; top: 0; left: 0; z-index: 1; box-sizing: border-box; border: 1px solid var(--accent); border-radius: var(--radius-pill); background: var(--accent-subtle); opacity: 0; pointer-events: none; }
+/* A resting tag is not a stacking context (its filter ends at none), so its label and button sit above the ring while its fill stays below. */
+.tagLabel, .tag button { position: relative; z-index: 2; }
+.tag[data-picked] button { color: var(--foreground); }
+/* The row's space is padding inside the clipped slot, so the height animates from a true zero. */
+.messageSlot { display: block; overflow: hidden; }
+.hint { display: block; padding-top: var(--space-2); color: var(--text-muted); font-size: var(--text-xs); line-height: var(--leading-body); }
+/* Words are measured against this box when they pop out to leave, so it must be the positioned parent. */
+.words { position: relative; display: block; }
+.word { display: inline-block; white-space: pre; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .control, .tag button { transition: none; } .tag button:active { transform: none; } }

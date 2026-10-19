@@ -1,0 +1,10 @@
+.form { display: grid; gap: var(--space-4); }
+.tagFields { display: grid; gap: var(--space-4); min-width: 0; }
+.suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
+.tagText { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
+.contentField { min-width: 0; }
+.contentArea { height: clamp(220px, 42dvh, 420px); }
+.obscuredContent { visibility: hidden; }
+.contentPreview { height: 100%; border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--surface); }
+.previewViewport { padding: var(--space-3); }

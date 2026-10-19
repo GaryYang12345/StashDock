@@ -1,0 +1,9 @@
+.field { min-width: 0; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--control-height-md); min-width: 0; }
+.identity { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.label { flex: none; color: var(--text-secondary); font-size: var(--text-sm); }
+.name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--text-xs); }
+.thumbnail { flex: none; width: var(--space-12); height: var(--space-8); object-fit: cover; border: 1px solid var(--border); border-radius: var(--space-2); }
+.actions { display: flex; align-items: center; flex: none; gap: var(--space-1); }
+@media (max-width: 390px) { .row { gap: var(--space-1); } .identity { gap: var(--space-1); } .identity:has(.thumbnail) .name { display: none; } }
+@media (hover: none), (pointer: coarse) { .actions > button { min-width: var(--control-height-md); min-height: var(--control-height-md); } }

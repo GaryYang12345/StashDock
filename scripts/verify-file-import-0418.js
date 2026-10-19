@@ -1,0 +1,30 @@
+async page => {
+  await page.goto('http://127.0.0.1:5173/tests/fixtures/desktop-import.html');
+  await page.setViewportSize({width:1063,height:684});
+  await page.getByRole('button',{name:'Open import fixture',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Import references',exact:true});
+  await page.getByRole('textbox',{name:'Link',exact:true}).fill('https://example.org/preview');
+  await page.getByRole('textbox',{name:'Content',exact:true}).waitFor(); await page.waitForTimeout(700);
+  const populated=await dialog.evaluate(el=>({height:el.clientHeight,scroll:el.scrollHeight,overflow:el.scrollWidth>el.clientWidth}));
+  if(populated.scroll>populated.height+2 || populated.overflow) throw Error('Normal link form scrolls: '+JSON.stringify(populated));
+  await dialog.screenshot({path:'output/playwright/compact-import-link-0418.png'});
+  await page.getByRole('tab',{name:'File',exact:true}).click();
+  await page.locator('input[type=file]').waitFor({state:'attached'}); await page.waitForTimeout(400);
+  if(await page.getByRole('textbox',{name:'Title',exact:true}).count()) throw Error('File metadata shown before choosing a file');
+  await dialog.screenshot({path:'output/playwright/arc-file-upload-0418.png'});
+  await page.locator('input[type=file]').setInputFiles([{name:'First.txt',mimeType:'text/plain',buffer:Buffer.from('Original one')},{name:'Second.docx',mimeType:'application/octet-stream',buffer:Buffer.from('Original two')}]);
+  const title=page.getByRole('textbox',{name:'Title',exact:true}), content=page.getByRole('textbox',{name:'Content',exact:true});
+  await title.waitFor(); await page.waitForTimeout(300);
+  if(await page.locator('#saved-items').innerText()!=='[]') throw Error('Choosing files saved prematurely');
+  await title.fill('Edited first'); await content.fill('Edited first context');
+  await page.getByRole('button',{name:'Edit file',exact:true}).click(); await page.getByRole('menuitem',{name:'Second.docx',exact:true}).click();
+  await title.fill('Edited second'); await content.fill('Edited second context');
+  await page.getByRole('textbox',{name:'Tags',exact:true}).fill('UI'); await page.getByRole('textbox',{name:'Tags',exact:true}).press('Enter');
+  const staged=await dialog.evaluate(el=>({height:el.clientHeight,scroll:el.scrollHeight}));
+  if(staged.scroll>staged.height+2) throw Error('Normal file form scrolls: '+JSON.stringify(staged));
+  await dialog.screenshot({path:'output/playwright/staged-file-details-0418.png'});
+  await page.getByRole('button',{name:'Save files',exact:true}).click(); await dialog.waitFor({state:'hidden'});
+  const saved=JSON.parse(await page.locator('#saved-items').innerText());
+  if(saved.length!==2 || saved[0].title!=='Edited first' || saved[1].content!=='Edited second context' || saved.some(item=>item.tags.join()!=='UI')) throw Error('Staged edits were not saved: '+JSON.stringify(saved));
+  return {normalPanelNoScroll:true,officialArcUpload:true,selectionDoesNotSave:true,multipleFileEdits:true,explicitSaveAndClose:true};
+}

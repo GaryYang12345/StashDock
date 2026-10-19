@@ -1,0 +1,3 @@
+.icon { display: block; flex: none; box-sizing: border-box; width: var(--space-5); height: auto; aspect-ratio: 1; object-fit: contain; }
+.icon[data-platform="x"] { padding: 2px; }
+:global(:root[data-theme="dark"]) .icon[data-platform="x"] { filter: invert(1); }

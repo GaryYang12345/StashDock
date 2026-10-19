@@ -1,0 +1,13 @@
+{
+  "githubRepository": "GaryYang12345/StashDock",
+  "browserExtensions": { "firefox": { "id": "stashdock@stashdock.app", "minimumVersion": "153.0" } },
+  "installationUrls": { "chrome": null, "edge": null, "firefox": null, "safari": null, "codex": "https://github.com/GaryYang12345/StashDock/blob/main/docs/windows-plugin-install.md", "claude": null, "desktop": "https://github.com/GaryYang12345/StashDock/releases/latest" },
+  "applications": {
+    "chrome": { "executable": "chrome.exe", "website": "https://www.google.com/chrome/" },
+    "edge": { "executable": "msedge.exe", "website": "https://www.microsoft.com/edge" },
+    "firefox": { "executable": "firefox.exe", "website": "https://www.firefox.com/" },
+    "codex": { "protocols": ["chatgpt", "codex"], "website": "https://chatgpt.com/" },
+    "claude": { "protocols": ["claude"], "website": "https://claude.ai/" },
+    "desktop": { "website": null }
+  }
+}

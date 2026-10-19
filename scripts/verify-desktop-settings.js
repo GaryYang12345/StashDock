@@ -1,0 +1,58 @@
+// Playwright CLI run-code. Uses only the isolated settings fixture and mocks.
+async page => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 1180, height: 800 });
+  await page.goto('http://127.0.0.1:18749/tests/fixtures/settings.html');
+  await page.evaluate(() => { sessionStorage.removeItem('settings-fixture'); sessionStorage.removeItem('settings-fixture-allow-move'); });
+  await page.reload();
+  await page.getByRole('article', { name: 'Settings', exact: true }).waitFor();
+  await page.getByRole('searchbox', { name: 'Search references' }).fill('Settings');
+  await page.getByRole('article', { name: 'Settings', exact: true }).getByRole('button', { name: 'Add Settings to context', exact: true }).click({ force: true });
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('heading', { name: 'General', exact: true }).waitFor();
+  await page.getByRole('radio', { name: 'Dark', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await page.getByRole('button', { name: 'Language: English', exact: true }).click();
+  await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
+  await page.getByRole('heading', { name: '通用', exact: true }).waitFor();
+  await page.screenshot({ path: 'output/playwright/settings-zh-dark.png' });
+  await page.getByRole('button', { name: '快捷键: Ctrl+Shift+Space', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Ctrl+Alt+Space', exact: true }).click();
+  await page.getByText('此快捷键已被其他应用占用，请选择其他快捷键。', { exact: true }).waitFor();
+  if (!await page.getByRole('button', { name: '快捷键: Ctrl+Shift+Space', exact: true }).isVisible()) throw Error('Conflict replaced the working shortcut');
+  await page.getByRole('button', { name: '返回收藏库', exact: true }).click();
+  if (await page.getByRole('searchbox', { name: '搜索收藏' }).inputValue() !== 'Settings') throw Error('Settings reset search');
+  await page.getByText('已选 1 项', { exact: true }).waitFor();
+  await page.getByRole('article', { name: 'Settings', exact: true }).waitFor();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('radio', { name: '浅色', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  await page.getByRole('button', { name: '语言: 简体中文', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click();
+  for (const width of [390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Settings horizontal overflow at ' + width);
+    if (await page.evaluate(() => [...document.querySelectorAll('[data-settings-view] button')].filter(el => el.getClientRects().length).some(el => el.getBoundingClientRect().right > innerWidth))) throw Error('Clipped settings control at ' + width);
+    await page.getByRole('button', { name: 'Check for updates', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `output/playwright/settings-en-light-${width}.png` });
+  }
+  await page.getByRole('button', { name: 'Check for updates', exact: true }).click();
+  await page.getByText('Updates will be available after the public release.', { exact: true }).waitFor();
+  if (await page.getByRole('button', { name: /GitHub/ }).count()) throw Error('Unconfigured repository was exposed');
+  await page.getByRole('button', { name: 'Change location', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Change storage location?', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Move library', exact: true }).click();
+  await page.getByText('Choose an empty folder so existing files are not overwritten.', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to library', exact: true }).click();
+  await page.getByRole('article', { name: 'Settings', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Change location', exact: true }).click();
+  await page.evaluate(() => sessionStorage.setItem('settings-fixture-allow-move', 'true'));
+  await page.getByRole('button', { name: 'Move library', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.fixtureRestarted === 'true');
+  if (!await page.getByRole('button', { name: 'Back to library', exact: true }).isDisabled()) throw Error('Moved library was left interactive before restart');
+  if (errors.length) throw Error(errors.join('\n'));
+  console.log('Desktop settings: language/theme, four widths, preserved selection/search, shortcut conflict, update state and migration failure/success passed. All OS/data mutations were isolated mocks.');
+}

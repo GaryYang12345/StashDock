@@ -1,0 +1,40 @@
+// Isolated fixture only. Never enables real Windows startup or imports data.
+async page => {
+  await page.setViewportSize({ width: 1180, height: 800 });
+  await page.goto('http://127.0.0.1:18749/tests/fixtures/settings.html');
+  await page.evaluate(() => { sessionStorage.removeItem('settings-fixture'); sessionStorage.removeItem('settings-fixture-allow-move'); });
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const theme = page.getByRole('radio', { name: 'Light', exact: true });
+  await theme.focus(); await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+  await page.getByRole('radio', { name: 'Follow system', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await page.getByRole('button', { name: 'Launch at login: Off', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'On', exact: true }).click();
+  await page.getByRole('button', { name: 'Launch at login: On', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Language: English', exact: true }).click();
+  await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
+  await page.getByRole('button', { name: '返回收藏库', exact: true }).click();
+  await page.getByRole('button', { name: '导入收藏', exact: true }).click();
+  await page.getByRole('dialog', { name: '导入收藏', exact: true }).waitFor();
+  await page.getByRole('tab', { name: '笔记', exact: true }).click();
+  await page.getByRole('textbox', { name: '内容', exact: true }).fill('This is user content, not a translation key.');
+  await page.getByRole('button', { name: '保存笔记', exact: true }).waitFor();
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  if (!await page.getByRole('button', { name: '保存文件', exact: true }).isDisabled()) throw Error('Empty file form lost its explicit disabled Save');
+  await page.getByRole('tab', { name: '链接', exact: true }).click();
+  await page.getByRole('textbox', { name: '链接', exact: true }).waitFor();
+  await page.getByRole('button', { name: '关闭弹窗', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.evaluate(() => { document.documentElement.dataset.accent = 'blue'; });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: 'output/playwright/settings-zh-dark-blue.png' });
+  await page.setViewportSize({ width: 390, height: 420 });
+  await page.getByRole('button', { name: '检查更新', exact: true }).scrollIntoViewIfNeeded();
+  if (!await page.getByRole('button', { name: '检查更新', exact: true }).isVisible()) throw Error('Settings action is unreachable in a short window');
+  console.log('Settings keyboard focus/Escape, OS theme changes, reduced motion, startup UI, Chinese import identities, blue accent and 390x420 reachability passed with isolated mocks.');
+}

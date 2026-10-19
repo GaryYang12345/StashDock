@@ -1,0 +1,42 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
+import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
+import { openManagedFile } from '../plugins/stashdock/server/open-file.mjs';
+const source = path => readFileSync(path, 'utf8');
+test('Rule 1 and shared forms prevent card context-menu and file-flow forks', () => {
+  assert.match(source('AGENTS.md'), /Rule 1: Consistency/);
+  for (const path of ['src/components/StashCard.tsx','src/features/mcp-app/McpShelf.tsx']) assert.doesNotMatch(source(path), /<DesktopMenu context[^>]*actions=\{(?:editActions|referenceEditActions)/);
+  assert.doesNotMatch(source('src/components/StashCard.tsx'), /<DesktopMenu context/);
+  const form = source('src/components/ReferenceFileImport.tsx');
+  assert.match(form, /arc\/file-upload\/file-upload/); assert.doesNotMatch(form, /onUpload=/);
+  assert.match(form, /onSubmit=/); assert.match(form, /Save files/); assert.match(form, /savedItems.current \?\?=/);
+  assert.match(form, /<ReferenceGlyph kind=\{identity.visual\} size=\{20\}/);
+  assert.doesNotMatch(form, /<identity.Icon/);
+  assert.match(source('src/components/DesktopImportDialog.tsx'), /size="import"/);
+  assert.match(source('src/components/SiteIdentity.tsx'), /fileReferenceType/);
+  assert.match(source('src/components/DestructiveButton.tsx'), /variant="danger"/);
+});
+test('staged file metadata preserves original bytes and exact edited context', async t => {
+  const root=mkdtempSync(join(tmpdir(),'stashdock-file-edit-test-'));
+  const library=createLocalLibrary({dataDir:root}); t.after(()=>{library.close();rmSync(root,{recursive:true,force:true});});
+  const body='  Edited context\n\n  preserved whitespace  ';
+  const [row]=library.importFiles([{name:'Document.docx',mimeType:'application/octet-stream',base64:Buffer.from('original bytes').toString('base64'),title:'Edited document',content:body}],['Research']);
+  assert.equal(row.title,'Edited document'); assert.equal(row.content,body);
+  assert.equal(row.origin.fileName,'Document.docx'); assert.match(row.mimeType,/wordprocessingml/);
+  assert.equal(readFileSync(row.assetPath,'utf8'),'original bytes');
+  const [visual]=await library.read(true); assert.equal(visual.hasFile,true); assert.equal(visual.assetPath,undefined); assert.equal(visual.content,undefined);
+});
+test('managed file opening rejects external paths and executable files, and never uses a shell', async t => {
+  const root=mkdtempSync(join(tmpdir(),'stashdock-file-open-test-')), assets=join(root,'assets'); mkdirSync(assets);
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const pdf=join(assets,'saved.pdf'), script=join(assets,'script.ps1'), outside=join(root,'outside.pdf');
+  for(const path of [pdf,script,outside]) writeFileSync(path,'fixture');
+  let called=false;
+  const launch=(command,args,options)=>{ called=true; assert.equal(command,'explorer.exe'); assert.deepEqual(args,[pdf]); assert.equal(options.shell,false); assert.equal(options.windowsHide,true); const child=new EventEmitter(); child.unref=()=>{}; queueMicrotask(()=>child.emit('spawn')); return child; };
+  assert.deepEqual(await openManagedFile(pdf,assets,{launch,platform:'win32'}),{opened:true}); assert.equal(called,true);
+  called=false; await assert.rejects(openManagedFile(script,assets,{launch}),/file type/); await assert.rejects(openManagedFile(outside,assets,{launch}),/managed/); assert.equal(called,false);
+});

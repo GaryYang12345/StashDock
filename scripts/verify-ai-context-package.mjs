@@ -1,0 +1,77 @@
+// Actual bundled server + SDK, isolated SQLite, no mutations in the real library.
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
+
+const packageRoot = resolve(process.argv[2] || 'plugins/stashdock');
+const { createServer } = await import(pathToFileURL(join(packageRoot, 'dist/mcp-server.mjs')).href);
+const dataDir = mkdtempSync(join(tmpdir(), 'stashdock-mcp-test-ai-package-'));
+const observer = createLocalLibrary({ dataDir });
+const payload = { title: 'Packaged AI context acceptance', content: 'Validate keyboard navigation and preserve user context.', tags: ['Design'], contentOrigin: 'generated', sourceUrls: ['https://example.org/guide'] };
+const connect = async () => {
+  const server = createServer({ dataDir, htmlUrl: pathToFileURL(join(packageRoot, 'web/shelf.html')) });
+  const client = new Client({ name: 'Isolated packaged AI-context verification', version: '1' });
+  const [left, right] = InMemoryTransport.createLinkedPair();
+  await server.connect(left); await client.connect(right);
+  return { server, client, close: async () => { await client.close(); await server.close(); } };
+};
+let connection;
+try {
+  connection = await connect();
+  const { tools } = await connection.client.listTools();
+  assert.deepEqual(tools.filter(tool => tool.annotations?.readOnlyHint === false && !tool._meta?.ui?.visibility).map(tool => tool.name), ['save_stashdock_reference', 'apply_stashdock_tag_changes']);
+  const call = (name, args = {}) => connection.client.callTool({ name, arguments: args });
+  const saved = await call('save_stashdock_reference', payload);
+  assert.equal(saved.isError, undefined); assert.equal(saved.structuredContent.created, true);
+  const id = saved.structuredContent.item.id;
+  assert.equal(saved.structuredContent.item.mimeType, 'text/plain');
+  const immediateOriginal = await call('get_stashdock_file', { id });
+  assert.equal(immediateOriginal.isError, undefined);
+  assert.equal(readFileSync(immediateOriginal.structuredContent.path, 'utf8'), payload.content);
+  assert.equal((await observer.read())[0].id, id);
+  const groups = (await call('list_stashdock_tags')).structuredContent;
+  assert.deepEqual(groups.tags, [{ name: 'Design', count: 1 }]);
+  const candidates = (await call('search_stashdock', { tag: 'design' })).structuredContent;
+  assert.equal(candidates.items[0].id, id);
+  assert.equal((await call('get_stashdock_items', { ids: [id] })).structuredContent.items[0].context, payload.content);
+  const organized = (await call('apply_stashdock_tag_changes', { changes: [{ id,
+    expectedRevision: candidates.items[0].tagRevision, addTags: ['Research'], removeTags: ['Design'] }] })).structuredContent;
+  assert.equal(organized.updated, 1); assert.deepEqual((await observer.readItems([id]))[0].tags, ['Research']);
+  const snapshot = await call('prepare_stashdock_attachment', { ids: [id] });
+  assert.match(snapshot._meta.attachment.content[0].resource.text, /Content origin: AI-generated\nSources: https:\/\/example.org\/guide/);
+  await connection.close(); connection = await connect();
+  const retry = await connection.client.callTool({ name: 'save_stashdock_reference', arguments: payload });
+  assert.equal(retry.structuredContent.created, false); assert.equal(retry.structuredContent.item.id, id);
+  assert.equal((await observer.read()).length, 1);
+  const noteFile = (await call('get_stashdock_file', { id })).structuredContent;
+  await call('edit_stashdock_context', { id, context: 'Additional context stays separate.' });
+  assert.equal(readFileSync(noteFile.path, 'utf8'), payload.content);
+  writeFileSync(noteFile.path + '.editor-save', 'Latest original saved independently.\n原文更新', { flag: 'wx' });
+  renameSync(noteFile.path + '.editor-save', noteFile.path);
+  const latest = await call('get_stashdock_context', { id });
+  assert.equal(latest._meta.item.content, 'Latest original saved independently.\n原文更新');
+  assert.equal(latest._meta.item.contextOverride, 'Additional context stays separate.');
+  assert.equal((await call('get_stashdock_file', { id })).structuredContent.path, noteFile.path);
+  const skill = readFileSync(join(packageRoot, 'skills/use-stashdock/SKILL.md'), 'utf8');
+  assert.match(skill, /save_stashdock_reference/); assert.match(skill, /apply_stashdock_tag_changes/);
+  const bytes = Buffer.from('Region,Revenue\nNorth,137\nSouth,249\n');
+  const [file] = observer.importFiles([{ name: 'original.csv', base64: bytes.toString('base64'), content: 'Compare both regions.' }]);
+  const resolved = await call('get_stashdock_file', { id: file.id });
+  assert.equal(resolved.isError, undefined); assert.equal(resolved.structuredContent.contentRead, false);
+  assert.deepEqual(readFileSync(resolved.structuredContent.path), bytes);
+  const preparedFile = await call('prepare_stashdock_attachment', { ids: [file.id] });
+  assert.match(preparedFile._meta.attachment.content[0].resource.text, /get_stashdock_file/);
+  assert.match(preparedFile._meta.attachment.content[0].resource.text, /Compare both regions/);
+  const entrypoints = (await connection.client.listTools()).tools.find(tool => tool.name === 'open_stashdock')._meta['openai/ui'].entrypoints;
+  assert.deepEqual(entrypoints, [{ type: 'global' }, { type: 'thread' }]);
+  console.log(JSON.stringify({ packageRoot, tagSearchReadSave: true, approvedTagOrganization: true, durableRetryAfterServerRestart: true, sharedLibraryVisible: true, provenanceInContext: true, originalFileBytesPreserved: true, canonicalNoteOriginal: true, manualEntrypoints: true, realLibraryWrites: 0 }));
+} finally {
+  await connection?.close(); observer.close();
+  assert.ok(dataDir.startsWith(join(tmpdir(), 'stashdock-mcp-test-ai-package-')));
+  rmSync(dataDir, { recursive: true, force: true });
+}

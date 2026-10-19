@@ -1,0 +1,118 @@
+import type { StashItem } from "../../types";
+import { uniqueImports } from "./selectors";
+import { reconcileReferences } from '../../lib/reconcileReferences';
+import { editReferenceCover, type ReferenceCoverEdit } from '../../lib/referenceCover';
+
+export type LibraryRepository = {
+  load: () => Promise<StashItem[]>;
+  add: (items: StashItem[], next: StashItem[]) => Promise<void | StashItem[]>;
+  remove: (id: string, next: StashItem[]) => Promise<void>;
+  favorite: (id: string, value: boolean, next: StashItem[]) => Promise<void>;
+  edit?: (id: string, title: string, tags: string[], next: StashItem[], cover?: ReferenceCoverEdit) => Promise<StashItem[]>;
+  editContent?: (id: string, content: string, next: StashItem[]) => Promise<StashItem[]>;
+  changeTag?: (name: string, replacement: string | null, next: StashItem[]) => Promise<StashItem[]>;
+};
+export type ImportSummary = { imported: number; updated: number; skipped: number };
+export type LibrarySnapshot = { items: StashItem[]; ready: boolean; error: string | null; importNotice: { message: string } | null };
+
+export function cleanReferenceTags(tags: string[]) {
+  if (tags.length > 12 || tags.some(tag => tag.trim().length > 48)) throw new Error('Use at most 12 tags, each up to 48 characters.');
+  const seen = new Set<string>();
+  return tags.map(tag => tag.trim()).filter(tag => tag && !seen.has(tag.toLowerCase()) && seen.add(tag.toLowerCase()));
+}
+
+export function contentExcerpt(content: string) {
+  return Array.from(content.trim().split(/\s+/).join(' ')).slice(0, 180).join('');
+}
+
+/** One source of truth per WebView. All reads and mutations share an ordered queue. */
+export function createLibraryStore(repository: LibraryRepository) {
+  let snapshot: LibrarySnapshot = { items: [], ready: false, error: null, importNotice: null };
+  const listeners = new Set<() => void>();
+  let queue: Promise<unknown> = Promise.resolve();
+  let refreshFlight: Promise<void> | null = null;
+  let invalidated = false;
+  const publish = (items: StashItem[], error: string | null = null) => {
+    const reconciled = reconcileReferences(snapshot.items, items);
+    const unchanged = reconciled === snapshot.items;
+    if (snapshot.ready && unchanged && error === snapshot.error) return;
+    snapshot = { ...snapshot, items: unchanged ? snapshot.items : reconciled, ready: true, error };
+    listeners.forEach(listener => listener());
+  };
+  const enqueue = <T,>(operation: () => Promise<T>): Promise<T> => {
+    const task = queue.then(operation);
+    queue = task.catch(() => {});
+    return task;
+  };
+  const refresh = (): Promise<void> => {
+    if (refreshFlight) return refreshFlight;
+    refreshFlight = enqueue(async () => {
+      do {
+        invalidated = false;
+        try { publish(await repository.load()); }
+        catch (error) { publish(snapshot.items, error instanceof Error ? error.message : "The library could not be opened."); }
+      } while (invalidated);
+    }).finally(() => { refreshFlight = null; });
+    return refreshFlight;
+  };
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    refresh,
+    invalidate: () => { invalidated = true; return refresh(); },
+    announceImport: ({ imported, updated, skipped }: ImportSummary) => {
+      const message = imported
+        ? "Page saved from browser."
+        : updated ? "Saved page updated from browser."
+        : skipped ? "This page is already in StashDock."
+        : "Browser save completed.";
+      snapshot = { ...snapshot, importNotice: { message } };
+      listeners.forEach(listener => listener());
+    },
+    add: (incoming: StashItem[], persisted = false) => enqueue(async () => {
+      const unique = uniqueImports(snapshot.items, incoming);
+      if (unique.length) {
+        const next = [...unique, ...snapshot.items];
+        const saved = !persisted ? await repository.add(unique, next) : undefined;
+        publish(saved ?? next);
+      }
+      return { imported: unique.length, skipped: incoming.length - unique.length };
+    }),
+    remove: (id: string) => enqueue(async () => {
+      const next = snapshot.items.filter(item => item.id !== id);
+      await repository.remove(id, next);
+      publish(next);
+    }),
+    toggleFavorite: (id: string) => enqueue(async () => {
+      const item = snapshot.items.find(item => item.id === id);
+      if (!item) return;
+      const favorite = !item.favorite;
+      const next = snapshot.items.map(item => item.id === id ? { ...item, favorite } : item);
+      await repository.favorite(id, favorite, next);
+      publish(next);
+    }),
+    edit: (id: string, title: string, tags: string[], cover?: ReferenceCoverEdit) => enqueue(async () => {
+      title = title.trim(); tags = cleanReferenceTags(tags);
+      if (!title || title.length > 500) throw new Error('Use a title between 1 and 500 characters.');
+      if (!snapshot.items.some(item => item.id === id)) throw new Error('This reference no longer exists.');
+      if (!repository.edit) throw new Error('Reference editing is unavailable.');
+      const next = snapshot.items.map(item => item.id === id ? editReferenceCover({ ...item, title, tags }, cover) : item);
+      publish(await repository.edit(id, title, tags, next, cover));
+    }),
+    editContent: (id: string, content: string) => enqueue(async () => {
+      if (content.length > 200_000) throw new Error('Use at most 200,000 characters.');
+      if (!snapshot.items.some(item => item.id === id)) throw new Error('This reference no longer exists.');
+      if (!repository.editContent) throw new Error('Content editing is unavailable.');
+      const next = snapshot.items.map(item => item.id === id ? { ...item, contextOverride: content } : item);
+      publish(await repository.editContent(id, content, next));
+    }),
+    changeTag: (name: string, replacement: string | null) => enqueue(async () => {
+      name = name.trim(); replacement = replacement === null ? null : replacement.trim();
+      if (!name || replacement !== null && !replacement) throw new Error('Enter a tag name.');
+      if (replacement !== null) cleanReferenceTags([replacement]);
+      if (!repository.changeTag) throw new Error('Tag editing is unavailable.');
+      const next = snapshot.items.map(item => ({ ...item, tags: cleanReferenceTags(item.tags.flatMap(tag => tag.toLowerCase() === name.toLowerCase() ? replacement ? [replacement] : [] : [tag])) }));
+      publish(await repository.changeTag(name, replacement, next));
+    }),
+  };
+}

@@ -1,0 +1,44 @@
+.root { position: relative; display: flex; flex-direction: column; height: 100dvh; min-height: 0; overflow: hidden; background: var(--surface); color: var(--foreground); font-family: var(--font-body); container-type: inline-size; container-name: shelf; }
+.root > [hidden] { display: none; }
+.brand { width: 135px; height: 19px; max-width: 100%; object-fit: contain; object-position: left; margin-inline-end: auto; }
+.scroller { flex: 1; min-height: 0; }
+.content { padding: var(--space-3); }
+.contentWithSelection { padding-bottom: var(--space-24); }
+.notice { margin-bottom: var(--space-4); }
+.retry { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.retry > span { min-width: 0; overflow-wrap: anywhere; }
+.list { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
+.list > button { grid-column: 1 / -1; justify-self: center; }
+.searchRow { display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--space-2); }
+.searchRow > :first-child { flex: 1 1 160px; min-width: 0; }
+.viewToolbar { display: flex; justify-content: flex-end; min-width: 0; margin-inline-start: auto; }
+.filters > :first-child { flex: 1; }
+.filters > button { flex: none; }
+.tagToolbar { display: flex; align-items: center; gap: var(--space-2); min-width: 0; flex: none; max-width: 160px; }
+.tagToolbar > :first-child { max-width: 100%; }
+.tagPanel { width: min(260px, calc(100dvw - var(--space-6))); padding: var(--space-2); }
+.tagChoices { position: relative; }
+.tagLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.tagForm { display: grid; gap: var(--space-4); min-width: 0; }
+.tagSuggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.tagList { max-height: 40dvh; }
+.tagRow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding-block: var(--space-2); border-bottom: 1px solid var(--border-subtle); }
+.tagRow > form { width: 100%; }
+.tagName { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.count { padding-inline: var(--space-1); border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--text-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.tagActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.tagConfirmation { width: 100%; }
+/* Use the App's CSS width, not the host window or physical screen pixels.
+   The normal Codex sidebar is about 439px wide and must already fit two cards. */
+@container shelf (min-width: 380px) { .list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container shelf (min-width: 720px) { .list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container shelf (max-width: 360px) { .brand { width: 110px; } }
+.card.card, .card.card:active { cursor: default; }
+.footer.footer { cursor: default; justify-content: space-between; padding-inline: var(--space-5); }
+.selectionCount { margin: 0; font-size: var(--text-sm); font-weight: 500; font-variant-numeric: tabular-nums; }
+@container shelf (max-width: 560px) {
+  .contentWithSelection { padding-bottom: calc(var(--space-24) + var(--space-8)); }
+}
+@container shelf (max-width: 360px) { .footer.footer { padding-inline: var(--space-4); } }
+.footer:active { cursor: default; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

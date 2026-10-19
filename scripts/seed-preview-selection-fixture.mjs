@@ -1,0 +1,14 @@
+import { mkdirSync, mkdtempSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
+const root = resolve('output/playwright'); mkdirSync(root, { recursive: true });
+const dataDir = mkdtempSync(join(root, 'mcp-test-preview-selection-'));
+const library = createLocalLibrary({ dataDir });
+const items = library.importItems(Array.from({ length: 36 }, (_, i) => ({ title: `Fixture reference ${i}`, kind: 'web', source: 'example.org', url: `https://example.org/${i}`, excerpt: '', content: `Fixture context ${i}`, tags: ['Fixture'], createdAt: '2026-10-11' }))).items;
+library.close();
+const db = new DatabaseSync(join(dataDir, 'stashdock.sqlite3'));
+db.exec('CREATE TABLE web_preview_jobs(id TEXT PRIMARY KEY,url TEXT,status TEXT,attempts INTEGER,retry_at INTEGER)');
+db.prepare("INSERT INTO app_meta VALUES('web_preview_worker_until',?)").run(String(Date.now()/1000 + 3600));
+db.prepare('INSERT INTO web_preview_jobs VALUES(?,?,?,?,?)').run(items[0].id, items[0].url, 'working', 1, 0);
+db.close(); console.log(dataDir);

@@ -1,0 +1,32 @@
+.root { color: var(--foreground); background: var(--background); }
+.native { height: 100%; background: var(--surface-muted); }
+.browser { min-height: 100dvh; padding: var(--space-6); }
+.shell { position: relative; display: flex; flex-direction: column; overflow: hidden; margin-inline: auto; max-width: 1380px; min-height: calc(100dvh - var(--space-12)); border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface-muted); container-type: inline-size; container-name: stashdock-shell; }
+.windowBar { display: flex; align-items: center; justify-content: space-between; min-height: 52px; flex: none; padding: var(--space-2) var(--space-4); background: var(--surface-muted); }
+.brand { width: 135px; height: 19px; margin-left: var(--space-3); }
+.workspace { display: flex; flex: 1; min-width: 0; min-height: 0; padding: 0 var(--space-2) var(--space-2) 0; }
+.desktopNavigation { display: contents; }
+.desktopNavigation > aside { border: 0; }
+.windowActions { display: flex; align-items: center; }
+.main[hidden] { display: none; }
+.native .shell { height: 100%; width: 100%; max-width: none; min-height: 0; border: 0; border-radius: 0; }
+.browser .shell { height: calc(100dvh - var(--space-12)); min-height: 0; }
+.main { position: relative; z-index: 1; display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; border-radius: var(--radius-panel); box-shadow: var(--shadow-raised); background: var(--surface); container-type: inline-size; container-name: desktop-library; }
+.scroller { flex: 1; }
+.content { padding: var(--space-6) var(--space-6) 112px; overscroll-behavior: contain; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); align-items: stretch; }
+@container desktop-library (max-width: 820px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container desktop-library (max-width: 480px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.feedback { display: grid; gap: var(--space-3); }
+.feedback:has([role="alert"]), .feedback:has([role="status"]) { margin-bottom: var(--space-4); }
+.retry { margin-top: var(--space-3); }
+.dialogActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+@media (max-width: 880px) {
+  .browser { padding: var(--space-4); }
+  .browser .shell { height: calc(100dvh - var(--space-8)); }
+}
+@container stashdock-shell (max-width: 880px) {
+  .desktopNavigation { display: none; }
+  .workspace { padding-inline: var(--space-2); }
+  .content { padding-inline: var(--space-4); }
+}

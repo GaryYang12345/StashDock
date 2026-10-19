@@ -1,0 +1,70 @@
+// Note creation/migration writes a real managed .txt. Thereafter the file is
+// authoritative; SQLite content and search rows are refreshable projections.
+import { mkdirSync, writeFileSync, openSync, readSync, closeSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { resolveManagedFile } from './open-file.mjs';
+
+const index = (db, id) => {
+  db.prepare('DELETE FROM stash_fts WHERE id=?').run(id);
+  db.prepare("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END FROM stash_items WHERE id=?").run(id);
+};
+const MAX_TEXT_BYTES = 5_000_000;
+function projection(path, assets) {
+  let descriptor;
+  try {
+    const file = resolveManagedFile(path, assets);
+    if (file.sizeBytes > MAX_TEXT_BYTES) return;
+    descriptor = openSync(file.path, 'r');
+    // An editor can grow/replace the file after stat. Never read an unbounded
+    // allocation or cache a partial new version in that case.
+    const buffer = Buffer.alloc(Math.min(MAX_TEXT_BYTES, file.sizeBytes) + 1);
+    let length = 0, count;
+    while (length < buffer.length && (count = readSync(descriptor, buffer, length, buffer.length - length, null))) length += count;
+    if (length !== file.sizeBytes) return;
+    return { file, content: new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, length)) };
+  } catch { return; }
+  finally { if (descriptor !== undefined) closeSync(descriptor); }
+}
+export function synchronizeNoteFiles(db, assets, id) {
+  const ownsTransaction = !db.isTransaction;
+  const created = [];
+  // Never select cover blobs here. Unchanged projections don't need a writer
+  // reservation; re-read under the transaction when an actual change is found.
+  const query = db.prepare(`SELECT id,title,asset_path,content,excerpt,origin_json,size_bytes FROM stash_items WHERE kind='note'${id === undefined ? '' : ' AND id=?'}`);
+  const readRows = () => id === undefined ? query.all() : query.all(id);
+  const rows = readRows();
+  if (ownsTransaction && !rows.some(row => {
+    if (!row.asset_path) return true;
+    const next = projection(row.asset_path, assets);
+    return next && (next.content !== row.content || next.file.sizeBytes !== row.size_bytes);
+  })) return;
+  if (ownsTransaction) db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const row of ownsTransaction ? readRows() : rows) {
+      let path = row.asset_path, origin;
+      try { origin = JSON.parse(row.origin_json || '{}'); } catch { origin = {}; }
+      if (!origin || typeof origin !== 'object' || Array.isArray(origin)) origin = {};
+      if (!path) {
+        const title = Array.from(row.title).slice(0, 48).map(c => /[\p{Cc}<>:"/\\|?*]/u.test(c) ? '-' : c).join('').replace(/^[ .]+|[ .]+$/g, '') || 'Untitled';
+        const filename = `Note - ${title}.txt`;
+        mkdirSync(assets, { recursive: true });
+        path = join(assets, `${randomUUID()}-${filename}`);
+        writeFileSync(path, row.content ?? row.excerpt ?? '', { encoding: 'utf8', flag: 'wx' });
+        created.push(path); origin = { ...origin, fileName: filename };
+      }
+      // Do not recreate missing managed files from an old database projection.
+      const next = projection(path, assets);
+      if (!next) continue;
+      const { file, content } = next;
+      if (path === row.asset_path && content === row.content && file.sizeBytes === row.size_bytes) continue;
+      db.prepare("UPDATE stash_items SET asset_path=?,mime_type='text/plain',size_bytes=?,content=?,excerpt=?,origin_json=? WHERE id=?")
+        .run(path, file.sizeBytes, content, Array.from(content.replace(/\s+/g, ' ')).slice(0, 180).join(''), JSON.stringify(origin), row.id);
+      index(db, row.id);
+    }
+    if (ownsTransaction) db.exec('COMMIT');
+  } catch (error) {
+    if (ownsTransaction) { db.exec('ROLLBACK'); for (const path of created) unlinkSync(path); }
+    throw error;
+  }
+}

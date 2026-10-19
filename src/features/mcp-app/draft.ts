@@ -1,0 +1,49 @@
+import type { App } from '@modelcontextprotocol/ext-apps';
+import { OPENAI_MESSAGE_KEY } from '@openai/mcp-extensions/app';
+
+export type ReferenceAttachment = {
+  title: string;
+  ids: string[];
+  content: { type: 'resource'; resource: { uri: string; mimeType: 'text/markdown'; text: string; _meta?: Record<string, unknown> } }[];
+};
+type DraftHost = Pick<App, 'getHostCapabilities' | 'sendMessage'>;
+
+export function supportsDraft(host: DraftHost): boolean {
+  const options = host.getHostCapabilities()?.experimental?.[OPENAI_MESSAGE_KEY];
+  return typeof options === 'object' && options !== null &&
+    'draft' in options && typeof options.draft === 'object' && options.draft !== null;
+}
+
+export function parseAttachment(raw: unknown): ReferenceAttachment {
+  if (!raw || typeof raw !== 'object') throw new Error('The reference attachment could not be prepared. Refresh and retry.');
+  const value = raw as ReferenceAttachment;
+  if (typeof value.title !== 'string' || !Array.isArray(value.ids) || !value.ids.length ||
+    !value.ids.every(id => typeof id === 'string') || !Array.isArray(value.content) || value.content.length !== 1 ||
+    value.content.some(block => block.type !== 'resource' || !block.resource || typeof block.resource.text !== 'string' ||
+      block.resource.mimeType !== 'text/markdown' || !/^stashdock:\/\/snapshot\/[a-f\d]{64}\//.test(block.resource.uri))) {
+    throw new Error('The reference attachment is invalid. Refresh and retry.');
+  }
+  return value;
+}
+
+export async function addAttachmentToDraft(host: DraftHost, attachment: ReferenceAttachment): Promise<void> {
+  if (!supportsDraft(host)) throw new Error('This view does not support draft attachments. Open StashDock beside an active conversation.');
+  const checked = parseAttachment(attachment);
+  const title = checked.ids.length > 1 ? 'Multiple contexts' : checked.title.trim() || 'Untitled reference';
+  const characters = Array.from(title);
+  const displayTitle = characters.length > 48 ? characters.slice(0, 47).join('') + '…' : title;
+  // The public 0.1 SDK wrapper accepts send:true only. The host's explicitly
+  // advertised experimental draft extension adds send:false. Keep this extension
+  // isolated and capability-gated; never fall back to the default send operation.
+  // Titled text is a removable attachment, not ordinary composer text.
+  // The installed Codex host reads openai/title for the entry inside its popover,
+  // but groups all content blocks under a localized Context-count outer chip.
+  // This metadata cannot override that host-owned label.
+  const params: Parameters<App['sendMessage']>[0] & { _meta: Record<string, unknown> } = { role: 'user', content: [{
+    type: 'text', text: checked.content[0].resource.text, _meta: { 'openai/title': displayTitle },
+  }],
+    _meta: { [OPENAI_MESSAGE_KEY]: { target: 'active', send: false } },
+  };
+  const result = await host.sendMessage(params, { timeout: 15_000 });
+  if (result.isError) throw new Error('The host did not accept this attachment. Check the input box and retry if it is missing.');
+}

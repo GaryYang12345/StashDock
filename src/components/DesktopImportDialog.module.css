@@ -1,0 +1,37 @@
+.fields { display: grid; gap: var(--space-4); min-width: 0; }
+.importTabs { display: flex; flex-direction: column; min-width: 0; }
+.importPanel { min-width: 0; }
+.importForm { display: flex; flex-direction: column; gap: var(--space-3); }
+.fileFlow { display: flex; flex-direction: column; }
+.typeTab { width: var(--space-24); }
+.typeBar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.linkRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); min-width: 0; }
+.linkRow:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }
+.fileHeading { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.fileHeading > svg, .fileHeading > button { flex: none; }
+.fileHeading > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: var(--text-sm); }
+@media (max-width: 560px) { .linkRow { grid-template-columns: minmax(0, 1fr); } }
+.tabLabel { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
+.tabLabel > svg { flex: none; }
+.entry { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); min-width: 0; }
+.entry h3 { margin: 0; color: var(--foreground); font-size: var(--text-base); font-weight: 500; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+.status { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); overflow-wrap: anywhere; }
+.suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); max-height: 144px; overflow-y: auto; }
+.tagText { min-width: 0; max-width: 20ch; overflow: hidden; text-overflow: ellipsis; }
+.browserIcon { display: block; flex: none; width: var(--space-5); height: auto; aspect-ratio: 1; object-fit: contain; }
+.previewHeading { display: flex; gap: var(--space-3); align-items: center; min-width: 0; }
+.previewHeading h3 { color: var(--foreground); font-size: var(--text-base); font-weight: 500; margin: 0; overflow-wrap: anywhere; }
+.previewHeading > button { flex: none; }
+.counts { font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: var(--text-sm); }
+.selection { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-2); border-bottom: 1px solid var(--border-subtle); }
+.bookmarks { max-height: 192px; min-height: 88px; overflow-y: auto; overscroll-behavior: contain; }
+.list { list-style: none; padding: 0; margin: 0; }
+.bookmark { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding-block: var(--space-2); border-bottom: 1px solid var(--border-subtle); }
+.bookmark > div:last-child { flex: 1; min-width: 0; }
+.bookmarkTitle { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 500; }
+.bookmarkSource { display: flex; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-xs); min-width: 0; }
+.bookmarkSource > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved { flex: none; display: inline-flex; align-items: center; gap: var(--space-1); }
+.error { margin-top: var(--space-4); }
+@media (max-width: 390px) { .entry { align-items: flex-start; flex-wrap: wrap; } }

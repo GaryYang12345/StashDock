@@ -1,0 +1,4 @@
+.button { flex-shrink: 0; }
+/* The short label does not change Arc's standard height, text or padding. */
+/* Scoped semantic token substitution keeps Arc's primary interaction intact. */
+.success { --foreground: var(--success); }

@@ -1,0 +1,5 @@
+@font-face { font-family: Inter; font-style: normal; font-weight: 100 900; font-display: swap; src: url('ui/inter-latin.woff2') format('woff2'); }
+:root { --font-inter: Inter, sans-serif; --font-geist: Inter, sans-serif; }
+html, body, #root { width: 100%; height: 100%; overflow: hidden; background: var(--surface); }
+body { margin: 0; font-family: var(--font-inter); font-size: var(--text-sm); }
+*, *::before, *::after { box-sizing: border-box; }

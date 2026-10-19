@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "stashdock": {
+      "command": "./bin/win32-x64/node.exe",
+      "args": ["${PLUGIN_ROOT}/scripts/mcp-server.mjs"],
+      "cwd": "${PLUGIN_ROOT}",
+      "enabled": true,
+      "startup_timeout_sec": 10,
+      "tool_timeout_sec": 120
+    }
+  }
+}

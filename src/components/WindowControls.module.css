@@ -1,0 +1,5 @@
+.controls { display: flex; align-items: center; flex-shrink: 0; gap: var(--space-1); }
+/* Arc owns shape, focus, press and disabled states. The grey shell needs a
+   distinct muted fill; layout owns only the icon-only target dimensions. */
+.control { --surface-muted: var(--border); width: var(--control-height-sm); height: var(--control-height-sm); padding: 0; }
+.control > svg { pointer-events: none; }

@@ -1,0 +1,47 @@
+.glyph { display: block; flex: none; }
+
+.cover {
+  --visual-accent: var(--reference-teal);
+  position: relative;
+  display: grid;
+  height: 100%;
+  place-items: center;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--visual-accent) 8%, var(--surface-muted));
+}
+.cover[data-visual="repo"] { --visual-accent: var(--reference-ink); }
+.cover[data-visual="note"] { --visual-accent: var(--reference-violet); }
+.cover[data-visual="pdf"] { --visual-accent: var(--reference-red); }
+.cover[data-visual="document"] { --visual-accent: var(--reference-blue); }
+.cover[data-visual="text"] { --visual-accent: var(--reference-slate); }
+.cover[data-visual="markdown"] { --visual-accent: var(--reference-brown); }
+.cover[data-visual="data"] { --visual-accent: var(--reference-amber); }
+.cover[data-visual="presentation"] { --visual-accent: var(--reference-presentation); }
+.cover[data-visual="spreadsheet"] { --visual-accent: var(--reference-green); }
+.cover[data-visual="archive"] { --visual-accent: var(--reference-amber); }
+.cover[data-visual="video"] { --visual-accent: var(--reference-indigo); }
+.cover[data-visual="audio"] { --visual-accent: var(--reference-rose); }
+.cover[data-visual="code"] { --visual-accent: var(--reference-cyan); }
+.cover[data-visual="image"] { --visual-accent: var(--reference-blue); }
+.cover[data-visual="file"] { --visual-accent: var(--text-secondary); }
+
+.heroIcon {
+  position: relative;
+  z-index: 1;
+  width: clamp(64px, 34%, 96px);
+  height: auto;
+  transform: translateY(-8%);
+}
+.caption {
+  position: absolute;
+  inset: auto auto var(--space-3) var(--space-4);
+  color: color-mix(in oklab, var(--visual-accent) 76%, var(--foreground));
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+}
+
+@container desktop-card (max-width: 210px) {
+  .heroIcon { width: 64px; }
+  .caption { inset-inline-start: var(--space-3); inset-block-end: var(--space-2); }
+}

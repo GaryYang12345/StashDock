@@ -1,0 +1,16 @@
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.woff2 binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.pdf binary
+# Retain upstream notices and generated/vendor output unchanged.
+extension/ui/** -whitespace
+plugins/stashdock/dist/** -whitespace
+plugins/stashdock/web/shelf.html -whitespace
+plugins/stashdock/notices/** -whitespace
+public/licenses/** -whitespace
+src/components/arc/** -whitespace

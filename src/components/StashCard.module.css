@@ -1,0 +1,87 @@
+.card { min-width: 0; height: 100%; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); color: var(--foreground); cursor: grab; user-select: none; transition: transform var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.card:active, .row:active { cursor: grabbing; }
+.card[data-selected] { background: var(--surface-muted); }
+.artwork { position: relative; overflow: hidden; border-radius: calc(var(--radius-panel) - var(--space-2)); isolation: isolate; --image-control-rest: color-mix(in oklab, var(--surface-muted) 92%, transparent); --image-control-hover: var(--surface-raised); --image-control-border: var(--border); }
+.preview { width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: var(--surface-muted); }
+.preview img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; pointer-events: none; transition: transform var(--duration-considered) var(--ease-standard); }
+.previewLoading { display: flex; height: 100%; align-items: center; padding: var(--space-2) var(--space-6); }
+.previewLoading .previewCompact { display: none; }
+@container desktop-card (max-width: 260px) {
+  .previewLoading .previewDocument { display: none; }
+  .previewLoading .previewCompact { display: flex; }
+}
+.details { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-2) var(--space-2); }
+.details h3 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: calc(2 * var(--text-base) * var(--leading-body)); margin: 0; font-size: var(--text-base); font-weight: 500; line-height: var(--leading-body); letter-spacing: var(--tracking-body); overflow-wrap: anywhere; }
+.footer { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.site { display: flex; flex: 0 1 auto; align-items: center; min-width: 0; gap: var(--space-1); }
+.site > span { flex: 0 1 auto; min-width: 0; }
+.site > button { flex-shrink: 0; padding-inline: 0; }
+.actionLabelCompact { display: none; }
+.selection, .controls { display: flex; align-items: center; gap: var(--space-2); }
+.iconButton { width: var(--control-height-sm); height: var(--control-height-sm); padding-inline: 0; border-radius: var(--radius-pill); }
+/* User-approved saved-state color, scoped to the star rather than the button. */
+.favorite svg { color: var(--favorite-star); }
+.artwork .selection, .artwork .controls { position: absolute; top: var(--space-2); z-index: 1; }
+.artwork .selection { left: var(--space-2); }
+.artwork .controls { right: var(--space-2); }
+.row { position: relative; min-width: 0; height: 84px; box-sizing: border-box; display: grid; grid-template-columns: var(--control-height-sm) minmax(0, 1fr) auto auto; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: var(--space-1) var(--space-2); padding: var(--space-3); border-bottom: 1px solid var(--border-subtle); background: var(--surface); color: var(--foreground); cursor: grab; transition: background-color var(--duration-fast) var(--ease-standard); }
+.row:last-child { border-bottom: 0; }
+.row { user-select: none; }
+.card[data-dragging], .row[data-dragging] { background: var(--surface-muted); }
+.card[data-dragging] { transform: scale(.985); box-shadow: var(--shadow-resting); }
+.row:hover, .row[data-selected] { background: var(--surface-muted); }
+.row .artwork, .row .details, .row .footer { display: contents; }
+.row .preview { display: none; }
+.row .selection { position: static; grid-column: 1; grid-row: 1 / 3; }
+.row .controls { position: static; grid-column: 3; grid-row: 1 / 3; }
+.row h3 { grid-column: 2; grid-row: 1; min-height: 0; -webkit-line-clamp: 1; white-space: nowrap; text-overflow: ellipsis; display: block; font-size: var(--text-sm); }
+.row .site { grid-column: 2; grid-row: 2; }
+.row .footer > button { grid-column: 4; grid-row: 1 / 3; }
+/* Desktop-only presentation. MCP imports the base classes unchanged. */
+.desktop.card, .desktop.row { container-type: inline-size; container-name: desktop-card; }
+.desktop.card .copyAction { flex: none; }
+@container desktop-card (max-width: 260px) {
+  .desktop .actionLabelFull { display: none; }
+  .desktop .actionLabelCompact { display: inline; }
+}
+/* The smallest two-column cards use a labelled icon action, not compressed
+   text or asymmetric padding. Arc's standard dimensions stay unchanged. */
+@container desktop-card (max-width: 170px) {
+  .desktop .actionLabelCompact { display: none; }
+  .desktop .copyAction { width: var(--control-height-sm); padding-inline: 0; }
+}
+.desktop .artwork .iconButton { --surface: var(--image-control-rest); --surface-muted: var(--image-control-hover); --border: var(--image-control-border); }
+.desktop .artwork .selection[data-visible] .iconButton { --surface: var(--image-control-hover); }
+.titleRow { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+.titleRow h3 { flex: 1; min-width: 0; }
+.moreAction { flex: none; }
+.desktop.row { grid-template-columns: var(--control-height-sm) minmax(0, 1fr) auto auto var(--control-height-sm); }
+.row .titleRow { display: contents; }
+.row .moreAction { grid-column: 5; grid-row: 1 / 3; }
+/* Opacity, not visibility, keeps hidden actions in the keyboard tab order. */
+@media (hover: hover) and (pointer: fine) {
+  .selection, .controls, .copyAction { opacity: 0; pointer-events: none; transition: opacity var(--duration-fast) var(--ease-standard); }
+  .card:hover .selection, .card:hover .controls,
+  .row:hover .selection, .row:hover .controls,
+  .selection:has(:focus-visible), .controls:has(:focus-visible),
+  .selection[data-visible], .card:hover .copyAction, .row:hover .copyAction,
+  .copyAction:focus-visible { opacity: 1; pointer-events: auto; }
+  :global(:root[data-desktop-focus="pointer"]) .desktop:not(:hover) .selection:not([data-visible]):has(:focus-visible),
+  :global(:root[data-desktop-focus="pointer"]) .desktop:not(:hover) .controls:has(:focus-visible),
+  :global(:root[data-desktop-focus="pointer"]) .desktop:not(:hover) .copyAction:focus-visible { opacity: 0; pointer-events: none; }
+  .card:hover .preview img, .card[data-menu-open] .preview img { transform: scale(1.015); }
+  .card:hover:not([data-dragging]), .card[data-menu-open]:not([data-dragging]) { transform: translateY(-2px); box-shadow: var(--shadow-raised); }
+}
+@container desktop-card (max-width: 560px) {
+  .row .actionLabelFull, .row .actionLabelCompact { display: none; }
+  .row .copyAction { width: var(--control-height-sm); padding-inline: 0; }
+}
+@media (hover: none), (pointer: coarse) {
+  .card button, .row button { min-width: var(--control-height-md); min-height: var(--control-height-md); }
+  .iconButton { width: var(--control-height-md); height: var(--control-height-md); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card, .row, .preview img, .selection, .controls, .copyAction { transition: none; }
+  .card:hover .preview img, .card[data-menu-open] .preview img { transform: none; }
+  .card:hover:not([data-dragging]), .card[data-menu-open]:not([data-dragging]), .card[data-dragging] { transform: none; }
+}

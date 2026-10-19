@@ -1,0 +1,8 @@
+{
+  "version": "24.22.0",
+  "platform": "win32",
+  "arch": "x64",
+  "url": "https://nodejs.org/dist/v24.22.0/win-x64/node.exe",
+  "sha256": "ba93f9a70bd86fce3ebbb39ec758501458453467aa92a34a0a3602d1e3fc2b9c",
+  "licenseUrl": "https://raw.githubusercontent.com/nodejs/node/v24.22.0/LICENSE"
+}

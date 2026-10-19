@@ -1,0 +1,6 @@
+.group { display: inline-flex; align-items: center; flex: none; padding-block: var(--space-1); }
+.stack { display: inline-flex; align-items: center; }
+.stack img { display: block; width: 24px; height: 24px; border: 2px solid var(--platform-avatar-ring); border-radius: var(--radius-pill); object-fit: cover; }
+.stack img + img { margin-left: -8px; }
+.more { display: grid; place-items: center; margin-left: var(--space-2); color: var(--text-muted); }
+.accessibleName { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

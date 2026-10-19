@@ -1,0 +1,39 @@
+.close {
+  --focus-outline: var(--border-strong);
+  --focus-outline-width: 1px;
+  --focus-outline-offset: -7px;
+  position: absolute;
+  /* The pocket's upper-right surface, inside the 160px native hit region. */
+  right: 21px;
+  top: 75px;
+  display: grid;
+  width: var(--space-8);
+  height: var(--space-8);
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  z-index: 1;
+}
+.circle {
+  display: grid;
+  /* Optical size: 18px face inside an unchanged 32px pointer target. */
+  width: calc(var(--space-5) - 2px);
+  height: calc(var(--space-5) - 2px);
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  /* Part of the approved folder material, not a general Arc button treatment. */
+  background-color: var(--surface);
+  background-image: linear-gradient(165deg, color-mix(in oklab, var(--surface-raised) 80%, transparent), color-mix(in oklab, var(--surface-muted) 65%, transparent));
+  box-shadow: inset 0 .5px 0 var(--surface-raised), inset 0 -1px 2px color-mix(in oklab, var(--border-strong) 30%, transparent);
+  backdrop-filter: blur(6px);
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+  pointer-events: none;
+}
+.close:hover .circle { background-color: var(--surface-muted); color: var(--foreground); }
+.close:focus-visible .circle { background-color: var(--surface-muted); color: var(--foreground); }
+@media (prefers-reduced-motion: reduce) { .circle { transition: none; } }

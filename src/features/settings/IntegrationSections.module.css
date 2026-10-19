@@ -1,0 +1,31 @@
+.heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--control-height-sm); }
+.headingTitle { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.row { display: flex; align-items: center; gap: var(--space-3); min-width: 0; min-height: 80px; padding: var(--space-4) var(--space-5); }
+.row + .row { border-top: 1px solid var(--border-subtle); }
+.icon { width: 24px; height: 24px; flex: none; object-fit: contain; }
+.icon[data-integration-icon="codex"] { width: 24px; height: 24px; padding: 2px; }
+:root[data-theme="dark"] .icon[data-integration-icon="codex"] { filter: invert(1); }
+.identity { flex: 1; min-width: 0; white-space: nowrap; }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); flex: none; margin-inline-start: auto; }
+.status { color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
+.status[data-detected] { color: var(--text-secondary); }
+.guide { display: grid; gap: var(--space-4); font-size: var(--text-sm); line-height: var(--leading-body); }
+.guide p { margin: 0; }
+.steps { display: grid; gap: var(--space-3); margin: 0; padding-inline-start: var(--space-5); list-style-type: decimal; }
+.steps li { padding-inline-start: var(--space-1); }
+.footer { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); }
+.footer .icon { width: 20px; height: 20px; }
+.githubIcon { width: 16px; height: 16px; flex: none; }
+:root[data-theme="dark"] .githubIcon { filter: invert(1); }
+.footer .icon[data-integration-icon="codex"] { filter: invert(1); }
+:root[data-theme="dark"] .footer .icon[data-integration-icon="codex"] { filter: none; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@container settings (max-width: 560px) {
+  .row { padding: var(--space-4); flex-wrap: wrap; }
+  .identity { flex: 1 0 auto; }
+  .actions { gap: var(--space-2); }
+}
+@container settings (max-width: 360px) {
+  .row { display: grid; grid-template-columns: 24px minmax(0, 1fr); }
+  .actions { grid-column: 2; justify-self: end; min-height: var(--control-height-sm); }
+}

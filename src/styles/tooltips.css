@@ -1,0 +1,4 @@
+/* Explicit product reference: ChatGPT-style hints, not full-size control pills. */
+:root { --tooltip-surface: #0d0d0d; --tooltip-text: #ffffff; --tooltip-radius: var(--space-2); }
+.stash-tooltip { position: fixed; inset: auto; margin: 0; z-index: 1000; box-sizing: border-box; width: max-content; max-height: calc(100dvh - var(--space-4)); overflow: hidden; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--tooltip-radius); background: var(--tooltip-surface); color: var(--tooltip-text); font-family: var(--font-body); font-size: var(--text-xs); font-weight: 400; line-height: var(--leading-body); overflow-wrap: anywhere; white-space: pre-line; text-align: center; user-select: none; }
+.stash-tooltip[hidden] { display: none; }

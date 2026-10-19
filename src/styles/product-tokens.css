@@ -1,0 +1,57 @@
+/* Product roles shared by desktop, browser shelf and the MCP App. */
+:root {
+  --favorite-star: #E8B931;
+  --platform-avatar-ring: #ffffff;
+  --tooltip-surface: #0d0d0d;
+  --tooltip-text: #ffffff;
+  --search-border: var(--border);
+  --search-border-active: var(--border-strong);
+  --reference-blue: oklch(57% .16 250);
+  --reference-ink: oklch(34% .025 255);
+  --reference-amber: oklch(66% .15 82);
+  --reference-red: oklch(57% .2 27);
+  --reference-green: oklch(55% .14 150);
+  --reference-orange: oklch(62% .14 72);
+  --reference-coral: oklch(58% .18 17);
+  --reference-rose: oklch(56% .16 330);
+  --reference-cyan: oklch(54% .13 220);
+  --reference-emerald: oklch(56% .15 155);
+  --reference-violet: oklch(55% .17 295);
+  --reference-slate: oklch(53% .025 255);
+  --reference-brown: oklch(51% .08 60);
+  --reference-teal: oklch(55% .12 185);
+  --reference-indigo: oklch(50% .17 278);
+  --reference-image: oklch(64% .15 52);
+  --reference-presentation: oklch(53% .15 42);
+  /* Fixed appearance specimens, matching Arc's light/dark application roles.
+     They intentionally do not follow the surrounding Settings theme. */
+  --theme-preview-light-shell: oklch(97.8% 0 0);
+  --theme-preview-light-surface: oklch(100% 0 0);
+  --theme-preview-light-muted: oklch(91.5% 0 0);
+  --theme-preview-light-ink: oklch(46% 0 0);
+  --theme-preview-light-line: oklch(91.5% 0 0);
+  --theme-preview-dark-shell: oklch(19% 0 0);
+  --theme-preview-dark-surface: oklch(24% 0 0);
+  --theme-preview-dark-muted: oklch(33% 0 0);
+  --theme-preview-dark-ink: oklch(77% 0 0);
+  --theme-preview-dark-line: oklch(33% 0 0);
+}
+:root[data-theme="dark"] { --reference-ink: oklch(76% .02 255); }
+
+/* StashDock's explicit Arc variant. Icon-only controls have a circular hit
+   target and fill; labelled buttons retain Arc's normal rounded shape. */
+button[data-icon-only] {
+  --icon-control-size: var(--control-height-md);
+  width: var(--icon-control-size);
+  height: var(--icon-control-size);
+  min-width: var(--icon-control-size);
+  min-height: var(--icon-control-size);
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 50%;
+}
+button[data-icon-only][data-control-size="sm"] { --icon-control-size: var(--control-height-sm); }
+button[data-icon-only][data-control-size="lg"] { --icon-control-size: var(--control-height-lg); }
+@media (pointer: coarse) {
+  button[data-icon-only][data-control-size="sm"] { --icon-control-size: var(--control-height-md); }
+}
