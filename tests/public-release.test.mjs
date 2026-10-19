@@ -16,3 +16,7 @@ test('Mac handoff follows GitHub source and current system renderer, not retired
   assert.match(script,/formatVersion=2/);assert.match(script,/rev-parse HEAD/);
   assert.doesNotMatch(script,/C:\\Users\\|\$taskAllowed|Windows source baseline/);
 });
+test('Git preserves verbatim upstream notice bytes for fresh-checkout asset parity', () => {
+  const attributes = readFileSync('.gitattributes','utf8');
+  for (const path of ['extension/ui/notices/**','plugins/stashdock/notices/**','public/licenses/**']) assert.ok(attributes.split(/\r?\n/).includes(`${path} -text`),path);
+});

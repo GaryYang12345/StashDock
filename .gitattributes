@@ -9,8 +9,11 @@
 *.pdf binary
 # Retain upstream notices and generated/vendor output unchanged.
 extension/ui/** -whitespace
+extension/ui/notices/** -text
 plugins/stashdock/dist/** -whitespace
 plugins/stashdock/web/shelf.html -whitespace
 plugins/stashdock/notices/** -whitespace
+plugins/stashdock/notices/** -text
 public/licenses/** -whitespace
+public/licenses/** -text
 src/components/arc/** -whitespace
