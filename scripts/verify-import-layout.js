@@ -47,6 +47,14 @@ async page => {
   await page.getByRole('dialog').waitFor();
   await page.getByRole('textbox', { name: 'Link', exact: true }).fill('https://example.org');
   await page.keyboard.press('Escape'); await page.getByRole('dialog').waitFor({ state: 'detached' });
+  // Development renders under React StrictMode, whose remount resets motion
+  // values: the dialog must still fit its content instead of stretching.
+  await page.goto(`${base}/tests/fixtures/desktop-import.html?strict`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Open import fixture', exact: true }).click();
+  const strictDialog = page.getByRole('dialog'); await strictDialog.waitFor(); await page.waitForTimeout(800);
+  const fit = await strictDialog.evaluate(el => ({ height: el.getBoundingClientRect().height, natural: el.children[0].getBoundingClientRect().height + el.children[1].getBoundingClientRect().height + 2 }));
+  if (Math.abs(fit.height - fit.natural) > 1) throw Error('StrictMode dialog does not fit its content: ' + JSON.stringify(fit));
+  await page.keyboard.press('Escape'); await strictDialog.waitFor({ state: 'detached' });
   if (errors.length) throw Error(errors.join('\n'));
   return { reports, slowDiscoveryDoesNotBlockInput: true, pageErrors: 0, realLibraryWrites: 0 };
 }

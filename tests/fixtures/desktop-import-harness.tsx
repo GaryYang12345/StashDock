@@ -60,4 +60,5 @@ if (new URLSearchParams(location.search).has('native')) {
   fixtureRoot.dataset.surface = 'library'; fixtureRoot.dataset.active = 'true';
   Object.assign(fixtureRoot.style, { left: '240px', top: '260px', width: '1000px', height: '620px', transform: 'scale(.9)', transformOrigin: '0 0', background: 'var(--surface)' });
 }
-createRoot(fixtureRoot).render(<Fixture />);
+import { StrictMode } from 'react';
+createRoot(fixtureRoot).render(new URLSearchParams(location.search).has('strict') ? <StrictMode><Fixture /></StrictMode> : <Fixture />);

@@ -19,7 +19,8 @@ function DialogLayer({ title, description, busy, progress, size, children, origi
   const body = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLElement>(null);
   const height = useMotionValue<number | 'auto'>('auto');
-  const measuredHeight = useRef<number | undefined>(undefined);
+  // The height the dialog is settling to; an animation in flight is not restarted for it.
+  const targetHeight = useRef<number | undefined>(undefined);
   const [scrollable, setScrollable] = useState(false);
   const pending = Boolean(progress);
   useLayoutEffect(() => {
@@ -34,14 +35,17 @@ function DialogLayer({ title, description, busy, progress, size, children, origi
       // Used CSS heights preserve fractional layout pixels without counting a
       // host zoom/transform twice, unlike viewport-space bounding rectangles.
       const next = parseFloat(getComputedStyle(header.current!).height) + parseFloat(getComputedStyle(body.current!).height) + 2;
-      if (measuredHeight.current === undefined || reduced || pending) {
+      // Compare with the height actually applied, not a separate copy: a
+      // remount (React StrictMode in development) resets the motion value to
+      // 'auto' while refs survive, which left the dialog stretched.
+      const current = height.get();
+      if (typeof current !== 'number' || reduced || pending) {
         height.jump(next);
-        measuredHeight.current = next;
-      } else if (Math.abs(next - measuredHeight.current) > .1) {
+      } else if (Math.abs(next - current) > .1 && Math.abs(next - (targetHeight.current ?? current)) > .1) {
         resizing?.stop();
         resizing = animate(height, next, motionTokens.spring.smooth);
-        measuredHeight.current = next;
       }
+      targetHeight.current = next;
       const css = surface.current && getComputedStyle(surface.current);
       const parent = surface.current?.closest<HTMLElement>('.desktop-panel');
       const limit = (native ? parent?.clientHeight ?? window.innerHeight : window.innerHeight) - parseFloat(css?.getPropertyValue('--space-8') || '32');

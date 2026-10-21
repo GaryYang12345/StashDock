@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 test('dialog entrance separates fades from content height and never scales text', () => {
   const code = readFileSync('src/components/FluidDialog.tsx', 'utf8');
   assert.match(code, /animate\(height, next, motionTokens.spring.smooth\)/);
-  assert.match(code, /measuredHeight.current === undefined \|\| reduced/);
+  assert.match(code, /typeof current !== 'number' \|\| reduced/);
   assert.match(code, /height.jump\(next\)/);
   assert.doesNotMatch(code, /setHeight|offsetHeight|animate=\{[^\n]*height/);
   assert.match(code, /const fade: Transition = \{ duration: reduced \? 0 : motionTokens.duration.standard/);

@@ -142,7 +142,7 @@ test('batch progress replaces the form in the existing modal instead of stacking
   assert.match(dialog, /pending \? progress : children/);
   assert.match(dialog, /pending \? <DialogPrimitive.Title className=\{styles.visuallyHidden\}/);
   assert.match(dialog, /if \(pending\) surface.current\?\.focus/);
-  assert.match(dialog, /measuredHeight.current === undefined \|\| reduced \|\| pending/);
+  assert.match(dialog, /typeof current !== 'number' \|\| reduced \|\| pending/);
   assert.match(dialog, /style=\{size === 'import' \? \{ height \} : undefined\}/);
   assert.match(dialog, /onOpenChange=\{next => \{ if \(!next && !props.busy\)/);
   assert.match(css, /\.content\[data-progress\].*360px.*border-radius: var\(--radius-panel\)/);
