@@ -164,19 +164,35 @@ fn proxy_connection(
     let target = first.next().ok_or("Missing target.")?;
     let (host, port, url) = proxy_target(method, target)?;
     let mut upstream = if let Some(proxy) = system_upstream.for_host(&host) {
-        crate::public_web::check_proxied(&host, port)?;
+        // Try the checked address directly first unless this host last needed
+        // the proxy; many proxies reach blocked sites well but domestic ones slowly.
+        let direct = crate::public_web::direct_candidate(&host, port)?;
         if stop.load(Ordering::Relaxed) || Instant::now() >= deadline {
             return Err("Capture ended.".into());
         }
-        let timeout = deadline
-            .saturating_duration_since(Instant::now())
-            .min(Duration::from_secs(8));
-        let target = if host.contains(':') {
-            format!("[{host}]:{port}")
-        } else {
-            format!("{host}:{port}")
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let head_start = match crate::public_web::preferred_route(&host) {
+            Some(true) => None,
+            Some(false) => Some(Duration::from_secs(2)),
+            None => Some(Duration::from_millis(1200)),
         };
-        connect_upstream(proxy, &target, timeout).map_err(|_| "Website unavailable.")?
+        let direct = direct.zip(head_start).and_then(|(address, wait)| {
+            TcpStream::connect_timeout(&address, wait.min(remaining)).ok()
+        });
+        match direct {
+            Some(stream) => stream,
+            None => {
+                let timeout = deadline
+                    .saturating_duration_since(Instant::now())
+                    .min(Duration::from_secs(8));
+                let target = if host.contains(':') {
+                    format!("[{host}]:{port}")
+                } else {
+                    format!("{host}:{port}")
+                };
+                connect_upstream(proxy, &target, timeout).map_err(|_| "Website unavailable.")?
+            }
+        }
     } else {
         // Connect to these exact addresses, never resolve again in connect().
         let addresses = crate::public_web::resolve_public(&host, port)?;
@@ -941,7 +957,7 @@ mod tests {
         assert!(crate::public_web::resolve_public("127.0.0.1", 443).is_err());
         for host in ["127.0.0.1", "localhost", "intranet", "10.0.0.8", "[::1]"] {
             assert!(
-                crate::public_web::check_proxied(host, 443).is_err(),
+                crate::public_web::direct_candidate(host, 443).is_err(),
                 "{host}"
             );
         }
