@@ -673,9 +673,13 @@ fn remove_backups(connection: &Connection, paths: &[String]) {
     else {
         return;
     };
-    let Ok(root) = assets.canonicalize() else { return };
+    let Ok(root) = assets.canonicalize() else {
+        return;
+    };
     for raw in paths {
-        let Ok(path) = file_payload::managed_asset_path(&assets, raw) else { continue };
+        let Ok(path) = file_payload::managed_asset_path(&assets, raw) else {
+            continue;
+        };
         if fs::remove_file(&path).is_ok() {
             // Desktop imports keep each backup in its own folder; drop it when empty.
             if let Some(parent) = path.parent().filter(|parent| *parent != root.as_path()) {
@@ -1319,9 +1323,8 @@ pub fn import_files(
 mod tests {
     use super::{
         backfill_text_content, canonicalize_web_url, copy_file_to_library, delete_item_by_id,
-        file_kind, format_size, import_extension_items, search, initialize_schema,
-        json_response, prepare_file_imports, read_items, update_favorite, upsert_item,
-        StashItem,
+        file_kind, format_size, import_extension_items, initialize_schema, json_response,
+        prepare_file_imports, read_items, search, update_favorite, upsert_item, StashItem,
     };
     use rusqlite::{params, Connection};
     use std::{fs, path::Path};
@@ -2217,7 +2220,11 @@ mod tests {
         let mut connection = Connection::open(root.join("stashdock.sqlite3")).unwrap();
         initialize_schema(&connection).unwrap();
         for (id, asset, original_path) in [
-            ("a", backup.to_string_lossy().into_owned(), Some(original.to_string_lossy().into_owned())),
+            (
+                "a",
+                backup.to_string_lossy().into_owned(),
+                Some(original.to_string_lossy().into_owned()),
+            ),
             ("b", shared.to_string_lossy().into_owned(), None),
             ("c", shared.to_string_lossy().into_owned(), None),
             ("d", outside.to_string_lossy().into_owned(), None),
@@ -2227,11 +2234,24 @@ mod tests {
                 params![id, asset, original_path],
             ).unwrap();
         }
-        assert_eq!(super::delete_items_by_id(&mut connection, &["a".into(), "b".into(), "d".into()]).unwrap(), 3);
-        assert!(!backup.exists() && !assets.join("one").exists(), "backup and its folder are removed");
+        assert_eq!(
+            super::delete_items_by_id(&mut connection, &["a".into(), "b".into(), "d".into()])
+                .unwrap(),
+            3
+        );
+        assert!(
+            !backup.exists() && !assets.join("one").exists(),
+            "backup and its folder are removed"
+        );
         assert!(original.exists(), "the user's original is never touched");
-        assert!(shared.exists(), "a backup still used by another reference stays");
-        assert!(outside.exists(), "paths outside the library are never deleted");
+        assert!(
+            shared.exists(),
+            "a backup still used by another reference stays"
+        );
+        assert!(
+            outside.exists(),
+            "paths outside the library are never deleted"
+        );
         drop(connection);
         let _ = fs::remove_dir_all(root);
     }
@@ -2243,7 +2263,10 @@ mod tests {
             vec!["rust", "c++", "搜索"]
         );
         assert!(search::search_terms(" \t ").is_empty());
-        let many = (0..15).map(|i| format!("t{i}")).collect::<Vec<_>>().join(" ");
+        let many = (0..15)
+            .map(|i| format!("t{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         assert_eq!(search::search_terms(&many).len(), 12);
     }
 

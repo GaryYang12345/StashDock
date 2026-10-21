@@ -18,6 +18,34 @@ pub(crate) struct Resolved {
     pub open: PathBuf,
 }
 
+/// Windows `canonicalize` returns verbatim paths (`\\?\D:\...`). Some apps and
+/// shell drop targets mishandle them, so paths handed outside StashDock or
+/// stored as the original's location use the ordinary form when it is equivalent.
+pub(crate) fn plain(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+    let ordinary = if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        Some(format!(r"\\{rest}"))
+    } else {
+        text.strip_prefix(r"\\?\")
+            .filter(|rest| rest.as_bytes().get(1) == Some(&b':'))
+            .map(str::to_string)
+    };
+    // Longer paths only work in verbatim form.
+    match ordinary.filter(|value| value.len() < 260) {
+        Some(value) => PathBuf::from(value),
+        None => path,
+    }
+}
+
+impl Resolved {
+    fn new(current: PathBuf, open: PathBuf) -> Self {
+        Resolved {
+            current: plain(current),
+            open: plain(open),
+        }
+    }
+}
+
 pub(crate) fn fingerprint(path: &Path) -> Option<(u64, i64)> {
     let metadata = fs::metadata(path).ok().filter(|value| value.is_file())?;
     let modified = metadata
@@ -115,10 +143,7 @@ pub(super) fn synchronize(
         if !managed.is_file() {
             return Err("This file is missing. Import it again.".into());
         }
-        return Ok(Resolved {
-            current: managed.clone(),
-            open: managed,
-        });
+        return Ok(Resolved::new(managed.clone(), managed));
     };
     let backup_fingerprint = fingerprint(&managed);
     let Some(current) = fingerprint(&original) else {
@@ -127,39 +152,24 @@ pub(super) fn synchronize(
         } else {
             original
         };
-        return Ok(Resolved {
-            current: fallback.clone(),
-            open: fallback,
-        });
+        return Ok(Resolved::new(fallback.clone(), fallback));
     };
     if backup_fingerprint.is_some() && recorded(&origin) == Some(current) {
-        return Ok(Resolved {
-            current: managed,
-            open: original,
-        });
+        return Ok(Resolved::new(managed, original));
     }
     // Older references have no fingerprint. A backup edited after the original
     // (through the previous Open behaviour) is the user's newer version.
     if recorded(&origin).is_none()
         && backup_fingerprint.is_some_and(|(_, modified)| modified > current.1)
     {
-        return Ok(Resolved {
-            current: managed.clone(),
-            open: managed,
-        });
+        return Ok(Resolved::new(managed.clone(), managed));
     }
     if current.0 > MAX_ORIGINAL_BYTES {
-        return Ok(Resolved {
-            current: original.clone(),
-            open: original,
-        });
+        return Ok(Resolved::new(original.clone(), original));
     }
     if replace_backup(&original, &managed).is_err() {
         // The backup may be open elsewhere; the original still has current bytes.
-        return Ok(Resolved {
-            current: original.clone(),
-            open: original,
-        });
+        return Ok(Resolved::new(original.clone(), original));
     }
     origin["originalFingerprint"] = fingerprint_json(current);
     let edited = origin
@@ -191,10 +201,7 @@ pub(super) fn synchronize(
             ],
         )
         .map_err(|e| e.to_string())?;
-    Ok(Resolved {
-        current: managed,
-        open: original,
-    })
+    Ok(Resolved::new(managed, original))
 }
 
 #[cfg(test)]
@@ -245,6 +252,24 @@ mod tests {
             original.canonicalize().unwrap(),
             managed.canonicalize().unwrap(),
         )
+    }
+
+    #[test]
+    fn verbatim_windows_paths_become_ordinary_paths() {
+        assert_eq!(
+            plain(PathBuf::from(r"\\?\D:\Pictures\a.png")),
+            PathBuf::from(r"D:\Pictures\a.png")
+        );
+        assert_eq!(
+            plain(PathBuf::from(r"\\?\UNC\server\share\a.png")),
+            PathBuf::from(r"\\server\share\a.png")
+        );
+        assert_eq!(
+            plain(PathBuf::from("/home/a.png")),
+            PathBuf::from("/home/a.png")
+        );
+        let long = format!(r"\\?\D:\{}", "x".repeat(300));
+        assert_eq!(plain(PathBuf::from(&long)), PathBuf::from(&long));
     }
 
     #[test]

@@ -57,15 +57,25 @@ fn browser_sources(local: &Path, roaming: &Path) -> Vec<SourceFile> {
             .unwrap_or(Value::Null);
         for entry in entries.flatten() {
             let folder = entry.file_name().to_string_lossy().into_owned();
-            if !firefox && folder != "Default" && !folder.starts_with("Profile ")
-                && names["profile"]["info_cache"].get(&folder).is_none() {
+            if !firefox
+                && folder != "Default"
+                && !folder.starts_with("Profile ")
+                && names["profile"]["info_cache"].get(&folder).is_none()
+            {
                 continue;
             }
             // Local and account bookmarks are separate live stores in Chromium.
             // Discover a profile even when only its account store exists.
-            let files: &[&str] = if firefox { &["places.sqlite"] } else { &["Bookmarks", "AccountBookmarks"] };
-            let paths: Vec<_> = files.iter().filter_map(|file| entry.path().join(file).canonicalize().ok())
-                .filter(|absolute| absolute.starts_with(&root_absolute) && absolute.is_file()).collect();
+            let files: &[&str] = if firefox {
+                &["places.sqlite"]
+            } else {
+                &["Bookmarks", "AccountBookmarks"]
+            };
+            let paths: Vec<_> = files
+                .iter()
+                .filter_map(|file| entry.path().join(file).canonicalize().ok())
+                .filter(|absolute| absolute.starts_with(&root_absolute) && absolute.is_file())
+                .collect();
             if paths.is_empty() {
                 continue;
             }
@@ -355,7 +365,9 @@ fn read_source(source: &SourceFile) -> Result<Vec<BrowserBookmark>, String> {
         for path in &source.paths {
             items.extend(chromium_bookmarks(path)?);
             if items.len() > MAX_BOOKMARKS {
-                return Err("This browser profile has too many bookmarks to import at once.".into());
+                return Err(
+                    "This browser profile has too many bookmarks to import at once.".into(),
+                );
             }
         }
         cached_bookmark_icons(&source.paths[0], &mut items);
@@ -536,26 +548,47 @@ mod tests {
             let browser_root = root.join(browser).join("User Data");
             fs::create_dir_all(browser_root.join("Default")).unwrap();
             fs::create_dir_all(browser_root.join("Registered work")).unwrap();
-            fs::write(browser_root.join("Local State"), r#"{"profile":{"info_cache":{"Registered work":{"name":"Work"}}}}"#).unwrap();
+            fs::write(
+                browser_root.join("Local State"),
+                r#"{"profile":{"info_cache":{"Registered work":{"name":"Work"}}}}"#,
+            )
+            .unwrap();
             let local = r#"{"roots":{"bookmark_bar":{"type":"folder","name":"Toolbar","children":[{"type":"url","name":"Local","url":"https://example.org/local"}]}}}"#;
             let account = r#"{"roots":{"other":{"type":"folder","name":"Account","children":[{"type":"url","name":"Cloud","url":"https://example.org/cloud"}]},"synced":{"type":"folder","name":"Mobile","children":[{"type":"url","name":"Phone","url":"https://example.org/phone"}]}}}"#;
             fs::write(browser_root.join("Default/Bookmarks"), local).unwrap();
             fs::write(browser_root.join("Default/AccountBookmarks"), account).unwrap();
-            fs::write(browser_root.join("Registered work/AccountBookmarks"), account).unwrap();
+            fs::write(
+                browser_root.join("Registered work/AccountBookmarks"),
+                account,
+            )
+            .unwrap();
             // Retired backups are not additional live bookmark stores.
             fs::write(browser_root.join("Default/Bookmarks.bak"), account).unwrap();
             let sources = browser_sources(&root, &root);
-            let prefix = if browser.contains("Chrome") { "chrome" } else { "edge" };
-            let source = sources.iter().find(|s| s.source.id == format!("{prefix}:Default")).unwrap();
+            let prefix = if browser.contains("Chrome") {
+                "chrome"
+            } else {
+                "edge"
+            };
+            let source = sources
+                .iter()
+                .find(|s| s.source.id == format!("{prefix}:Default"))
+                .unwrap();
             assert_eq!(source.paths.len(), 2);
             let items = read_source(source).unwrap();
             assert_eq!(items.len(), 3);
             assert_eq!(items[0].title, "Local");
             assert!(items.iter().any(|item| item.folder_path == ["Mobile"]));
-            let account_only = sources.iter().find(|s| s.source.id == format!("{prefix}:Registered work")).unwrap();
+            let account_only = sources
+                .iter()
+                .find(|s| s.source.id == format!("{prefix}:Registered work"))
+                .unwrap();
             assert_eq!(account_only.source.profile, "Work");
             assert_eq!(read_source(account_only).unwrap().len(), 2);
-            assert_eq!(fs::read_to_string(browser_root.join("Default/AccountBookmarks")).unwrap(), account);
+            assert_eq!(
+                fs::read_to_string(browser_root.join("Default/AccountBookmarks")).unwrap(),
+                account
+            );
         }
         fs::remove_dir_all(root).unwrap();
     }
@@ -578,14 +611,27 @@ mod tests {
         let db = Connection::open(&path).unwrap();
         db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE moz_places(id INTEGER PRIMARY KEY, url TEXT, title TEXT); CREATE TABLE moz_bookmarks(id INTEGER PRIMARY KEY, type INTEGER, fk INTEGER, parent INTEGER, title TEXT, guid TEXT, dateAdded INTEGER); INSERT INTO moz_bookmarks VALUES(1,2,NULL,0,'','root________',0),(2,2,NULL,1,'Toolbar','toolbar_____',0),(3,2,NULL,1,'Menu','menu________',0),(4,2,NULL,1,'Other','unfiled_____',0),(5,2,NULL,1,'Mobile','mobile______',0),(6,2,NULL,1,'Tags','tags________',0),(7,2,NULL,6,'Research','tag-folder__',0);").unwrap();
         for (id, parent) in [(10, 2), (11, 3), (12, 4), (13, 5), (14, 7)] {
-            db.execute("INSERT INTO moz_places VALUES(?1,?2,'Page')", rusqlite::params![id, format!("https://example.org/{id}")]).unwrap();
-            db.execute("INSERT INTO moz_bookmarks VALUES(?1,1,?1,?2,'Page',?3,1700000000000000)", rusqlite::params![id, parent, format!("link-{id}")]).unwrap();
+            db.execute(
+                "INSERT INTO moz_places VALUES(?1,?2,'Page')",
+                rusqlite::params![id, format!("https://example.org/{id}")],
+            )
+            .unwrap();
+            db.execute(
+                "INSERT INTO moz_bookmarks VALUES(?1,1,?1,?2,'Page',?3,1700000000000000)",
+                rusqlite::params![id, parent, format!("link-{id}")],
+            )
+            .unwrap();
         }
         // Keep the writer open: the reader must see committed rows in its WAL.
         let before = fs::read(&path).unwrap();
         let rows = firefox_bookmarks(&path).unwrap();
         assert_eq!(rows.len(), 4);
-        assert_eq!(rows.iter().map(|row| row.folder_path[0].as_str()).collect::<Vec<_>>(), ["Toolbar", "Menu", "Other", "Mobile"]);
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.folder_path[0].as_str())
+                .collect::<Vec<_>>(),
+            ["Toolbar", "Menu", "Other", "Mobile"]
+        );
         assert_eq!(before, fs::read(&path).unwrap());
         drop(db);
         fs::remove_dir_all(root).unwrap();

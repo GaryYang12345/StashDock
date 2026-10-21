@@ -180,7 +180,7 @@ fn prepare(
                 preview: cover.or(image),
                 preview_status: None,
                 asset_path: Some(backup.to_string_lossy().into_owned()),
-                original_path: Some(original.to_string_lossy().into_owned()),
+                original_path: Some(originals::plain(original.clone()).to_string_lossy().into_owned()),
                 mime_type: Some(mime.into()),
                 size_bytes: Some(fingerprint.0),
                 content,
