@@ -9,6 +9,20 @@ import { join, resolve } from 'node:path';
 
 const option = (name, fallback) => { const index = process.argv.indexOf(`--${name}`); return index > 0 ? process.argv[index + 1] : fallback; };
 const port = Number(option('port', 9229)), seconds = Number(option('seconds', 4)), reload = process.argv.includes('--reload');
+// Fixed, read-mostly layout probes. Each may open UI (never saves or deletes).
+const probes = {
+  'import-dialog': `(async () => {
+    let dialog = document.querySelector('[data-size="import"]');
+    if (!dialog) { [...document.querySelectorAll('button')].find(button => /Import references|导入引用/.test(button.textContent))?.click(); await new Promise(done => setTimeout(done, 1500)); dialog = document.querySelector('[data-size="import"]'); }
+    if (!dialog) return 'no import dialog';
+    const box = element => Math.round(element.getBoundingClientRect().height);
+    const tall = [...dialog.querySelectorAll('*')].filter(element => box(element) > 200).map(element => ({ tag: element.tagName, cls: String(element.className).slice(0, 60), h: box(element), style: element.getAttribute('style')?.slice(0, 120) }));
+    return { dialog: box(dialog), styleHeight: dialog.style.height, viewport: [innerWidth, innerHeight], tall: tall.slice(0, 25) };
+  })()`,
+};
+import { existsSync, readFileSync } from 'node:fs';
+const probeFile = join(outputDirectory, 'probe.txt');
+const probe = option('probe') ?? (existsSync(probeFile) ? readFileSync(probeFile, 'utf8').trim() : undefined);
 const outputDirectory = resolve(option('out', 'output/claude-review'));
 await mkdir(outputDirectory, { recursive: true });
 
@@ -58,6 +72,10 @@ for (const [index, page] of pages.entries()) {
     if (event.method === 'Runtime.consoleAPICalled') console.log(`console.${event.params.type}:`, event.params.args.map(text).join(' ').slice(0, 600));
     if (event.method === 'Runtime.exceptionThrown') { const detail = event.params.exceptionDetails; console.log('EXCEPTION:', (detail.exception?.description || detail.text).slice(0, 1200), detail.url || '', detail.lineNumber ?? ''); }
     if (event.method === 'Log.entryAdded') console.log(`log.${event.params.entry.level}:`, event.params.entry.text.slice(0, 600), event.params.entry.url || '');
+  }
+  if (probe && probes[probe] && page.url.includes('surface=folder') === false) {
+    const result = await devtools.send('Runtime.evaluate', { expression: probes[probe], awaitPromise: true, returnByValue: true });
+    console.log(`probe ${probe}:`, JSON.stringify(result.result?.result?.value ?? result.result, null, 1));
   }
   const shot = await devtools.send('Page.captureScreenshot', { format: 'png' });
   if (shot.result?.data) {

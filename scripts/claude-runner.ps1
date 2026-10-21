@@ -46,6 +46,7 @@ $Tasks = [ordered]@{
   'dev-stop'      = { Stop-Dev }
   'inspect'       = { & cmd /c "node scripts/inspect-webview.mjs --port $debugPort --out `"$queue`" 2>&1" }
   'inspect-reload'= { & cmd /c "node scripts/inspect-webview.mjs --port $debugPort --reload --out `"$queue`" 2>&1" }
+  'probe-import-dialog' = { & cmd /c "node scripts/inspect-webview.mjs --port $debugPort --seconds 1 --probe import-dialog --out `"$queue`" 2>&1" }
   'git-status'    = { & cmd /c 'git status --short --branch 2>&1 && git log --oneline -5 2>&1' }
 }
 
