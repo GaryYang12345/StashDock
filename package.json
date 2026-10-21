@@ -13,6 +13,7 @@
     "plugin:build": "node scripts/build-mcp-app.mjs",
     "plugin:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows-plugin.ps1",
     "plugin:preview": "node scripts/preview-mcp-app.mjs",
+    "diagnose:import": "node scripts/diagnose-link-import.mjs",
     "dev": "vite",
     "predev": "npm run icons:reference && npm run assets:ui",
     "assets:ui": "node scripts/sync-extension-ui.mjs",
