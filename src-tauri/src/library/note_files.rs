@@ -26,31 +26,43 @@ fn read_projection(path: &Path) -> Option<(u64, String)> {
     ))
 }
 
+fn recorded_fingerprint(origin: &serde_json::Value) -> Option<(u64, i64)> {
+    let value = origin.get("fileFingerprint")?;
+    Some((
+        value.get("size")?.as_u64()?,
+        value.get("modifiedMs")?.as_i64()?,
+    ))
+}
+
+/// A note whose file still has the size and modification time recorded at its
+/// last projection is unchanged; only other notes are read again.
 fn needs_refresh(connection: &Connection, assets: &Path) -> Result<bool, String> {
     let mut query = connection
-        .prepare("SELECT asset_path,content,size_bytes FROM stash_items WHERE kind='note'")
+        .prepare("SELECT asset_path,origin_json FROM stash_items WHERE kind='note'")
         .map_err(|e| e.to_string())?;
     let rows = query
         .query_map([], |r| {
             Ok((
                 r.get::<_, Option<String>>(0)?,
                 r.get::<_, Option<String>>(1)?,
-                r.get::<_, Option<i64>>(2)?,
             ))
         })
         .map_err(|e| e.to_string())?;
     for row in rows {
-        let (asset, cached, size) = row.map_err(|e| e.to_string())?;
+        let (asset, origin) = row.map_err(|e| e.to_string())?;
         let Some(asset) = asset.filter(|path| !path.is_empty()) else {
             return Ok(true);
         };
-        let Some((bytes, content)) = file_payload::managed_asset_path(assets, &asset)
+        let Some(current) = file_payload::managed_asset_path(assets, &asset)
             .ok()
-            .and_then(|path| read_projection(&path))
+            .and_then(|path| originals::fingerprint(&path))
         else {
             continue;
         };
-        if cached.as_deref() != Some(content.as_str()) || size != Some(bytes as i64) {
+        let origin = origin
+            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+            .unwrap_or_default();
+        if recorded_fingerprint(&origin) != Some(current) {
             return Ok(true);
         }
     }
@@ -144,10 +156,21 @@ pub(super) fn synchronize(connection: &Connection) -> Result<(), String> {
             origin["fileName"] = serde_json::json!(filename);
             path
         };
+        let fingerprint = originals::fingerprint(&path);
+        if asset.is_some() && fingerprint.is_some() && recorded_fingerprint(&origin) == fingerprint
+        {
+            continue;
+        }
         let Some((size, content)) = read_projection(&path) else {
             continue;
         };
-        if asset.is_some()
+        if let Some(value) = fingerprint {
+            origin["fileFingerprint"] = originals::fingerprint_json(value);
+        }
+        // Reaching here means the fingerprint is new: record it even when the
+        // text is unchanged, so later reads can skip the file entirely.
+        if fingerprint.is_none()
+            && asset.is_some()
             && cached.as_deref() == Some(&content)
             && cached_size == Some(size as i64)
         {

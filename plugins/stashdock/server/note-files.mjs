@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync, openSync, readSync, closeSync, unlinkSync } f
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveManagedFile } from './open-file.mjs';
+import { fingerprint } from './original-files.mjs';
 
 const MAX_TEXT_BYTES = 5_000_000;
 function projection(path, assets) {
@@ -22,6 +23,14 @@ function projection(path, assets) {
   } catch { return; }
   finally { if (descriptor !== undefined) closeSync(descriptor); }
 }
+// A note whose file still has the size and modification time recorded at its
+// last projection is unchanged; only other notes are read again.
+const recorded = row => { try { return JSON.parse(row.origin_json || '{}')?.fileFingerprint; } catch { return undefined; } };
+const unchanged = (row, path) => {
+  let current; try { current = fingerprint(resolveManagedFile(path, row.assets).path); } catch { return { skip: true }; }
+  const previous = recorded(row);
+  return { current, skip: Boolean(current && previous && previous.size === current.size && previous.modifiedMs === current.modifiedMs) };
+};
 export function synchronizeNoteFiles(db, assets, id) {
   const ownsTransaction = !db.isTransaction;
   const created = [];
@@ -30,11 +39,7 @@ export function synchronizeNoteFiles(db, assets, id) {
   const query = db.prepare(`SELECT id,title,asset_path,content,excerpt,origin_json,size_bytes FROM stash_items WHERE kind='note'${id === undefined ? '' : ' AND id=?'}`);
   const readRows = () => id === undefined ? query.all() : query.all(id);
   const rows = readRows();
-  if (ownsTransaction && !rows.some(row => {
-    if (!row.asset_path) return true;
-    const next = projection(row.asset_path, assets);
-    return next && (next.content !== row.content || next.file.sizeBytes !== row.size_bytes);
-  })) return;
+  if (ownsTransaction && !rows.some(row => !row.asset_path || !unchanged({ ...row, assets }, row.asset_path).skip)) return;
   if (ownsTransaction) db.exec('BEGIN IMMEDIATE');
   try {
     for (const row of ownsTransaction ? readRows() : rows) {
@@ -49,11 +54,14 @@ export function synchronizeNoteFiles(db, assets, id) {
         writeFileSync(path, row.content ?? row.excerpt ?? '', { encoding: 'utf8', flag: 'wx' });
         created.push(path); origin = { ...origin, fileName: filename };
       }
+      const state = path === row.asset_path ? unchanged({ ...row, assets }, path) : { skip: false };
+      if (state.skip) continue;
       // Do not recreate missing managed files from an old database projection.
       const next = projection(path, assets);
       if (!next) continue;
       const { file, content } = next;
-      if (path === row.asset_path && content === row.content && file.sizeBytes === row.size_bytes) continue;
+      const current = state.current ?? fingerprint(file.path);
+      if (current) origin = { ...origin, fileFingerprint: current };
       db.prepare("UPDATE stash_items SET asset_path=?,mime_type='text/plain',size_bytes=?,content=?,excerpt=?,origin_json=? WHERE id=?")
         .run(path, file.sizeBytes, content, Array.from(content.replace(/\s+/g, ' ')).slice(0, 180).join(''), JSON.stringify(origin), row.id);
     }
