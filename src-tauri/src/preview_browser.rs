@@ -142,7 +142,7 @@ fn proxy_connection(
     bytes: Arc<AtomicUsize>,
     deadline: Instant,
     byte_limit: usize,
-    system_upstream: Option<std::net::SocketAddr>,
+    system_upstream: crate::public_web::SystemProxy,
 ) -> Result<(), String> {
     browser
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -163,7 +163,7 @@ fn proxy_connection(
     let method = first.next().ok_or("Missing method.")?;
     let target = first.next().ok_or("Missing target.")?;
     let (host, port, url) = proxy_target(method, target)?;
-    let mut upstream = if let Some(proxy) = system_upstream {
+    let mut upstream = if let Some(proxy) = system_upstream.for_host(&host) {
         crate::public_web::check_proxied(&host, port)?;
         if stop.load(Ordering::Relaxed) || Instant::now() >= deadline {
             return Err("Capture ended.".into());
@@ -171,7 +171,11 @@ fn proxy_connection(
         let timeout = deadline
             .saturating_duration_since(Instant::now())
             .min(Duration::from_secs(8));
-        let target = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
+        let target = if host.contains(':') {
+            format!("[{host}]:{port}")
+        } else {
+            format!("{host}:{port}")
+        };
         connect_upstream(proxy, &target, timeout).map_err(|_| "Website unavailable.")?
     } else {
         // Connect to these exact addresses, never resolve again in connect().
@@ -889,7 +893,9 @@ mod tests {
     #[test]
     fn system_proxy_configuration_is_explicit_and_credentials_are_rejected() {
         assert_eq!(
-            crate::public_web::proxy_address("http://127.0.0.1:12334").unwrap().port(),
+            crate::public_web::proxy_address("http://127.0.0.1:12334")
+                .unwrap()
+                .port(),
             12334
         );
         assert_eq!(
@@ -934,7 +940,10 @@ mod tests {
         task.join().unwrap();
         assert!(crate::public_web::resolve_public("127.0.0.1", 443).is_err());
         for host in ["127.0.0.1", "localhost", "intranet", "10.0.0.8", "[::1]"] {
-            assert!(crate::public_web::check_proxied(host, 443).is_err(), "{host}");
+            assert!(
+                crate::public_web::check_proxied(host, 443).is_err(),
+                "{host}"
+            );
         }
     }
     #[test]

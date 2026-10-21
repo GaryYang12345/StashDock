@@ -223,7 +223,74 @@ pub fn proxy_address(value: &str) -> Option<std::net::SocketAddr> {
     let port = value.rsplit_once(':')?.1.parse::<u16>().ok()?;
     (port > 0).then_some(std::net::SocketAddr::new(ip, port))
 }
-pub fn system_proxy() -> Option<std::net::SocketAddr> {
+/// The user's enabled WinINET proxy and its bypass list ("ProxyOverride").
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SystemProxy {
+    pub address: Option<SocketAddr>,
+    bypass: Vec<String>,
+}
+
+impl SystemProxy {
+    pub fn new(address: Option<SocketAddr>, bypass: &str) -> Self {
+        let bypass = bypass
+            .split([';', ',', ' '])
+            .map(|entry| {
+                let entry = entry.trim().to_ascii_lowercase();
+                let entry = entry
+                    .strip_prefix("http://")
+                    .or_else(|| entry.strip_prefix("https://"))
+                    .unwrap_or(&entry)
+                    .to_string();
+                entry
+            })
+            .filter(|entry| !entry.is_empty())
+            .take(512)
+            .collect();
+        Self { address, bypass }
+    }
+    /// The proxy for this host, or None when the host is on the bypass list
+    /// (proxy clients usually list domestic sites there so they connect directly).
+    pub fn for_host(&self, host: &str) -> Option<SocketAddr> {
+        let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+        let bypassed = self.bypass.iter().any(|pattern| {
+            if pattern == "<local>" {
+                !host.contains('.')
+            } else {
+                wildcard(pattern, &host)
+            }
+        });
+        if bypassed {
+            None
+        } else {
+            self.address
+        }
+    }
+}
+
+fn wildcard(pattern: &str, value: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 1 {
+        return pattern == value;
+    }
+    let mut rest = value;
+    for (index, part) in parts.iter().enumerate() {
+        if index == 0 {
+            let Some(next) = rest.strip_prefix(part) else {
+                return false;
+            };
+            rest = next;
+        } else if index == parts.len() - 1 {
+            return rest.ends_with(part);
+        } else if let Some(position) = rest.find(part) {
+            rest = &rest[position + part.len()..];
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+pub fn system_proxy() -> SystemProxy {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Registry::{
@@ -246,30 +313,34 @@ pub fn system_proxy() -> Option<std::net::SocketAddr> {
         } != 0
             || enabled != 1
         {
-            return None;
+            return SystemProxy::default();
         }
-        let mut buffer = [0u16; 2048];
-        let mut bytes = (buffer.len() * 2) as u32;
-        if unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                key.as_ptr(),
-                wide("ProxyServer").as_ptr(),
-                RRF_RT_REG_SZ,
-                std::ptr::null_mut(),
-                buffer.as_mut_ptr().cast(),
-                &mut bytes,
-            )
-        } != 0
-        {
-            return None;
-        }
-        let length = buffer.iter().position(|v| *v == 0)?;
-        proxy_address(&String::from_utf16(&buffer[..length]).ok()?)
+        let text = |name: &str| -> Option<String> {
+            let mut buffer = vec![0u16; 16384];
+            let mut bytes = (buffer.len() * 2) as u32;
+            if unsafe {
+                RegGetValueW(
+                    HKEY_CURRENT_USER,
+                    key.as_ptr(),
+                    wide(name).as_ptr(),
+                    RRF_RT_REG_SZ,
+                    std::ptr::null_mut(),
+                    buffer.as_mut_ptr().cast(),
+                    &mut bytes,
+                )
+            } != 0
+            {
+                return None;
+            }
+            let length = buffer.iter().position(|v| *v == 0)?;
+            String::from_utf16(&buffer[..length]).ok()
+        };
+        let address = text("ProxyServer").and_then(|value| proxy_address(&value));
+        SystemProxy::new(address, &text("ProxyOverride").unwrap_or_default())
     }
     #[cfg(not(windows))]
     {
-        None
+        SystemProxy::default()
     }
 }
 static RESOLVING: AtomicUsize = AtomicUsize::new(0);
@@ -442,7 +513,7 @@ fn fetch_with_policy(
         let port = url.port_or_known_default().unwrap();
         // With a system proxy, the proxy resolves and routes the name; otherwise
         // connect only to the checked public addresses.
-        let proxy = system_proxy();
+        let proxy = system_proxy().for_host(host);
         let routes: Vec<Option<SocketAddr>> = match proxy {
             Some(_) => {
                 check_proxied(host, port)?;
@@ -753,5 +824,32 @@ mod tests {
         }
         assert!(resolve_public("localhost", 80).is_err());
         assert!(resolve_public("127.0.0.1", 80).is_err());
+    }
+    #[test]
+    fn system_proxy_bypass_list_sends_listed_hosts_directly() {
+        let proxy: SocketAddr = "127.0.0.1:12334".parse().unwrap();
+        let settings = SystemProxy::new(
+            Some(proxy),
+            "localhost;127.*;10.*;*.cn;baidu.com;*.baidu.com;<local>;http://*.douban.com",
+        );
+        for host in [
+            "www.baidu.com",
+            "baidu.com",
+            "iconfont.cn",
+            "book.douban.com",
+            "intranet",
+            "BAIDU.COM",
+        ] {
+            assert_eq!(settings.for_host(host), None, "{host}");
+        }
+        for host in [
+            "www.youtube.com",
+            "github.com",
+            "notbaidu.com",
+            "cn.example.org",
+        ] {
+            assert_eq!(settings.for_host(host), Some(proxy), "{host}");
+        }
+        assert_eq!(SystemProxy::default().for_host("github.com"), None);
     }
 }

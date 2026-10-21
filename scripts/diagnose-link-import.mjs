@@ -23,7 +23,7 @@ await mkdir(outputDirectory, { recursive: true });
 function systemProxy() {
   if (process.platform !== 'win32') return null;
   const read = name => { try { return execFileSync('reg.exe', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', name], { encoding: 'utf8', windowsHide: true, timeout: 2000 }).match(/REG_\w+\s+(.+)$/m)?.[1]?.trim(); } catch { return undefined; } };
-  return { enabled: read('ProxyEnable'), server: read('ProxyServer'), autoConfigUrl: read('AutoConfigURL') };
+  return { enabled: read('ProxyEnable'), server: read('ProxyServer'), bypass: read('ProxyOverride'), autoConfigUrl: read('AutoConfigURL') };
 }
 async function dnsSample() {
   const result = {};
