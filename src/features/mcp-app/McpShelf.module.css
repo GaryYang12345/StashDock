@@ -26,7 +26,6 @@
 .tagRow > form { width: 100%; }
 .tagName { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .count { padding-inline: var(--space-1); border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--text-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
-.tagActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .tagConfirmation { width: 100%; }
 /* Use the App's CSS width, not the host window or physical screen pixels.
    The normal Codex sidebar is about 439px wide and must already fit two cards. */

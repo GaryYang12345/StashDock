@@ -4,6 +4,9 @@ export type StashOrigin = {
   platform: string;
   importMethod: "bookmark_html" | "browser_bookmarks" | "browser_extension" | "manual_url" | "local_file" | "note" | "platform_import" | "ai_context";
   contentOrigin?: 'provided' | 'generated';
+  pendingTitle?: string;
+  contentEdited?: boolean;
+  contentSettled?: boolean;
   sourceUrls?: string[];
   externalId?: string;
   author?: string;
@@ -31,6 +34,7 @@ export type StashItem = {
   favorite?: boolean;
   preview?: string;
   previewStatus?: "queued" | "working" | "failed" | "unavailable";
+  contentStatus?: "queued" | "working" | "failed" | "done";
   assetPath?: string;
   originalPath?: string;
   mimeType?: string;

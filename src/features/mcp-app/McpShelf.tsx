@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { App } from '@modelcontextprotocol/ext-apps';
-import { Check, Plus, RefreshCw, Settings, X } from 'lucide-react';
+import { Check, Plus, RefreshCw, Settings } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { motionTokens } from '../../components/arc/lib/motion-tokens';
 import { Button } from '../../components/arc/button/button';
@@ -8,14 +8,15 @@ import { SearchField } from '../../components/arc/search-field/search-field';
 import SegmentedControl from '../../components/arc/segmented-control/segmented-control';
 import { ScrollArea } from '../../components/arc/scroll-area/scroll-area';
 import { Alert } from '../../components/arc/alert/alert';
-import { EmptyState } from '../../components/arc/empty-state/empty-state';
+import { EmptyState } from '../../components/EmptyState';
 import { LoadingReferences } from '../../components/LoadingReferences';
 import { BrandIcon } from '../../components/BrandIcon';
 import { shelfFilters } from '../../components/ReferenceShelf';
 import { ReferenceCardView } from '../../components/StashCard';
 import { ReferenceImportDialog, type ReferenceImportHandle } from '../../components/ReferenceImportDialog';
 import { mcpLinkImport } from './import';
-import { FluidDialog } from '../../components/FluidDialog';
+import { ReferenceDeleteDialog, type ReferenceDeletion } from '../../components/ReferenceDeleteDialog';
+import { SelectionManagementActions } from '../../components/SelectionManagementActions';
 import { ReferenceEditor } from '../../components/ReferenceEditor';
 import { ContentEditor } from '../../components/ContentEditor';
 import { referenceOpenTarget } from '../../lib/referenceOpen';
@@ -29,7 +30,6 @@ import type { StashItem } from '../../types';
 import { addAttachmentToDraft, parseAttachment, supportsDraft } from './draft';
 import card from '../../components/StashCard.module.css';
 import listStyles from '../../components/ReferenceList.module.css';
-import { DestructiveButton } from '../../components/DestructiveButton';
 import type { FileReferencePayload } from '../../lib/fileReference';
 import header from '../../components/DockHeader.module.css';
 import context from '../../components/ContextBar.module.css';
@@ -85,7 +85,7 @@ export function McpShelf() {
   const importDialog = useRef<ReferenceImportHandle>(null);
   const [tagOperation, setTagOperation] = useState<TagOperation | null>(null);
   const tagFocus = useRef<HTMLElement | null>(null);
-  const [deleting, setDeleting] = useState<StashItem | null>(null);
+  const [deleting, setDeleting] = useState<ReferenceDeletion | null>(null);
   const [editing, setEditing] = useState<StashItem | null>(null);
   const [contentEditing, setContentEditing] = useState<StashItem | null>(null);
   const editorSequence = useRef(0);
@@ -190,12 +190,12 @@ export function McpShelf() {
     return () => { clearTimeout(timer); ++sequence.current; };
   }, [connected, query, filter, activeTag]);
   useEffect(() => {
-    if (!connected || settingsOpen || mutationBusy || deleting || editing || contentEditing || tagOperation || !items.some(item => item.previewStatus === 'queued' || item.previewStatus === 'working' || (['web', 'repo'].includes(item.kind) && !item.origin?.faviconUrl?.startsWith('data:image/')))) return;
+    if (!connected || settingsOpen || mutationBusy || deleting || editing || contentEditing || tagOperation || !items.some(item => item.contentStatus === 'queued' || item.contentStatus === 'working' || item.previewStatus === 'queued' || item.previewStatus === 'working' || (['web', 'repo'].includes(item.kind) && !item.origin?.faviconUrl?.startsWith('data:image/')))) return;
     let disposed = false, running = false;
     const missing = items.filter(item => ['web', 'repo'].includes(item.kind) && !item.origin?.faviconUrl?.startsWith('data:image/')).map(item => item.id).join('|');
     if (faviconPolling.current.key !== missing) faviconPolling.current = { key: missing, until: Date.now() + 90_000 };
     const timer = setInterval(async () => {
-      if (Date.now() > faviconPolling.current.until && !items.some(item => item.previewStatus === 'queued' || item.previewStatus === 'working')) { clearInterval(timer); return; }
+      if (Date.now() > faviconPolling.current.until && !items.some(item => item.contentStatus === 'queued' || item.contentStatus === 'working' || item.previewStatus === 'queued' || item.previewStatus === 'working')) { clearInterval(timer); return; }
       const app = appRef.current, request = sequence.current;
       if (disposed || running || readFlights.current || document.hidden || importDialog.current?.isOpen() || !app) return;
       running = true;
@@ -346,7 +346,7 @@ export function McpShelf() {
               selected={selectedIds.has(item.id)} selectionDisabled={pending.length > 0 || selectingAll}
               busy={mutationBusy} favoriteLoading={favoritePending === item.id}
               onToggle={toggle} onFavorite={() => void favorite(item)}
-              onDelete={reference => { setDeleting(reference); setMutationError(''); }}
+              onDelete={reference => { setDeleting({ ids: [reference.id], title: reference.title }); setMutationError(''); }}
               onEdit={openEditor} onEditContent={reference => void openContent(reference)}
               onOpen={reference => {
                 void (async () => { if (referenceOpenTarget(reference) === 'link') await appRef.current?.openLink({ url: reference.url! }); else await mutate('open_stashdock_file', { id: reference.id }); })().catch(reason => setManagementError(message(reason)));
@@ -355,9 +355,7 @@ export function McpShelf() {
                 {acknowledgedIds.has(item.id) ? <Check size={16} strokeWidth={1.75} aria-hidden="true" /> : <Plus size={16} strokeWidth={1.75} aria-hidden="true" />}<CardActionLabel compact={t(acknowledgedIds.has(item.id) ? 'Added' : 'Add')}>{t(acknowledgedIds.has(item.id) ? 'Added' : 'Add to chat')}</CardActionLabel>
               </Button>} />)}
             {hasMore && <Button variant="secondary" loading={loadingMore} onClick={() => { if (appRef.current) void load(appRef.current, query, filter, items.length); }}>{t('Load more references')}</Button>}
-          </div> : !readError && <EmptyState label={t('Saved references')} title={t(query || activeTag || filter !== 'all' ? 'No matching references' : 'Your shelf is empty')}
-            description={t(query || activeTag || filter !== 'all' ? 'Try another search or clear the filters.' : 'Import links, bookmarks, notes, or files.')}
-            action={<Button variant="secondary" onClick={() => { if (query || activeTag || filter !== 'all') { setQuery(''); setFilter('all'); setActiveTag(''); } else importDialog.current?.open(); }}>{t(query || activeTag || filter !== 'all' ? 'Clear filters' : 'Import references')}</Button>} />}
+          </div> : !readError && <EmptyState hasQuery={Boolean(query || activeTag || filter !== 'all')} onAdd={() => importDialog.current?.open()} onClear={() => { setQuery(''); setFilter('all'); setActiveTag(''); }} />}
         </>}
     </ScrollArea>
     <span className={styles.srOnly} role="status">{pending.length ? t('Adding to draft') : acknowledged.length ? t('Added to draft') : t('{count} selected', { count: selected.length })}</span>
@@ -370,7 +368,7 @@ export function McpShelf() {
           <SelectAllReferences disabled={!connected || pending.length > 0} loading={selectingAll} allSelected={selectedAll || (!hasMore && items.every(item => selectedIds.has(item.id)))} onSelectAll={() => void selectAll()} />
         </div></div>
         <div className={context.actions}>
-        <Button variant="ghost" size="sm" aria-label={t('Clear selection')} disabled={pending.length > 0 || selectingAll} onClick={() => { setSelectedAll(false); setSelected([]); }}><X size={16} strokeWidth={1.75} aria-hidden="true" /></Button>
+        <SelectionManagementActions disabled={pending.length > 0 || selectingAll || mutationBusy} onDelete={() => { setMutationError(''); setDeleting({ ids: [...selected] }); }} onClear={() => { setSelectedAll(false); setSelected([]); }} />
         <Button type="button" variant="primary" size="sm" className={`${action.button} ${!pending.length && selected.every(id => acknowledgedIds.has(id)) ? action.success : ''}`} disabled={!connected || !draftSupported || selectingAll} loading={pending.length > 0} onClick={() => void add(selected)}>
           {selected.every(id => acknowledgedIds.has(id)) ? <Check size={16} strokeWidth={1.75} aria-hidden="true" /> : <Plus size={16} strokeWidth={1.75} aria-hidden="true" />}
           {t(selected.every(id => acknowledgedIds.has(id)) ? 'Added' : 'Add to chat')}
@@ -392,13 +390,15 @@ export function McpShelf() {
       else { await mutate('rename_stashdock_tag', { name, replacement }); if (activeTag === name) setActiveTag(replacement); }
       refresh();
     }} />
-    <FluidDialog open={Boolean(deleting)} title={t('Delete reference?')} description={t('Remove “{title}” from StashDock.', { title: deleting?.title || '' })} busy={mutationBusy} onClose={() => setDeleting(null)}>
-      {mutationError && <Alert tone="danger" title={t('Reference could not be deleted')}>{t(mutationError)}</Alert>}
-      <div className={styles.tagActions}><Button variant="secondary" disabled={mutationBusy} onClick={() => setDeleting(null)}>{t('Keep reference')}</Button><DestructiveButton loading={mutationBusy} onClick={async () => {
-        if (!deleting) return;
-        try { await mutate('delete_stashdock_reference', { id: deleting.id }); setSelected(previous => previous.filter(id => id !== deleting.id)); setDeleting(null); refresh(); }
-        catch (error) { setMutationError(message(error)); }
-      }}>{t('Delete reference')}</DestructiveButton></div>
-    </FluidDialog>
+    <ReferenceDeleteDialog target={deleting} busy={mutationBusy} error={mutationError} returnFocus={searchRef} onClose={() => setDeleting(null)} onConfirm={async () => {
+      if (!deleting || mutationFlight.current) return;
+      try {
+        await mutate('delete_stashdock_references', { ids: deleting.ids });
+        const removed = new Set(deleting.ids);
+        setSelected(previous => previous.filter(id => !removed.has(id))); setSelectedAll(false);
+        setItems(previous => previous.filter(item => !removed.has(item.id)));
+        setDeleting(null); refresh();
+      } catch (error) { setMutationError(message(error)); }
+    }} />
   </main>;
 }

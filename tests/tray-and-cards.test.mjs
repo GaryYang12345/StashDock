@@ -62,7 +62,8 @@ test('sidebar reports the active filter and has no inert settings action',()=>{
 
 test('folder keyboard focus is inset and subtle rather than an outer black ring',async()=>{
   const css=await readFile(resolve(root,'src/components/FloatingFolder.module.css'),'utf8');
-  assert.match(css,/--focus-outline: var\(--border-strong\)/);
+  assert.match(css,/--focus-outline: var\(--folder-control-edge\)/);
+  assert.doesNotMatch(css,/var\(--(?:surface|text|border)(?:-|\))/);
   assert.match(css,/--focus-outline-width: 1px/);
   assert.match(css,/--focus-outline-offset: -7px/);
   assert.doesNotMatch(css,/\n\s*outline:/);

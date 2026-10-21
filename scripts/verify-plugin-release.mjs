@@ -24,6 +24,8 @@ if (process.argv[3]) for (const file of manifest.files.filter(file => file.path.
 }
 const config = JSON.parse(await readFile(join(plugin, '.mcp.json'), 'utf8')).mcpServers.stashdock;
 assert.match(config.command, /^\.\/bin\/win32-x64\/node\.exe$/);
+assert.equal(config.cwd, '.');
+assert.deepEqual(config.args, ['scripts/mcp-server.mjs']);
 const node = resolve(plugin, config.command);
 for (const binary of ['node.exe', 'stashdock-preview.exe', 'stashdock-storage.exe']) {
   const bytes = await readFile(join(plugin, 'bin/win32-x64', binary));
@@ -35,7 +37,7 @@ assert.equal(execFileSync(node, ['--version'], { env: { ...process.env, PATH: ''
 const fixture = await mkdtemp(join(tmpdir(), 'stashdock-release-check-'));
 const env = { ...process.env, PATH: '', STASHDOCK_DATA_DIR: join(fixture, 'library'), APPDATA: join(fixture, 'profile'), LOCALAPPDATA: join(fixture, 'local'), XDG_DATA_HOME: join(fixture, 'profile') };
 const client = new Client({ name: 'StashDock extracted-release verification', version: '1' });
-const transport = new StdioClientTransport({ command: config.command, args: config.args.map(arg => arg.replaceAll('${PLUGIN_ROOT}', plugin)), cwd: plugin, env, stderr: 'pipe' });
+const transport = new StdioClientTransport({ command: config.command, args: config.args, cwd: resolve(plugin, config.cwd), env, stderr: 'pipe' });
 let diagnostics = '';
 transport.stderr?.on('data', data => { if (diagnostics.length < 16_000) diagnostics += data; });
 try {
@@ -54,8 +56,9 @@ try {
   assert.ok(page._meta?.preview?.title, 'Packaged native lookup did not return a title');
   const pdf = await client.callTool({ name: 'preview_stashdock_link', arguments: { url: 'https://arxiv.org/pdf/2505.22954' } }, undefined, { timeout: 120_000 });
   assert.equal(pdf.isError, undefined, JSON.stringify(pdf.content));
-  assert.match(pdf._meta.preview.title, /Darwin/i);
-  assert.ok(pdf._meta.preview.preview?.startsWith('data:image/jpeg;base64,'));
+  assert.ok(pdf._meta.preview.title);
+  assert.equal(pdf._meta.preview.content, '', 'PDF context must remain link-only');
+  assert.ok(!pdf._meta.preview.preview, 'Foreground PDF lookup must not render a document');
   console.log(JSON.stringify({ plugin, version: manifest.version, filesVerified: manifest.files.length, bundledNode: manifest.node, pathEmpty: true, relativeCommand: true, stdio: true, uiBytes: resource.contents[0].text.length, isolatedCount: shelf.structuredContent.count, nativeLookup: page._meta.preview.title, nativePdf: pdf._meta.preview.title }));
 } catch (error) {
   console.error(diagnostics); throw error;

@@ -9,13 +9,36 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
 };
 
 const SESSION_BYTES: usize = 24 * 1024 * 1024;
+#[cfg(windows)]
+#[path = "preview_admission.rs"]
+mod admission;
+#[cfg(windows)]
+#[path = "preview_pool.rs"]
+mod pool;
+#[allow(dead_code)] // The standalone helper closes explicitly; desktop owns its process lifetime.
+pub fn shutdown_renderer() {
+    #[cfg(windows)]
+    pool::shutdown();
+}
+#[allow(dead_code)] // Optional standalone protocol diagnostics, never UI state.
+pub fn renderer_statistics() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        let (created, reused) = pool::statistics();
+        json!({"created":created,"reused":reused})
+    }
+    #[cfg(not(windows))]
+    {
+        json!({"created":0,"reused":0})
+    }
+}
 // Only the OS user's enabled configuration may nominate an upstream proxy.
 // Page URLs cannot choose it. All actual destinations remain public and pinned.
 fn proxy_address(value: &str) -> Option<std::net::SocketAddr> {
@@ -227,7 +250,7 @@ fn proxy_connection(
     if stop.load(Ordering::Relaxed) || Instant::now() >= deadline {
         return Err("Capture ended.".into());
     }
-    let mut upstream = addresses
+    let (mut upstream, connected) = addresses
         .iter()
         .take(8)
         .find_map(|address| {
@@ -237,13 +260,15 @@ fn proxy_connection(
             if stop.load(Ordering::Relaxed) || timeout.is_zero() {
                 return None;
             }
-            if let Some(proxy) = system_upstream {
+            let connected = if let Some(proxy) = system_upstream {
                 connect_upstream(proxy, *address, timeout).ok()
             } else {
                 TcpStream::connect_timeout(address, timeout).ok()
-            }
+            };
+            connected.map(|stream| (stream, *address))
         })
         .ok_or("Website unavailable.")?;
+    crate::public_web::remember_endpoint(&host, port, connected);
     if let Some(url) = url {
         let mut path = url.path().to_string();
         if let Some(query) = url.query() {
@@ -293,8 +318,42 @@ pub(crate) struct PublicProxy {
     pub(crate) address: std::net::SocketAddr,
     stop: Arc<AtomicBool>,
     listener: Option<thread::JoinHandle<()>>,
+    work: Arc<Mutex<ProxyWork>>,
+    connections: Arc<AtomicUsize>,
+}
+#[derive(Clone)]
+struct ProxyWork {
+    stop: Arc<AtomicBool>,
+    bytes: Arc<AtomicUsize>,
+}
+impl Default for ProxyWork {
+    fn default() -> Self {
+        Self {
+            stop: Arc::new(AtomicBool::new(false)),
+            bytes: Arc::new(AtomicUsize::new(0)),
+        }
+    }
 }
 impl PublicProxy {
+    fn begin_task(&self, deadline: Instant) -> Result<(), String> {
+        self.end_task();
+        while self.connections.load(Ordering::Relaxed) > 0 {
+            if Instant::now() >= deadline {
+                return Err("Previous capture connections did not close.".into());
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        *self
+            .work
+            .lock()
+            .map_err(|_| "The preview proxy is unavailable.")? = ProxyWork::default();
+        Ok(())
+    }
+    fn end_task(&self) {
+        if let Ok(work) = self.work.lock() {
+            work.stop.store(true, Ordering::Relaxed);
+        }
+    }
     pub(crate) fn start(deadline: Instant) -> Result<Self, String> {
         Self::start_bounded(deadline, SESSION_BYTES)
     }
@@ -305,19 +364,34 @@ impl PublicProxy {
         let stop = Arc::new(AtomicBool::new(false));
         let done = stop.clone();
         let count = Arc::new(AtomicUsize::new(0));
-        let bytes = Arc::new(AtomicUsize::new(0));
+        let work = Arc::new(Mutex::new(ProxyWork::default()));
+        let task_work = work.clone();
+        let connections = count.clone();
         let task = thread::spawn(move || {
             while !done.load(Ordering::Relaxed) && Instant::now() < deadline {
                 if let Ok((stream, _)) = listener.accept() {
                     // VPN/system proxy can change while a sign-in window is open.
                     let system_upstream = system_proxy();
+                    let Ok(work) = task_work.lock().map(|work| work.clone()) else {
+                        break;
+                    };
+                    let bytes = work.bytes;
                     if count.load(Ordering::Relaxed) >= 24
                         || bytes.load(Ordering::Relaxed) >= byte_limit
+                        || work.stop.load(Ordering::Relaxed)
                     {
+                        if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
+                            eprintln!(
+                                "Capture proxy limit: connections={} bytes={} cancelled={}",
+                                count.load(Ordering::Relaxed),
+                                bytes.load(Ordering::Relaxed),
+                                work.stop.load(Ordering::Relaxed)
+                            );
+                        }
                         continue;
                     }
                     count.fetch_add(1, Ordering::Relaxed);
-                    let stop = done.clone();
+                    let stop = work.stop;
                     let bytes = bytes.clone();
                     let count = count.clone();
                     thread::spawn(move || {
@@ -346,12 +420,15 @@ impl PublicProxy {
             address,
             stop,
             listener: Some(task),
+            work,
+            connections,
         })
     }
 }
 impl Drop for PublicProxy {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        self.end_task();
         if let Some(task) = self.listener.take() {
             let _ = task.join();
         }
@@ -361,7 +438,7 @@ impl Drop for PublicProxy {
 pub fn runtime_version() -> Option<String> {
     #[cfg(windows)]
     {
-        Some("system-webview2:capture-v1".into())
+        Some("system-webview2:capture-v5".into())
     }
     #[cfg(not(windows))]
     {
@@ -391,7 +468,8 @@ impl Drop for TempProfile {
         }
     }
 }
-// Kill-on-close Job Object covers renderer children even if StashDock crashes.
+// Kill-on-close bounds the browser process and subsequently inherited children.
+// Chromium sandbox children created before assignment may be outside this job.
 #[cfg(windows)]
 struct BrowserJob(windows_sys::Win32::Foundation::HANDLE);
 #[cfg(windows)]
@@ -407,8 +485,12 @@ impl BrowserJob {
                 return Err("Capture isolation is unavailable.".into());
             }
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            limits.BasicLimitInformation.LimitFlags =
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_JOB_MEMORY;
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                | JOB_OBJECT_LIMIT_JOB_MEMORY
+                | JOB_OBJECT_LIMIT_PRIORITY_CLASS;
+            // Apply to the entire owned renderer tree, never the visible app.
+            limits.BasicLimitInformation.PriorityClass =
+                windows_sys::Win32::System::Threading::BELOW_NORMAL_PRIORITY_CLASS;
             limits.JobMemoryLimit = memory_limit;
             if SetInformationJobObject(
                 handle,
@@ -429,6 +511,31 @@ impl BrowserJob {
 impl Drop for BrowserJob {
     fn drop(&mut self) {
         unsafe {
+            if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
+                use windows_sys::Win32::System::JobObjects::*;
+                let mut usage: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = std::mem::zeroed();
+                let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                if QueryInformationJobObject(
+                    self.0,
+                    JobObjectBasicAccountingInformation,
+                    (&mut usage as *mut _) as _,
+                    std::mem::size_of_val(&usage) as u32,
+                    std::ptr::null_mut(),
+                ) != 0
+                    && QueryInformationJobObject(
+                        self.0,
+                        JobObjectExtendedLimitInformation,
+                        (&mut limits as *mut _) as _,
+                        std::mem::size_of_val(&limits) as u32,
+                        std::ptr::null_mut(),
+                    ) != 0
+                {
+                    eprintln!(
+                        "Capture resources: {}",
+                        json!({"jobCpuMs":(usage.TotalUserTime + usage.TotalKernelTime)/10_000,"jobPeakCommittedMiB":limits.PeakJobMemoryUsed / 1024 / 1024,"jobProcesses":usage.TotalProcesses})
+                    );
+                }
+            }
             windows_sys::Win32::Foundation::CloseHandle(self.0);
         }
     }
@@ -441,6 +548,10 @@ struct Cdp {
     #[cfg(windows)]
     session: system_webview::Session,
     id: u64,
+}
+fn needed_for_thumbnail(url: &str, resource_type: Option<&str>) -> bool {
+    crate::public_web::web_url(url).is_ok()
+        && !matches!(resource_type, Some("Media" | "WebSocket" | "EventSource"))
 }
 impl Cdp {
     fn send(&mut self, method: &str, params: Value) -> Result<u64, String> {
@@ -468,7 +579,7 @@ impl Cdp {
         if event["method"] == "Fetch.requestPaused" {
             let params = &event["params"];
             let raw = params["request"]["url"].as_str().unwrap_or("");
-            if crate::public_web::web_url(raw).is_ok() {
+            if needed_for_thumbnail(raw, params["resourceType"].as_str()) {
                 self.send(
                     "Fetch.continueRequest",
                     json!({"requestId":params["requestId"]}),
@@ -482,6 +593,11 @@ impl Cdp {
         }
         Ok(())
     }
+}
+// Full readiness improves quality but must not veto an already rendered page.
+// Some sites never finish a font/image request or continuously change layout.
+fn viewport_can_capture(scene: &Value, stable: bool, age: Duration) -> bool {
+    scene["drawable"] == true && (stable || age >= Duration::from_secs(5))
 }
 fn capture_page(
     cdp: &mut Cdp,
@@ -527,7 +643,9 @@ fn capture_page(
     let mut document_request = String::new();
     let mut document_ok = false;
     let mut loaded = false;
-    let mut settled = None;
+    let mut probe = None;
+    let mut next_probe = Instant::now();
+    let mut stable: Option<(u64, Instant)> = None;
     let mut screenshot = None;
     let mut received = None;
     while Instant::now() < deadline && !stop.load(Ordering::Relaxed) {
@@ -562,7 +680,9 @@ fn capture_page(
             document_request = params["requestId"].as_str().unwrap_or("").into();
             document_ok = false;
             loaded = false;
-            settled = None;
+            stable = None;
+            probe = None;
+            received = None;
         }
         if event["method"] == "Network.responseReceived"
             && params["type"] == "Document"
@@ -584,21 +704,48 @@ fn capture_page(
         if event["method"] == "Page.loadEventFired" {
             loaded = true;
         }
-        if document_ok && loaded && settled.is_none() {
-            settled = Some(Instant::now());
-        }
-        if screenshot.is_none()
-            && document_ok
-            && (settled.is_some_and(|time: Instant| time.elapsed() > Duration::from_millis(1000))
-                || received.is_some_and(|time: Instant| time.elapsed() > Duration::from_secs(5)))
+        let age = received
+            .map(|time: Instant| time.elapsed())
+            .unwrap_or_default();
+        if document_ok
+            && screenshot.is_none()
+            && probe.is_none()
+            && (loaded || age >= Duration::from_millis(800))
+            && Instant::now() >= next_probe
         {
+            probe = Some(cdp.send(
+                "Runtime.evaluate",
+                json!({"expression":include_str!("preview_ready.js"),"returnByValue":true}),
+            )?);
+        }
+        let mut ready = false;
+        if probe.is_some_and(|id| event["id"] == id) {
+            probe = None;
+            next_probe = Instant::now() + Duration::from_millis(200);
+            let scene = &event["result"]["result"]["value"];
+            if scene["ready"] == true {
+                if let Some(signature) = scene["signature"].as_u64() {
+                    match stable {
+                        Some((previous, since)) if previous == signature => {
+                            ready = since.elapsed() >= Duration::from_millis(600)
+                                && (loaded || age >= Duration::from_secs(2));
+                        }
+                        _ => stable = Some((signature, Instant::now())),
+                    }
+                }
+            } else {
+                stable = None;
+            }
+            ready = viewport_can_capture(scene, ready, age);
+        }
+        // Slow client-rendered pages get the full bounded task budget. A second,
+        // earlier 10-second cut-off discarded pages that would become drawable
+        // before the real deadline. Never capture a blank viewport to save time.
+        if screenshot.is_none() && document_ok && ready {
             if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
                 eprintln!("Capture screenshot requested");
             }
-            screenshot = Some(cdp.send(
-                "Page.captureScreenshot",
-                json!({"format":"jpeg","quality":78,"captureBeyondViewport":false,"clip":{"x":0,"y":0,"width":1264,"height":800,"scale":1}}),
-            )?);
+            screenshot = Some(cdp.send("StashDock.captureViewport", json!({}))?);
         }
         if screenshot.is_some_and(|id| event["id"] == id) {
             let data = event["result"]["data"]
@@ -634,18 +781,7 @@ fn with_browser<T>(
 ) -> Result<T, String> {
     #[cfg(windows)]
     {
-        if stop.load(Ordering::Relaxed) {
-            return Err("Capture cancelled.".into());
-        }
-        let proxy = PublicProxy::start(deadline)?;
-        let root = std::env::var_os("STASHDOCK_CAPTURE_PROFILE_ROOT")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir);
-        let profile = TempProfile(root.join(format!("stashdock-capture-{}", uuid::Uuid::new_v4())));
-        fs::create_dir(&profile.0)
-            .map_err(|_| "A temporary capture profile could not be created.")?;
-        let session = system_webview::Session::start(profile.0.clone(), proxy.address, deadline)?;
-        task(&mut Cdp { session, id: 0 })
+        pool::run(stop, deadline, task)
     }
     #[cfg(not(windows))]
     {
@@ -654,8 +790,8 @@ fn with_browser<T>(
     }
 }
 
-pub fn read_pdf(bytes: &[u8], stop: &AtomicBool) -> Result<Value, String> {
-    if bytes.len() > 32 * 1024 * 1024 || !bytes.starts_with(b"%PDF-") {
+pub fn render_pdf_cover(bytes: &[u8], stop: &AtomicBool) -> Result<String, String> {
+    if bytes.len() > 5 * 1024 * 1024 || !bytes.starts_with(b"%PDF-") {
         return Err("This is not a supported PDF document.".into());
     }
     let deadline = Instant::now() + Duration::from_secs(22);
@@ -680,18 +816,6 @@ pub fn read_pdf(bytes: &[u8], stop: &AtomicBool) -> Result<Value, String> {
           const loading = pdfjs.getDocument({{data:bytes,enableXfa:false,disableFontFace:true,useSystemFonts:true,stopAtErrors:true}});
           const pdf = await loading.promise;
           console.log('PDF stage: document ready');
-          if (pdf.numPages > 1000) throw Error('This PDF has too many pages to read automatically.');
-          const info = await pdf.getMetadata().catch(() => ({{info:{{}}}}));
-          let content = '', first = '';
-          for (let n=1; n<=pdf.numPages && content.length<50000; n++) {{
-            const page = await pdf.getPage(n);
-            const text = await page.getTextContent();
-            const body = text.items.map(item => item.str ? item.str+(item.hasEOL?'\n':' ') : '').join('').trim();
-            if(n===1) first=body;
-            content += body+'\n\n';
-            if(n>1) page.cleanup();
-          }}
-          console.log('PDF stage: text ready');
           const page = await pdf.getPage(1), base = page.getViewport({{scale:1}});
           if(!Number.isFinite(base.width*base.height) || base.width<=0 || base.height<=0 || base.width>20000 || base.height>20000) throw Error('Unsupported PDF page size.');
           const viewport = page.getViewport({{scale:Math.min(1120/base.width,760/base.height)}});
@@ -699,16 +823,15 @@ pub fn read_pdf(bytes: &[u8], stop: &AtomicBool) -> Result<Value, String> {
           document.body.replaceChildren(canvas); document.body.style.cssText='margin:0;min-height:800px;display:flex;justify-content:center;align-items:flex-start;padding-top:20px;background:white';
           await page.render({{canvas,canvasContext:canvas.getContext('2d'),viewport,background:'white'}}).promise;
           console.log('PDF stage: image ready');
-          const title = (typeof info.info?.Title==='string' && info.info.Title.trim()) || first.split('\n').map(s=>s.trim()).find(Boolean) || '';
           await loading.destroy();
-          return {{title:title.slice(0,500),content:content.trim().slice(0,50000)}};
+          return true;
         }})()"#
         );
         let request = cdp.send(
             "Runtime.evaluate",
             json!({"expression":script,"awaitPromise":true,"returnByValue":true}),
         )?;
-        let mut metadata = None;
+        let mut rendered = false;
         while Instant::now() < deadline && !stop.load(Ordering::Relaxed) {
             let Some(event) = cdp.read()? else {
                 continue;
@@ -732,17 +855,16 @@ pub fn read_pdf(bytes: &[u8], stop: &AtomicBool) -> Result<Value, String> {
                             event["result"]["exceptionDetails"]["exception"]["description"]
                         );
                     }
-                    return Err(
-                        "This PDF could not be read automatically. Enter its details manually."
-                            .into(),
-                    );
+                    return Err("This PDF cover could not be rendered.".into());
                 }
-                metadata = Some(event["result"]["result"]["value"].clone());
+                rendered = event["result"]["result"]["value"] == true;
                 break;
             }
         }
-        let mut metadata = metadata.ok_or("This PDF took too long to read. Retry the lookup.")?;
-        let image = cdp.send("Page.captureScreenshot", json!({"format":"jpeg","quality":78,"captureBeyondViewport":false,"clip":{"x":0,"y":0,"width":1264,"height":800,"scale":1}}))?;
+        if !rendered {
+            return Err("The PDF cover took too long to render.".into());
+        }
+        let image = cdp.send("StashDock.captureViewport", json!({}))?;
         while Instant::now() < deadline && !stop.load(Ordering::Relaxed) {
             let Some(event) = cdp.read()? else {
                 continue;
@@ -752,11 +874,10 @@ pub fn read_pdf(bytes: &[u8], stop: &AtomicBool) -> Result<Value, String> {
                     .as_str()
                     .filter(|s| s.len() < 5_000_000)
                     .ok_or("PDF preview could not be read.")?;
-                metadata["preview"] = json!(crate::web_images::raster(
+                return crate::web_images::raster(
                     &STANDARD.decode(data).map_err(|_| "Invalid PDF preview.")?,
-                    false
-                )?);
-                return Ok(metadata);
+                    false,
+                );
             }
         }
         Err("PDF preview timed out. Retry the lookup.".into())
@@ -766,6 +887,52 @@ pub fn read_pdf(bytes: &[u8], stop: &AtomicBool) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn readiness_is_soft_for_drawable_pages_but_never_blesses_a_blank_viewport() {
+        let rendered = json!({"drawable":true,"ready":false});
+        assert!(!viewport_can_capture(
+            &rendered,
+            false,
+            Duration::from_secs(4)
+        ));
+        assert!(viewport_can_capture(
+            &rendered,
+            false,
+            Duration::from_secs(5)
+        ));
+        assert!(viewport_can_capture(
+            &rendered,
+            true,
+            Duration::from_secs(1)
+        ));
+        for scene in [json!({"drawable":false}), json!({}), Value::Null] {
+            assert!(!viewport_can_capture(&scene, true, Duration::from_secs(20)));
+        }
+    }
+    #[test]
+    fn thumbnails_keep_layout_assets_but_skip_streaming_media() {
+        for kind in [
+            "Document",
+            "Stylesheet",
+            "Image",
+            "Font",
+            "Script",
+            "XHR",
+            "Fetch",
+        ] {
+            assert!(needed_for_thumbnail(
+                "https://example.org/asset",
+                Some(kind)
+            ));
+        }
+        for kind in ["Media", "WebSocket", "EventSource"] {
+            assert!(!needed_for_thumbnail(
+                "https://example.org/asset",
+                Some(kind)
+            ));
+        }
+        assert!(!needed_for_thumbnail("file:///private", Some("Document")));
+    }
     #[test]
     fn proxy_rejects_unsafe_transports_and_blocks_loopback_connections() {
         for (method, target) in [

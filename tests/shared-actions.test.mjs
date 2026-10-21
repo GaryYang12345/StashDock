@@ -34,5 +34,6 @@ test('MCP tags list all tags with shared right-click actions and the dashboard e
   assert.match(await read('src/features/mcp-app/main.tsx'), /<TooltipLayer \/>/);
   assert.match(await read('src/components/StashCard.tsx'), /data-tooltip=\{t\("Delete reference"\)\}/);
   assert.match(shelf, /<ReferenceCardView/);
-  assert.ok(shelf.includes('<Button variant="secondary" disabled={mutationBusy} onClick={() => setDeleting(null)}>{t(\'Keep reference\')}'));
+  assert.match(shelf, /<ReferenceDeleteDialog target=\{deleting\}/);
+  assert.match(await read('src/components/ReferenceDeleteDialog.tsx'), /Keep references.*Keep reference/);
 });

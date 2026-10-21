@@ -1,16 +1,16 @@
 import { useI18n } from '../features/settings/locale';
-import { GripVertical, X } from "lucide-react";
+import { GripVertical } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { startReferenceDrag, endReferenceDrag } from "../lib/reference-drag";
 import type { StashItem } from "../types";
-import { Button } from "./arc/button/button";
+import { SelectionManagementActions } from './SelectionManagementActions';
 import { CopyForAI } from "./CopyForAI";
 import { SelectAllReferences } from "./SelectAllReferences";
 import { motionTokens } from "./arc/lib/motion-tokens";
 import styles from "./ContextBar.module.css";
 
-type ContextBarProps = { items: StashItem[]; copied?: boolean; onCopy: () => Promise<void>; onClear: () => void; compact?: boolean; onSelectAll?: () => void; allSelected?: boolean };
-export function ContextBar({ items, copied, onCopy, onClear, compact = false, onSelectAll, allSelected = false }: ContextBarProps) {
+type ContextBarProps = { items: StashItem[]; copied?: boolean; onCopy: () => Promise<void>; onClear: () => void; onDelete?: () => void; busy?: boolean; compact?: boolean; onSelectAll?: () => void; allSelected?: boolean };
+export function ContextBar({ items, copied, onCopy, onClear, onDelete, busy = false, compact = false, onSelectAll, allSelected = false }: ContextBarProps) {
   const { t } = useI18n();
   const reduced = useReducedMotion();
   const startDrag = (event: React.DragEvent<HTMLElement>) => {
@@ -28,7 +28,7 @@ export function ContextBar({ items, copied, onCopy, onClear, compact = false, on
         </div>
       </div>
       <div className={styles.actions}>
-        <Button variant="ghost" size="sm" onClick={onClear} aria-label={t("Clear selection")}><X size={16} strokeWidth={1.75} aria-hidden="true" /></Button>
+        <SelectionManagementActions onDelete={onDelete} onClear={onClear} disabled={busy} />
         <CopyForAI copied={copied} onCopy={onCopy} />
       </div>
     </div>

@@ -22,6 +22,28 @@ test('import publishes canonical saved assets immediately instead of stale pre-s
   assert.equal(store.getSnapshot().items[0].assetPath, saved.assetPath);
 });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+test('bulk deletion commits once, deduplicates IDs and publishes only after success', async () => {
+  let calls = 0, notifications = 0;
+  const gate = deferred();
+  const store = createLibraryStore({ load: async () => [item('a'), item('b'), item('c')], add: async () => {}, remove: async () => {}, favorite: async () => {},
+    removeMany: async ids => { calls++; assert.deepEqual(ids, ['a', 'b']); await gate.promise; } });
+  await store.refresh(); store.subscribe(() => notifications++);
+  const pending = store.removeMany(['a', 'a', 'b']);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(store.getSnapshot().items.length, 3); assert.equal(notifications, 0);
+  gate.resolve(); await pending;
+  assert.equal(calls, 1); assert.equal(notifications, 1);
+  assert.deepEqual(store.getSnapshot().items.map(item => item.id), ['c']);
+});
+test('failed bulk deletion preserves the snapshot and allows retry', async () => {
+  let fail = true;
+  const store = createLibraryStore({ load: async () => [item('a'), item('b')], add: async () => {}, remove: async () => {}, favorite: async () => {},
+    removeMany: async () => { if (fail) throw new Error('disk full'); } });
+  await store.refresh(); const before = store.getSnapshot();
+  await assert.rejects(store.removeMany(['a', 'b']), /disk full/);
+  assert.equal(store.getSnapshot(), before);
+  fail = false; await store.removeMany(['a', 'b']); assert.equal(store.getSnapshot().items.length, 0);
+});
 function fixture(initial = [item('a')]) {
   let data = initial;
   const calls = [];

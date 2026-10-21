@@ -7,17 +7,17 @@ import { libraryStore, useLibrary } from "./useLibrary";
 import { librarySession, useLibrarySession } from "./useLibrarySession";
 import { buildSearchIndex, filterItems, selectItems, summarizeItems } from "./selectors";
 import type { StashItem } from "../../types";
-import { useI18n } from '../settings/locale';
 import { referenceOpenTarget } from '../../lib/referenceOpen';
 import type { ReferenceImportHandle } from '../../components/ReferenceImportDialog';
+import type { ReferenceDeletion } from '../../components/ReferenceDeleteDialog';
 
 export function useLibraryController(active: boolean, allowImport = true, editing = false) {
-  const { t } = useI18n();
   const { items, ready: storageReady, error, refresh: load } = useLibrary();
   const { filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedIds, setSelectedIds, view, setView, copied, setCopied, copiedItemId, setCopiedItemId, refreshing, notice, setNotice, search, setSearch } = useLibrarySession();
   const refresh = () => librarySession.refresh(load);
   const importDialog = useRef<ReferenceImportHandle>(null);
-  const [pendingDelete, setPendingDelete] = useState<StashItem | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ReferenceDeletion | null>(null);
+  const deleteFlight = useRef(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -78,19 +78,25 @@ export function useLibraryController(active: boolean, allowImport = true, editin
   }, [setNotice]);
 
   const handleDelete = useCallback((item: StashItem) => {
-    setDeleteError(""); setPendingDelete(item);
+    setDeleteError(""); setPendingDelete({ ids: [item.id], title: item.title });
   }, []);
+  const handleDeleteSelected = () => {
+    if (!selectedItems.length) return;
+    setDeleteError(''); setPendingDelete({ ids: selectedItems.map(item => item.id) });
+  };
   const confirmDelete = async () => {
-    if (!pendingDelete || deleting) return;
+    if (!pendingDelete || deleteFlight.current) return;
+    deleteFlight.current = true;
     setDeleting(true); setDeleteError("");
     try {
-      await libraryStore.remove(pendingDelete.id);
-      setSelectedIds((current) => current.filter((id) => id !== pendingDelete.id));
+      await libraryStore.removeMany(pendingDelete.ids);
+      const deleted = new Set(pendingDelete.ids);
+      setSelectedIds((current) => current.filter((id) => !deleted.has(id)));
       setPendingDelete(null);
-      setNotice("Reference deleted.", 2200);
+      setNotice(pendingDelete.title === undefined ? "References deleted." : "Reference deleted.", 2200);
     } catch {
-      setDeleteError("This reference could not be deleted. Try again.");
-    } finally { setDeleting(false); }
+      setDeleteError("References could not be deleted. Try again.");
+    } finally { deleteFlight.current = false; setDeleting(false); }
   };
 
   const handleOpenItem = useCallback(async (item: StashItem) => {
@@ -105,15 +111,9 @@ export function useLibraryController(active: boolean, allowImport = true, editin
   }, [setNotice]);
 
   const addItems = async (newItems: StashItem[], persisted = false) => {
-    const { imported, skipped } = await libraryStore.add(newItems, persisted);
+    await libraryStore.add(newItems, persisted);
     setFilter("all");
     setActiveTag(null);
-    setNotice(
-      imported
-        ? `${t('{count} references imported', { count: imported })}${skipped ? ` · ${t('{count} duplicates skipped', { count: skipped })}` : ''}`
-        : "Everything in this import is already in StashDock.",
-      2600,
-    );
   };
 
   const handleCopy = useCallback(async () => {
@@ -150,5 +150,5 @@ export function useLibraryController(active: boolean, allowImport = true, editin
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [active, allowImport, editing, pendingDelete, handleCopy, selectedItems.length]);
 
-  return { storageReady, error, refresh, refreshing, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem };
+  return { storageReady, error, refresh, refreshing, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem };
 }

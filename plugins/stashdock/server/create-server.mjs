@@ -18,7 +18,7 @@ import productLinks from '../../../src-tauri/product-links.json' with { type: 'j
 import { fileURLToPath } from 'node:url';
 import { contextSaveSchema, readContextBatch, tagCatalog } from './ai-context.mjs';
 
-export const SHELF_URI = 'ui://stashdock/shelf-v58.html';
+export const SHELF_URI = 'ui://stashdock/shelf-v60.html';
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const searchSchema = { query: z.string().max(1000).optional(), tag: z.string().max(200).optional(),
   favoriteOnly: z.boolean().optional(), limit: z.number().int().min(1).max(50).optional(),
@@ -34,7 +34,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
   const storageService = storageServices || createStorageService(library, htmlUrl);
   if (captureBridge) library.registerInstallation('codex', '0.4.27', fileURLToPath(new URL('../.codex-plugin/plugin.json', htmlUrl)));
   const previewService = packagedPreviewService(htmlUrl, library.dataDir || dataDir);
-  importServices ??= { sources: previewService.sources, bookmarks: previewService.bookmarks, icons: previewService.icons, preview: previewService.lookup, openCaptureSite };
+  importServices ??= { sources: previewService.sources, bookmarks: previewService.bookmarks, icons: previewService.icons, preview: previewService.content, openCaptureSite };
   const prepareCover = importServices.prepareCover ?? previewService.prepareCover;
   const normalizeCover = async value => {
     if (typeof value !== 'string' || value.length > 750_000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) throw Error('Use a prepared PNG, JPG or WebP cover image.');
@@ -46,7 +46,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
   const icons = [{ src: `data:image/png;base64,${readFileSync(iconUrl).toString('base64')}`, mimeType: 'image/png' }];
   const server = new McpServer({ name: 'stashdock', version: '0.4.27', icons });
   const close = server.close.bind(server);
-  server.close = async () => { storageService.close?.(); previewService.close(); bridge?.close(); await previews?.close(); await close(); library.close?.(); };
+  server.close = async () => { storageService.close?.(); bridge?.close(); await Promise.all([previewService.close(), previews?.close()]); await close(); library.close?.(); };
   let resourceDomains = [];
   server.registerTool('search_stashdock', { description: 'Find saved context for a task, or browse a tag as a reusable context group. Keyword matching, newest first; use hasMore/nextOffset to page. Read promising candidates with get_stashdock_items.',
     inputSchema: searchSchema, annotations: readOnly }, guarded(async args => {
@@ -286,6 +286,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
   registerWrite('rename_stashdock_tag', 'Rename a tag across the local library after user confirmation.', { name: z.string().min(1).max(48), replacement: z.string().min(1).max(48) }, args => library.changeTag(args.name, args.replacement));
   registerWrite('delete_stashdock_tag', 'Remove a tag from all references after user confirmation. References remain saved.', { name: z.string().min(1).max(48) }, args => library.changeTag(args.name, null), true);
   registerWrite('delete_stashdock_reference', 'Delete a reference after the user confirms in the App. Original files and sites remain unchanged.', { id }, args => library.remove(args.id), true);
+  registerWrite('delete_stashdock_references', 'Delete references selected and confirmed in the App. Original files and sites remain unchanged.', { ids: z.array(z.string().min(1).max(120)).min(1).max(10_000) }, args => library.removeMany(args.ids), true);
   return server;
 }
 

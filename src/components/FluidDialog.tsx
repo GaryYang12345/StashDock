@@ -8,9 +8,9 @@ import { Button } from "./arc/button/button";
 import { motionTokens } from "./arc/lib/motion-tokens";
 import styles from "./FluidDialog.module.css";
 
-type FluidDialogProps = { open: boolean; onClose: () => void; onExited?: () => void; title: string; description?: string; busy?: boolean; size?: 'default' | 'wide' | 'import'; children: ReactNode; returnFocus?: React.RefObject<HTMLElement | null> };
+type FluidDialogProps = { open: boolean; onClose: () => void; onExited?: () => void; title: string; description?: string; busy?: boolean; progress?: ReactNode; size?: 'default' | 'wide' | 'import'; children: ReactNode; returnFocus?: React.RefObject<HTMLElement | null> };
 
-function DialogLayer({ title, description, busy, size, children, origin, native }: Omit<FluidDialogProps, "open" | "onClose" | "onExited"> & { origin: React.RefObject<HTMLElement | null>; native: boolean }) {
+function DialogLayer({ title, description, busy, progress, size, children, origin, native }: Omit<FluidDialogProps, "open" | "onClose" | "onExited"> & { origin: React.RefObject<HTMLElement | null>; native: boolean }) {
   const { t } = useI18n();
   const present = useIsPresent();
   const reduced = useReducedMotion();
@@ -21,14 +21,20 @@ function DialogLayer({ title, description, busy, size, children, origin, native 
   const height = useMotionValue<number | 'auto'>('auto');
   const measuredHeight = useRef<number | undefined>(undefined);
   const [scrollable, setScrollable] = useState(false);
+  const pending = Boolean(progress);
+  useLayoutEffect(() => {
+    // The form leaves the focus tree during a blocking import. Keep Radix's
+    // existing modal/focus owner instead of opening a second stacked dialog.
+    if (pending) surface.current?.focus({ preventScroll: true });
+  }, [pending]);
   useLayoutEffect(() => {
     if (size !== 'import' || !header.current || !body.current) return;
     let resizing: AnimationPlaybackControls | undefined;
     const measure = () => {
-      // Preserve fractional CSS pixels. Rounding natural layout used to start
-      // a nearly invisible height spring on every opening, forcing layout.
-      const next = header.current!.getBoundingClientRect().height + body.current!.getBoundingClientRect().height + 2;
-      if (measuredHeight.current === undefined || reduced) {
+      // Used CSS heights preserve fractional layout pixels without counting a
+      // host zoom/transform twice, unlike viewport-space bounding rectangles.
+      const next = parseFloat(getComputedStyle(header.current!).height) + parseFloat(getComputedStyle(body.current!).height) + 2;
+      if (measuredHeight.current === undefined || reduced || pending) {
         height.jump(next);
         measuredHeight.current = next;
       } else if (Math.abs(next - measuredHeight.current) > .1) {
@@ -46,7 +52,7 @@ function DialogLayer({ title, description, busy, size, children, origin, native 
     window.addEventListener('resize', measure);
     if (surface.current?.parentElement) observer.observe(surface.current.parentElement);
     return () => { resizing?.stop(); observer.disconnect(); window.removeEventListener('resize', measure); };
-  }, [size, native, reduced, height]);
+  }, [size, native, reduced, height, pending]);
   useLayoutEffect(() => { mountedAt.current = performance.now(); }, []);
   // One shared entrance: the card and its contents rise together, with a
   // readable fade and a soft, non-bouncing landing. Height has its own owner.
@@ -72,13 +78,15 @@ function DialogLayer({ title, description, busy, size, children, origin, native 
         // A newly mounted dialog must not dismiss on the press that opened it.
         if (busy || !present || event.detail.originalEvent.timeStamp < mountedAt.current) event.preventDefault();
       }}>
-      <motion.section layoutRoot ref={surface} data-arc-ui data-size={size} data-scrollable={scrollable} inert={!present} aria-hidden={!present} aria-busy={busy || undefined} className={`${styles.content} ${native ? styles.native : ""}`}
+      <motion.section layoutRoot ref={surface} data-arc-ui data-size={size} data-progress={pending || undefined} data-scrollable={scrollable} inert={!present} aria-hidden={!present} aria-busy={pending ? undefined : busy || undefined} className={`${styles.content} ${native ? styles.native : ""}`}
         style={size === 'import' ? { height } : undefined} initial={{ opacity: 0, y: reduced ? 0 : 16 }} animate={{ opacity: 1, y: 0 }} exit={{ ...exit, y: reduced ? 0 : 8 }} transition={transition}>
-        <div ref={header} className={styles.header}>
+        <div ref={header} className={pending ? undefined : styles.header}>
+          {pending ? <DialogPrimitive.Title className={styles.visuallyHidden}>{title}</DialogPrimitive.Title> : <>
           <div><DialogPrimitive.Title className={styles.title}>{title}</DialogPrimitive.Title>{description && <DialogPrimitive.Description className={styles.description}>{description}</DialogPrimitive.Description>}</div>
           <DialogPrimitive.Close asChild><Button type="button" variant="ghost" size="sm" className={styles.close} disabled={busy} aria-label={t("Close dialog")}><X size={16} strokeWidth={1.75} aria-hidden="true" /></Button></DialogPrimitive.Close>
+          </>}
         </div>
-        <div ref={body} className={styles.body}>{children}</div>
+        <div ref={body} className={styles.body}>{pending ? progress : children}</div>
       </motion.section>
     </DialogPrimitive.Content>
   </>;

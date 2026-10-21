@@ -21,8 +21,10 @@ test('preview loading is derived from live work, not absence of an image or save
     db.exec('CREATE TABLE web_preview_jobs(id TEXT PRIMARY KEY,url TEXT,status TEXT,attempts INTEGER,retry_at INTEGER)');
     db.prepare("INSERT INTO app_meta VALUES('web_preview_worker_until',?)").run(String(Date.now()/1000 + 90));
     assert.equal(visualSummary((await library.read(true))[0]).previewStatus, 'queued');
-    db.prepare('INSERT INTO web_preview_jobs VALUES(?,?,?,?,?)').run(item.id, item.url, 'working', 1, 0);
+    db.prepare('INSERT INTO web_preview_jobs VALUES(?,?,?,?,?)').run(item.id, item.url, 'working', 1, Math.floor(Date.now()/1000)+60);
     assert.equal((await library.read(true))[0].previewStatus, 'working');
+    db.exec("UPDATE web_preview_jobs SET retry_at=0");
+    assert.equal((await library.read(true))[0].previewStatus, 'failed', 'A live provider cannot keep an expired task loading');
     db.exec("UPDATE web_preview_jobs SET status='failed',attempts=3");
     assert.equal((await library.read(true))[0].previewStatus, 'failed');
     db.exec("UPDATE web_preview_jobs SET status='done'");

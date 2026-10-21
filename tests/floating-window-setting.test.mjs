@@ -12,9 +12,11 @@ test('desktop floating policy is persisted, defaults on and is not exposed as an
   assert.match(settings,/save\(\{ floatingWindow: value === 'on' \}\)/);
   assert.doesNotMatch(await read('src/features/mcp-app/settings.tsx'),/Floating window|floatingWindow/);
   const native=await read('src-tauri/src/desktop_windows.rs');
-  assert.match(native,/target == Surface::Folder && !floating_enabled\(app\)/);
-  assert.match(native,/\.minimize\(\)/);
-  assert.match(native,/if !floating_enabled\(&copy\)/);
+  assert.match(native,/Surface::Folder => Intent::Minimize/);
+  assert.match(native,/policy::resolve\(/);
+  assert.match(native,/minimize_immediately/);
+  const policy=await read('src-tauri/src/desktop_window_policy.rs');
+  assert.match(policy,/if floating[\s\S]*Mode::Folder[\s\S]*Mode::Minimized/);
   assert.match(native,/if !floating_enabled\(app\)/);
   assert.match(native,/app.exit\(0\)/);
   const source=await read('src-tauri/src/settings.rs');

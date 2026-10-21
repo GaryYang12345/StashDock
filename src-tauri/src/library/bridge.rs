@@ -115,9 +115,16 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
     let trusted_extension_request = registered_origin && has_extension_client_header;
     let setup_request = allowed_origin.is_some() && has_extension_client_header;
     let trusted_read_request = trusted_extension_request;
-    let path = request.url().split('?').next().unwrap_or_default();
+    let path = request
+        .url()
+        .split('?')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
 
-    if path == "/v1/capture" && matches!(request.method(), &Method::Get | &Method::Post) {
+    if (path == "/v1/capture" && matches!(request.method(), &Method::Get | &Method::Post))
+        || (path == "/v1/capture/lookup" && request.method() == &Method::Post)
+    {
         if !trusted_extension_request || !has_extension_client_header {
             let _ = request.respond(json_response(
                 r#"{"error":"An extension request is required."}"#,
@@ -131,7 +138,41 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
             connection
                 .busy_timeout(std::time::Duration::from_secs(3))
                 .map_err(|e| e.to_string())?;
-            if request.method() == &Method::Get {
+            if path == "/v1/capture/lookup" && request.method() == &Method::Post {
+                if !request_header(&request, "Content-Type")
+                    .is_some_and(|v| v.starts_with("application/json"))
+                {
+                    return Err("Use a JSON request.".into());
+                }
+                let mut body = String::new();
+                request
+                    .as_reader()
+                    .take(16385)
+                    .read_to_string(&mut body)
+                    .map_err(|e| e.to_string())?;
+                if body.len() > 16384 {
+                    return Err("Invalid lookup request.".into());
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Lookup {
+                    url: String,
+                    operation_id: Option<String>,
+                    digest: Option<String>,
+                }
+                let input: Lookup =
+                    serde_json::from_str(&body).map_err(|_| "Invalid lookup request.")?;
+                if input.url.len() > 8000 {
+                    return Err("Invalid URL.".into());
+                }
+                return super::browser_capture::lookup(
+                    &connection,
+                    &input.url,
+                    input.operation_id.as_deref(),
+                    input.digest.as_deref(),
+                );
+            }
+            if request.method() == &Method::Get && path == "/v1/capture" {
                 let url = url::Url::parse(&format!("http://localhost{}", request.url()))
                     .map_err(|_| "Invalid URL.")?;
                 let raw = url
@@ -318,7 +359,7 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
         let _ = request.respond(response);
         return;
     }
-    if request.method() == &Method::Get && path == "/v1/tags" {
+    if matches!(request.method(), &Method::Get | &Method::Post) && path == "/v1/tags" {
         if !trusted_read_request {
             let _ = request.respond(json_response(
                 r#"{"error":"A trusted StashDock client is required."}"#,

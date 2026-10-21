@@ -38,45 +38,16 @@ function Render-BrandPng([int]$size) {
 }
 
 try {
-  $sizes = @(16, 20, 24, 32, 40, 48, 64, 128, 256)
+  # Transparent marks remain appropriate for the tray and browser toolbar.
+  $sizes = @(16, 32, 48, 128)
   $images = @{}
   foreach ($size in $sizes) {
     $images[$size] = Render-BrandPng $size
   }
-  [System.IO.File]::WriteAllBytes((Join-Path $nativeDir "icon.png"), $images[256])
   [System.IO.File]::WriteAllBytes((Join-Path $nativeDir "32x32.png"), $images[32])
-  [System.IO.File]::WriteAllBytes((Join-Path $nativeDir "128x128.png"), $images[128])
   foreach ($size in @(16, 32, 48, 128)) {
     [System.IO.File]::WriteAllBytes((Join-Path $extensionDir "icon-$size.png"), $images[$size])
   }
-
-  # Multi-resolution ICO: sharp at Windows taskbar, tray, Explorer and installer
-  # sizes. Each directory entry references the matching branded PNG, not a copy
-  # of a single 256px raster scaled by the shell.
-  $iconStream = New-Object System.IO.MemoryStream
-  $writer = New-Object System.IO.BinaryWriter($iconStream)
-  try {
-    $writer.Write([uint16]0)
-    $writer.Write([uint16]1)
-    $writer.Write([uint16]$sizes.Count)
-    $offset = 6 + 16 * $sizes.Count
-    foreach ($size in $sizes) {
-      $dimension = if ($size -eq 256) { 0 } else { $size }
-      $writer.Write([byte]$dimension)
-      $writer.Write([byte]$dimension)
-      $writer.Write([byte]0)
-      $writer.Write([byte]0)
-      $writer.Write([uint16]1)
-      $writer.Write([uint16]32)
-      $writer.Write([uint32]$images[$size].Length)
-      $writer.Write([uint32]$offset)
-      $offset += $images[$size].Length
-    }
-    foreach ($size in $sizes) { $writer.Write([byte[]]$images[$size]) }
-    $writer.Flush()
-    [System.IO.File]::WriteAllBytes((Join-Path $nativeDir "icon.ico"), $iconStream.ToArray())
-  }
-  finally { $writer.Dispose(); $iconStream.Dispose() }
 
   # Same supplied SVG for browser tabs, with only its ink adapted to browser
   # chrome's light/dark preference. Vite gives this file a content-hashed URL.
@@ -87,4 +58,6 @@ try {
 }
 finally { $source.Dispose() }
 
-Write-Output "Generated StashDock brand ICO, native/tray PNGs, browser favicon and extension icons."
+& node (Join-Path $PSScriptRoot "generate-app-icons.mjs")
+if ($LASTEXITCODE -ne 0) { throw 'App icon export failed.' }
+Write-Output "Generated square app icons, transparent tray/browser marks and favicon."

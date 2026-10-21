@@ -17,7 +17,7 @@ const services=createSidebarClient(chrome,windowId,entry=>{
     const page=entry.page, url=new URL(canonicalReferenceUrl(page.url));
     const now=entry.createdAt||new Date().toISOString(),host=url.hostname.replace(/^www\./,'');
     return { id:entry.token,title:page.title||entry.title||host,kind:host==='github.com'?'repo':'web',source:page.platform||host,url:url.href,content:page.content,excerpt:'',tags:[],createdAt:now,preview:page.preview,
-      origin:{platform:page.platform||host,importMethod:'browser_extension',importedAt:now,externalId:url.href,faviconUrl:normalizeFavicon(page.faviconUrl || entry.faviconUrl, url.href),author:page.author,publishedAt:page.publishedAt,captureMethod:page.captureMethod,truncated:page.truncated,previewKind:'screenshot'} };
+      origin:{platform:page.platform||host,importMethod:'browser_extension',importedAt:now,externalId:url.href,faviconUrl:normalizeFavicon(page.faviconUrl || entry.faviconUrl, url.href),author:page.author,publishedAt:page.publishedAt,captureMethod:page.captureMethod,truncated:page.truncated,previewKind:page.previewKind} };
 },{live:()=>document.visibilityState!=='hidden'});
 const unmount=renderPopup(document.querySelector('#root'),{...services,close:()=>{void services.close().catch(()=>window.close());}});
 window.addEventListener('pagehide',()=>{

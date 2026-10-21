@@ -110,7 +110,7 @@ export function Sidebar({ active, counts, tags, activeTag, onSelect, onSelectTag
       })}
       {onPinTag && tagRows(pinned, true)}
     </NavigationGroup>
-    {tags.length > 0 && <section className={styles.tags} aria-label={t("Tags")}>
+    <section className={styles.tags} aria-label={t("Tags")}>
       <Button type="button" variant="ghost" className={styles.tagHeading} aria-label={`${t('Tags')} (${tags.length})`} aria-expanded={tagsExpanded} aria-controls={tagsExpanded ? 'sidebar-tags' : undefined} onClick={() => setTagsExpanded(value => !value)}>
         <span className={styles.rowContent}><motion.span className={styles.disclosureIcon} animate={{ rotate: tagsExpanded ? 90 : 0 }} transition={reduced ? { duration: 0 } : motionTokens.spring.snappy}><ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" /></motion.span>
         <span className={styles.label}>{t("Tags")}</span><span className={styles.count}>{tags.length}</span></span>
@@ -122,7 +122,7 @@ export function Sidebar({ active, counts, tags, activeTag, onSelect, onSelectTag
         </NavigationGroup>
       </div>
       </ScrollArea>
-    </section>}
+    </section>
     {onSettings && <div className={styles.settings} data-active={settingsOpen || undefined}><Button variant="ghost" className={styles.row} onClick={onSettings} disabled={settingsDisabled} aria-pressed={settingsOpen}><span className={styles.rowContent}><Settings size={16} strokeWidth={1.75} aria-hidden="true" /><span className={styles.label}>{t("Settings")}</span></span></Button></div>}
   </aside>;
 }

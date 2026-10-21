@@ -126,16 +126,24 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   });
   function annotatePreviews(items) {
     const until = Number(db.prepare("SELECT value FROM app_meta WHERE key='web_preview_worker_until'").get()?.value || 0);
-    if (until <= Date.now() / 1000 || !db.prepare("SELECT 1 FROM sqlite_master WHERE name='web_preview_jobs'").get()) return items;
-    const status = db.prepare('SELECT status FROM web_preview_jobs WHERE id=? AND url=?');
+    const imageLive=until>Date.now()/1000 && db.prepare("SELECT 1 FROM sqlite_master WHERE name='web_preview_jobs'").get();
+    const contentUntil=Number(db.prepare("SELECT value FROM app_meta WHERE key='web_content_worker_until'").get()?.value||0);
+    const status = imageLive ? db.prepare('SELECT status,retry_at FROM web_preview_jobs WHERE id=? AND url=?') : null;
+    const content = contentUntil>Date.now()/1000 && db.prepare("SELECT 1 FROM sqlite_master WHERE name='web_content_jobs'").get() ? db.prepare(`SELECT COALESCE(j.status,'queued') status FROM stash_items s LEFT JOIN web_content_jobs j ON j.id=s.id AND j.url=s.url
+      WHERE s.id=? AND s.url=? AND s.context_override IS NULL
+      AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
+      AND ((COALESCE(trim(s.content),'')='' AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentEdited'),0)!=1)
+        OR json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.pendingTitle')=s.title)
+      AND json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.importMethod') IN ('browser_bookmarks','manual_url')`) : null;
     for (const item of items) {
-      if (item.preview || !['web', 'repo'].includes(item.kind) || !item.url) continue;
+      if (['web','repo'].includes(item.kind) && item.url) item.contentStatus = content?.get(item.id,item.url)?.status;
+      if (!status || item.preview || !['web', 'repo'].includes(item.kind) || !item.url) continue;
       try {
         const url = new URL(item.url);
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || (url.port && !['80', '443'].includes(url.port))) continue;
       } catch { continue; }
-      const state = status.get(item.id, item.url)?.status;
-      item.previewStatus = !state ? 'queued' : ['working', 'failed'].includes(state) ? state : 'unavailable';
+      const job = status.get(item.id, item.url), state = job?.status;
+      item.previewStatus = !state || state === 'queued' ? 'queued' : state === 'working' ? (job.retry_at > Date.now()/1000 ? 'working' : 'failed') : state === 'failed' ? 'failed' : 'unavailable';
     }
     return items;
   }
@@ -283,6 +291,10 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     const current = get(id);
     if (typeof title !== 'string' || !title.trim() || title.trim().length > 500) throw new Error('Enter a title up to 500 characters.');
     const value = tags(values);
+    if (current.origin?.pendingTitle !== undefined) {
+      delete current.origin.pendingTitle;
+      db.prepare('UPDATE stash_items SET origin_json=? WHERE id=?').run(JSON.stringify(current.origin),id);
+    }
     db.prepare('UPDATE stash_items SET title=?,tags_json=?,updated_at=? WHERE id=?').run(title.trim(), JSON.stringify(value), new Date().toISOString(), id);
     if (cover !== undefined) {
       const origin = { ...current.origin };
@@ -322,11 +334,18 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     }
     return { changed: true };
   });
-  const remove = id => transaction(() => {
+  const removeMany = ids => {
+    if (!Array.isArray(ids) || !ids.length || ids.length > 10_000 || ids.some(id => typeof id !== 'string' || !id.trim() || id.length > 120)) throw new Error('Select between 1 and 10,000 valid references.');
+    return transaction(() => {
     // Keep managed files recoverable. Never delete a user-supplied path.
-    db.prepare('DELETE FROM stash_fts WHERE id=?').run(id);
-    return { deleted: db.prepare('DELETE FROM stash_items WHERE id=?').run(id).changes > 0 };
-  });
+    const fts = db.prepare('DELETE FROM stash_fts WHERE id=?');
+    const items = db.prepare('DELETE FROM stash_items WHERE id=?');
+    let deleted = 0;
+    for (const id of new Set(ids)) { fts.run(id); deleted += items.run(id).changes; }
+    return { deleted };
+    });
+  };
+  const remove = id => ({ deleted: removeMany([id]).deleted > 0 });
   const importFiles = (files, selectedTags) => {
     const explicitTags = selectedTags === undefined ? undefined : tags(selectedTags);
     if (!Array.isArray(files) || !files.length || files.length > 10) throw new Error('Import 1 to 10 files at a time.');
@@ -371,5 +390,5 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     referenceCount: () => db.prepare('SELECT COUNT(*) AS count FROM stash_items').get().count,
     getCodexPreferences, saveCodexPreferences, integrations, registerInstallation,
     browserOriginAllowed: origin => registeredBrowserOrigin(readMeta, origin), desktopExecutable,
-    ...browserCaptureStore(db, { insert, index }), listCapturePlatforms, saveCapturePlatform, saveContextReference, importItems, importFiles, setFavorite, setTags, applyTagChanges, editMetadata, defaultCover, editContext, changeTag, remove, close: () => db.close() };
+    ...browserCaptureStore(db, { insert, index }), listCapturePlatforms, saveCapturePlatform, saveContextReference, importItems, importFiles, setFavorite, setTags, applyTagChanges, editMetadata, defaultCover, editContext, changeTag, remove, removeMany, close: () => db.close() };
 }

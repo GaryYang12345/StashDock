@@ -2,6 +2,7 @@ mod blocking_work;
 mod browser_presence;
 mod capture_platforms;
 mod codex_presence;
+mod desktop_window_policy;
 mod desktop_windows;
 mod folder_window;
 #[allow(dead_code)]
@@ -15,6 +16,7 @@ mod link_import;
 mod link_metadata;
 mod preview_browser;
 mod preview_cache;
+mod preview_enrichment;
 mod public_web;
 mod reference_clipboard;
 mod reference_cover;
@@ -23,6 +25,7 @@ mod reference_drag;
 mod reference_drag_windows;
 mod reference_transfer;
 mod settings;
+mod web_content;
 mod web_images;
 mod web_preview;
 mod window_frame;
@@ -56,9 +59,8 @@ async fn preview_link(url: String) -> Result<link_metadata::LinkPreview, String>
     if url.len() > 8192 {
         return Err("This link is too long.".into());
     }
-    static WORK: blocking_work::WorkLimit = blocking_work::WorkLimit::new(2);
-    WORK.run(move || link_metadata::fetch_preview_inline(&url))
-        .await
+    static WORK: blocking_work::WorkLimit = blocking_work::WorkLimit::new(4);
+    WORK.run(move || link_metadata::fetch_content(&url)).await
 }
 
 pub fn run() {
@@ -124,6 +126,7 @@ pub fn run() {
             library::commands::list_pinned_tags,
             library::commands::set_tag_pinned,
             library::commands::delete_item,
+            library::commands::delete_items,
             library::commands::import_files,
             library::commands::import_file_payloads,
             library::commands::open_reference_file,

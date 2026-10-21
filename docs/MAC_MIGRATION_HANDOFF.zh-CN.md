@@ -12,6 +12,10 @@
 4. 界面改动前读 `.agents/skills/arc/SKILL.md` 及其要求的参考文件。
 5. 产品 Skill：`plugins/stashdock/skills/use-stashdock/SKILL.md`。
 
+图标更新：`assets/app-icon/README.md` 包含白底方形图标和 Icon Composer 分层说明。
+SVG 前景保持原始品牌几何，不含圆角遮罩、高光或阴影。`app-icon.icns` 仅是静态兼容
+图标；请在 Mac 创建、编译并实际接入 `.icon` 后再声称支持原生 Liquid Glass。
+
 规范、Arc Skill 及原许可证均已纳入源码。不需要 Windows 个人配置、凭证、
 Computer Use Skill、聊天历史或原始收藏库。
 

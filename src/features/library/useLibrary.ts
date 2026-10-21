@@ -11,6 +11,7 @@ export const libraryStore = createLibraryStore({
     return isTauri() ? loadItems() : next;
   },
   remove: (id, next) => isTauri() ? deleteItem(id) : saveItems(next),
+  removeMany: async (ids, next) => { if (isTauri()) await invoke('delete_items', { ids }); else await saveItems(next); },
   favorite: (id, value, next) => isTauri() ? setItemFavorite(id, value) : saveItems(next),
   edit: async (id, title, tags, next, cover) => {
     if (isTauri()) return invoke('edit_item', { id, title, tags, ...(cover ? { cover } : {}) });

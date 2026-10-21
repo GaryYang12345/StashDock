@@ -1,0 +1,42 @@
+// Isolated browser fixture: no real bookmarks or collection writes.
+async page => {
+  await page.goto('http://127.0.0.1:5173/tests/fixtures/desktop-import.html?hold-import', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.getByRole('button', { name: 'Open import fixture', exact: true }).click();
+  const link = page.getByRole('textbox', { name: 'Link', exact: true });
+  const title = page.getByRole('textbox', { name: 'Title', exact: true });
+  const content = page.getByRole('textbox', { name: 'Content', exact: true });
+  const assert = (value, message) => { if (!value) throw Error(message); };
+  await link.fill('https://example.org/first');
+  await page.waitForTimeout(800);
+  assert(/^Reading title\.{1,3}$/.test(await title.getAttribute('placeholder')), 'Title loading not in field');
+  assert(/^Reading content\.{1,3}$/.test(await content.getAttribute('placeholder')), 'Content loading not in field');
+  const firstDots = await title.getAttribute('placeholder');
+  await page.waitForTimeout(500);
+  assert(firstDots !== await title.getAttribute('placeholder'), 'Dots did not animate');
+  await title.fill('My old title'); await content.fill('Old edited content');
+  await link.fill('https://example.org/second');
+  assert(await title.inputValue() === '' && await content.inputValue() === '', 'New URL retained old draft');
+  await page.waitForTimeout(800);
+  await page.evaluate(() => window.completeOneImport());
+  await page.waitForTimeout(400);
+  assert(await title.inputValue() === '', 'Stale first response filled second URL');
+  assert(await title.getAttribute('aria-busy') === 'true', 'Stale completion ended active loading');
+  await page.evaluate(() => window.completeOneImport());
+  await page.waitForFunction(() => [...document.querySelectorAll('input')].some(input => input.value === 'Detected second'));
+  assert((await content.inputValue()).includes('Complete test content.'), 'New content missing');
+  await link.fill('https://example.org/third');
+  await title.fill('My current title'); await content.fill('My current body');
+  await page.waitForTimeout(800);
+  await page.evaluate(() => window.completeOneImport());
+  await page.waitForTimeout(450);
+  assert(await title.inputValue() === 'My current title' && await content.inputValue() === 'My current body', 'Same-link edit overwritten');
+  await link.fill('https://example.org/final');
+  await page.getByRole('button', { name: 'Save link', exact: true }).click();
+  await page.waitForTimeout(150);
+  assert(await page.evaluate(() => !window.savedImports?.length), 'Saved before current lookup settled');
+  await page.evaluate(() => window.releaseImports());
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  const saved = await page.evaluate(() => window.savedImports);
+  assert(saved.length === 1 && saved[0].title === 'Detected final' && saved[0].url === 'https://example.org/final', 'Saved stale URL/details');
+  return { passed: true, checks: ['both fields loading', 'animated dots', 'new URL resets edited draft', 'stale response ignored', 'same-link edits preserved', 'immediate Save awaits latest lookup'] };
+}

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 
 const compiled = await build({ entryPoints: ['src/lib/linkImport.ts'], bundle: true, write: false, format: 'esm', platform: 'node' });
-const { normalizeLink, makeLink, bookmarkCandidates, makeBrowserLinks } = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const { normalizeLink, makeLink, bookmarkCandidates, makeBrowserLinks, prepareImportedLinks, readImportDetails } = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const source = { id: 'chrome:Default', browser: 'Chrome', profile: 'Personal' };
 
 test('manual links normalize tracking and reject credentials and executable schemes', () => {
@@ -40,7 +40,15 @@ test('cached bookmark favicons feed the import rows and survive saving the new r
 test('browser imports preserve source, original date and folder provenance without invented web content', () => {
   const [item] = makeBrowserLinks([{ title: 'A', url: 'https://example.org', folderPath: ['Bookmarks bar', 'Research'], savedAt: '2026-01-01T00:00:00Z' }], source);
   assert.ok(Date.now() - Date.parse(item.createdAt) < 1000); assert.equal(item.origin.savedAt, '2026-01-01T00:00:00Z'); assert.equal(item.origin.platform, 'Chrome'); assert.equal(item.origin.importMethod, 'browser_bookmarks');
-  assert.deepEqual(item.origin.folderPath, ['Bookmarks bar', 'Research']); assert.deepEqual(item.tags, []); assert.equal(item.content, undefined); assert.equal(item.excerpt, '');
+  assert.deepEqual(item.origin.folderPath, ['Bookmarks bar', 'Research']); assert.deepEqual(item.tags, ['Chrome']); assert.equal(item.content, undefined); assert.equal(item.excerpt, '');
+});
+
+test('browser source tags cover supported browsers and future Safari without folder tags', () => {
+  for (const browser of ['Chrome', 'Edge', 'Firefox', 'Safari']) {
+    const [item] = makeBrowserLinks([{ title: 'Page', url: 'https://example.org', folderPath: ['Private folder'] }], { ...source, browser });
+    assert.deepEqual(item.tags, [browser]);
+    assert.equal(item.origin.platform, browser);
+  }
 });
 
 test('desktop browser import has no search or batch tags and shares card favicons', async () => {
@@ -83,10 +91,99 @@ test('desktop and MCP share the same three-mode import without bookmark exports'
   assert.equal((desktop.match(/<TabsTrigger /g) || []).length, 3);
   assert.doesNotMatch(desktop, /Bookmarks HTML|Separate tags with commas|bookmark_html/);
   assert.match(await readFile('src/components/ReferenceTagsField.tsx', 'utf8'), /Press Enter to add a tag/); assert.match(desktop, /slice\(0, visibleCount\)/); assert.match(desktop, /edited.current.title/);
-  assert.match(desktop, /onAdd\(items, persisted\);\s*onClose\(\)/);
+  assert.ok(desktop.indexOf('await onAdd(prepared, persisted)') < desktop.indexOf('onClose();', desktop.indexOf('await onAdd(prepared, persisted)')));
+});
+
+test('import preparation is bounded, ordered, monotonic and settles unavailable pages without screenshots',async()=>{
+  const items=makeBrowserLinks(Array.from({length:6},(_,i)=>({title:`Saved ${i}`,url:`https://example.org/${i}`,folderPath:[]})),source);
+  let active=0,peak=0;const progress=[];
+  const result=await prepareImportedLinks(items,async url=>{active++;peak=Math.max(peak,active);try{await new Promise(r=>setTimeout(r,url.endsWith('/0')?15:1));if(url.endsWith('/2'))throw Error('Unavailable');return {title:'Detected title',content:`Body ${url}`};}finally{active--;}},value=>progress.push(value));
+  assert.equal(peak,4);assert.deepEqual(progress,[0,1,2,3,4,5,6]);
+  assert.deepEqual(result.map(item=>item.id),items.map(item=>item.id));
+  assert.equal(result[0].title,'Saved 0');assert.match(result[0].content,/Body/);
+  assert.equal(result[2].content,undefined);
+  for(const item of result){assert.equal(item.origin.contentSettled,true);assert.equal(item.preview,undefined);assert.deepEqual(item.tags,['Chrome']);}
+  assert.equal(items[0].origin.contentSettled,undefined,'Preparation must not mutate the selection');
+});
+
+test('leaving an import stops scheduling reads and never returns a partial batch for saving',async()=>{
+  const items=makeBrowserLinks(Array.from({length:6},(_,i)=>({title:'Page',url:`https://example.org/${i}`,folderPath:[]})),source);
+  let current=true,reads=0;
+  await assert.rejects(prepareImportedLinks(items,async()=>{reads++;current=false;return {title:'Page',content:'Body'};},()=>{},()=>current),/cancelled/);
+  assert.ok(reads<=2);
+});
+
+test('temporary native admission pressure is retried, not frozen as an unavailable page',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  let calls=0;
+  const pending=readImportDetails('https://example.org',async()=>{if(++calls===1)throw Error('StashDock is busy. Try again.');return {title:'Page',content:'Actual body'};});
+  await new Promise(setImmediate);t.mock.timers.tick(1000);
+  assert.equal((await pending).content,'Actual body');assert.equal(calls,2);
 });
 test('new import surface uses Arc tokens and no competing button overrides', async () => {
   const css = await readFile('src/components/DesktopImportDialog.module.css', 'utf8');
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|(?:rgb|hsl)\(|font-weight:\s*(600|700|bold)|outline:|100vw|linear-gradient/);
   assert.doesNotMatch(css, /\.actions\s+button\s*\{|--text-sm:/);
+});
+
+test('batch progress replaces the form in the existing modal instead of stacking a second modal', async () => {
+  const desktop = await readFile('src/components/DesktopImportDialog.tsx', 'utf8');
+  const dialog = await readFile('src/components/FluidDialog.tsx', 'utf8');
+  const css = await readFile('src/components/FluidDialog.module.css', 'utf8');
+  assert.equal((desktop.match(/<ImportProgress /g) || []).length, 1);
+  assert.match(desktop, /progress=\{progress && <ImportProgress/);
+  assert.match(dialog, /pending \? progress : children/);
+  assert.match(dialog, /pending \? <DialogPrimitive.Title className=\{styles.visuallyHidden\}/);
+  assert.match(dialog, /if \(pending\) surface.current\?\.focus/);
+  assert.match(dialog, /measuredHeight.current === undefined \|\| reduced \|\| pending/);
+  assert.match(dialog, /style=\{size === 'import' \? \{ height \} : undefined\}/);
+  assert.match(dialog, /onOpenChange=\{next => \{ if \(!next && !props.busy\)/);
+  assert.match(css, /\.content\[data-progress\].*360px.*border-radius: var\(--radius-panel\)/);
+  assert.match(css, /\.content\[data-progress\] \.body \{ padding: var\(--space-8\)/);
+  assert.match(css, /@media \(max-width: 600px\).*data-progress.*padding: var\(--space-6\)/);
+  assert.match(css, /\.visuallyHidden.*position: absolute.*clip-path: inset\(50%\)/);
+  assert.match(dialog, /parseFloat\(getComputedStyle\(header.current!\).height\)/);
+  assert.match(dialog, /parseFloat\(getComputedStyle\(body.current!\).height\)/);
+  assert.doesNotMatch(dialog, /getBoundingClientRect\(\).height/);
+});
+
+test('approved progress C2 composes the Arc bar with an accessible heading and reduced-motion counter', async () => {
+  const component = await readFile('src/components/ImportProgress.tsx', 'utf8');
+  const css = await readFile('src/components/ImportProgress.module.css', 'utf8');
+  assert.match(component, /aria-labelledby=\{labelId\}/);
+  assert.match(component, /id=\{labelId\}/);
+  assert.match(component, /if \(reduced\) \{ count.jump\(percentage\); return; \}/);
+  assert.match(component, /return \(\) => controls.stop\(\)/);
+  assert.match(component, /motionTokens.spring.smooth/);
+  assert.doesNotMatch(component, /showValue|setInterval|setTimeout/);
+  assert.match(css, /font-variant-numeric: tabular-nums/);
+  assert.match(css, /margin-bottom: var\(--space-6\)/);
+  assert.match(component, /<ImportIllustration \/>/);
+  assert.match(css, /\.heading \{ text-align: center/);
+  assert.match(css, /\.progressRow \{ display: flex; align-items: center; gap: var\(--space-3\)/);
+});
+
+test('production import artwork is fixed C2 at 85 percent with text, image and link cards', async () => {
+  const artwork = await readFile('src/components/ImportIllustration.tsx', 'utf8');
+  const css = await readFile('src/components/ImportIllustration.module.css', 'utf8');
+  assert.match(artwork, /<Paper kind="text" \/><Paper kind="image" \/><Paper kind="link" \/>/);
+  assert.match(artwork, /aria-hidden="true"/);
+  assert.doesNotMatch(artwork, /brand|useState|setInterval|setTimeout|referenceIcons/);
+  assert.match(css, /opacity: \.85/);
+  assert.match(css, /data-theme="dark"/);
+  assert.doesNotMatch(css, /animation:|transition:|filter:|#[\da-f]{3,8}\b/);
+});
+
+test('progress inherits shared dialog gutters and matches its title hierarchy', async () => {
+  const dialog = await readFile('src/components/FluidDialog.module.css', 'utf8');
+  const progress = await readFile('src/components/ImportProgress.module.css', 'utf8');
+  const title = css => css.match(/\.title\s*\{([^}]+)\}/)[1];
+  for (const property of ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing']) {
+    const declaration = new RegExp(`${property}:\\s*([^;]+)`);
+    assert.equal(title(progress).match(declaration)[1], title(dialog).match(declaration)[1], property);
+  }
+  assert.match(progress, /\.percentage[^}]+font-size: var\(--text-sm\)/);
+  assert.doesNotMatch(progress, /@media/);
+  assert.match(dialog, /\.body \{ padding: var\(--space-6\); \}/);
+  assert.match(dialog, /@media \(max-width: 560px\)[\s\S]*\.body \{ padding: var\(--space-4\); \}/);
 });

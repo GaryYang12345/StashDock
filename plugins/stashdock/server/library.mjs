@@ -65,7 +65,7 @@ export function visualSummary(item, resourceDomains = []) {
   const safeImage = value => typeof value === 'string' && value.length <= 750_000 && raster.test(value) ? value : undefined;
   const favicon = publicImageUrl(item.origin?.faviconUrl, item.url);
   const allowedFavicon = favicon && resourceDomains.includes(new URL(favicon).origin) ? favicon : undefined;
-  return { ...result, previewStatus: item.previewStatus, preview: safeImage(item.preview), origin: result.origin
+  return { ...result, previewStatus: item.previewStatus, contentStatus: item.contentStatus, preview: safeImage(item.preview), origin: result.origin
     ? { ...result.origin, faviconUrl: safeImage(result.origin.faviconUrl) || allowedFavicon } : undefined };
 }
 

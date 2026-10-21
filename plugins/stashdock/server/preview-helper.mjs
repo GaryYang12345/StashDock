@@ -45,7 +45,7 @@ export function createPreviewHelperRunner({ launch = spawn, maximum = 4 } = {}) 
         try { resolve(JSON.parse(output + decoder.end())); } catch { reject(Error('Invalid screenshot result')); }
       });
       if (signal?.aborted) cancel();
-      try { child.stdin.end(JSON.stringify(job.browserOperation || job.imageOperation ? job : { url: job.url, needPreview: !job.lookup && job.needsPreview !== false, ...(job.lookup ? { lookup: true } : {}), ...(job.faviconUrl && !job.faviconUrl.startsWith('data:') ? { faviconUrl: job.faviconUrl } : {}) })); }
+      try { child.stdin.end(JSON.stringify(job.browserOperation || job.imageOperation ? job : { url: job.url, needPreview: !job.lookup && job.needsPreview !== false, ...(job.lookup ? { lookup: true } : {}), ...(job.contentOnly ? { contentOnly: true } : {}), ...(job.faviconUrl ? { faviconUrl: job.faviconUrl } : {}) })); }
       catch (error) { kill(error); }
     });
   };

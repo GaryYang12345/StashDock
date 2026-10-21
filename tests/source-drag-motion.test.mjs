@@ -14,12 +14,13 @@ test('native reveal never applies a second DOM entrance or remounts the shelf', 
 test('surface switching uses direct native visibility without custom animation machinery', async () => {
   const native = await read('src-tauri/src/desktop_windows.rs');
   const entry = await read('src-tauri/src/lib.rs');
-  assert.match(native, /window\.show\(\)/);
-  assert.match(native, /window_frame::hide_immediately\(&window\)/);
+  assert.match(native, /window_frame::show_immediately\(&window\)/);
+  assert.match(native, /window_frame::hide_immediately\(window\)/);
   const apply = native.slice(native.indexOf('fn apply('), native.indexOf('fn prepare_placement('));
-  assert.ok(apply.indexOf('hide_immediately(&outgoing)') < apply.indexOf('window.unminimize()'));
-  assert.ok(apply.indexOf('hide_immediately(&outgoing)') < apply.indexOf('window.show()'));
-  assert.match(apply, /if let Err\(error\) = result[\s\S]*window\.show\(\)/);
+  assert.match(apply, /let reveal_first = old == Some\(Surface::Panel\) && next == Surface::Folder/);
+  assert.match(apply, /if old != target && !reveal_first/);
+  assert.ok(apply.indexOf('show_immediately(&window)?') < apply.indexOf('for surface in [Surface::Panel, Surface::Folder]'));
+  assert.match(apply, /if let Err\(error\) = result[\s\S]*show_immediately\(&window\)/);
   assert.doesNotMatch(native + entry, /visual_handoff|DwmRegisterThumbnail|Presentation|Travel|set_desktop_motion|desktop_motion_diagnostics|transition_id/);
   assert.doesNotMatch(native, /thread::sleep|from_millis/);
   // The entry point has a bounded cold-start state gate. Its worker-thread
@@ -30,11 +31,15 @@ test('surface switching uses direct native visibility without custom animation m
   assert.doesNotMatch(entry.replace(startup, ''), /thread::sleep|from_millis/);
 });
 
-test('either outgoing surface hides synchronously through Tauri without an OS fade', async () => {
+test('both reveals and hides disable OS fades before framework visibility changes', async () => {
   const frame = await read('src-tauri/src/window_frame.rs');
+  const policy = frame.slice(frame.indexOf('fn disable_transitions'), frame.indexOf('pub fn show_immediately'));
+  assert.match(policy, /DWMWA_TRANSITIONS_FORCEDISABLED/);
+  assert.match(policy, /let disabled: i32 = 1/);
+  const show = frame.slice(frame.indexOf('pub fn show_immediately'), frame.indexOf('pub fn hide_immediately'));
+  assert.ok(show.indexOf('disable_transitions(window)?') < show.indexOf('window.show()'));
   const hide = frame.slice(frame.indexOf('pub fn hide_immediately'), frame.indexOf('pub fn client_frame_size'));
-  assert.match(hide, /DWMWA_TRANSITIONS_FORCEDISABLED/);
-  assert.match(hide, /let disabled: i32 = 1/);
+  assert.ok(hide.indexOf('disable_transitions(window)?') < hide.indexOf('window.hide()'));
   assert.match(hide, /window\.hide\(\)\.map_err/);
   assert.doesNotMatch(hide, /ShowWindow\(hwnd|\bSW_HIDE\b/);
   assert.match(hide, /IsWindowVisible\(hwnd\)/);

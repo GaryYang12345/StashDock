@@ -10,6 +10,7 @@ import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mj
 import { startCaptureBridge } from '../plugins/stashdock/server/capture-bridge.mjs';
 import { createBrowserLibrary } from '../extension/library-client.js';
 import { canonicalReferenceUrl } from '../src/lib/reference-url.mjs';
+import { firefoxExtensionId } from '../src/lib/browser-extension-identity.mjs';
 const page={id:'draft',title:'New title',kind:'web',source:'Example',url:'https://example.org/post?utm_source=a#reply',content:'New body',excerpt:'New body',tags:['New'],createdAt:'2026-10-16T00:00:00Z',preview:'data:image/jpeg;base64,AAAA',origin:{previewKind:'screenshot'}};
 test('canonical URL keys match native query encoding and remove empty legacy queries',()=>{
   assert.equal(canonicalReferenceUrl('https://example.org/post?'),'https://example.org/post');
@@ -21,6 +22,24 @@ function fixture(t) {
   t.after(()=>{library.close();rmSync(root,{recursive:true,force:true});});
   return {root,library};
 }
+
+test('Chrome, Edge and Firefox commit readable links even with no extracted body or screenshot',async t=>{
+  const {library}=fixture(t),bridge=startCaptureBridge(library,0);await once(bridge,'listening');
+  t.after(async()=>{await new Promise(resolve=>bridge.close(resolve));});
+  const provider=`http://127.0.0.1:${bridge.address().port}`;
+  for(const browser of ['chrome','edge','firefox']) {
+    const firefox=browser==='firefox';
+    const origin=firefox?'moz-extension://e9aefaf5-6844-473b-a647-9455e6346978':'chrome-extension://'+(browser==='chrome'?'a':'b').repeat(32);
+    const extensionId=firefox?firefoxExtensionId:origin.split('://')[1];
+    const headers={'Content-Type':'application/json','X-StashDock-Client':'chrome-extension-v1',Origin:origin};
+    assert.equal((await fetch(provider+'/v1/setup',{method:'POST',headers,body:JSON.stringify({browser,extensionId,version:'0.4.15'})})).status,200);
+    const client=createBrowserLibrary({storage:{get:async()=>({}),set:async()=>{}},fetcher:(url,options)=>fetch(provider+new URL(url).pathname,{...options,headers:{...options.headers,Origin:origin}})});
+    const item={...page,url:`https://example.org/empty-${browser}`,content:'',excerpt:'',preview:undefined,origin:{importMethod:'browser_extension',captureMethod:'page'}};
+    assert.equal((await client.save(item,{operationId:randomUUID()})).saved,true);
+  }
+  const saved=await library.read();assert.equal(saved.length,3);
+  for(const item of saved){assert.equal(item.content,undefined);assert.equal(item.preview,undefined);assert.ok(item.title);}
+});
 test('duplicate check is bounded; keep existing writes nothing; replace preserves identity and AI context',async t=>{
   const {library}=fixture(t);
   const existing=library.importItems([{...page,title:'Old title',content:'Old body',tags:['Old'],preview:undefined,origin:{previewSource:'custom'}}]).items[0];
@@ -67,17 +86,17 @@ test('new save transfers only one page; timeout is not replayed and retry checks
   const client=createBrowserLibrary({storage:{get:async()=>structuredClone(stored),set:async value=>Object.assign(stored,value)},fetcher:async(url,options)=>{
     const parsed=new URL(url);calls.push({path:parsed.pathname,method:options.method||'GET'});
     const response=await fetch(`http://127.0.0.1:${bridge.address().port}${parsed.pathname}${parsed.search}`,{...options,headers:{...options.headers,Origin:headers.Origin}});
-    if(options.method==='POST'&&loseReply){loseReply=false;await response.json();throw Error('Timed out after commit');}
+    if(parsed.pathname==='/v1/capture'&&options.method==='POST'&&loseReply){loseReply=false;await response.json();throw Error('Timed out after commit');}
     return response;
   }});
   const options={operationId:randomUUID()};
   await assert.rejects(client.save(page,options),/Timed out/);
-  assert.equal(calls.filter(c=>c.method==='POST').length,1);
+  assert.equal(calls.filter(c=>c.method==='POST'&&c.path==='/v1/capture').length,1);
   assert.equal(stored['stashdock-library-v1'].items,undefined);
   const saved=await client.save(page,options);assert.equal(saved.saved,true);
-  assert.equal(calls.filter(c=>c.method==='POST').length,1,'receipt avoids uploading the page again');
+  assert.equal(calls.filter(c=>c.method==='POST'&&c.path==='/v1/capture').length,1,'receipt avoids uploading the page again');
   const conflict=await client.save({...page,title:'Changed'},{operationId:randomUUID()});assert.ok(conflict.duplicate);
-  assert.equal(calls.filter(c=>c.method==='POST').length,1,'cancel sends no body/image');
+  assert.equal(calls.filter(c=>c.method==='POST'&&c.path==='/v1/capture').length,1,'cancel sends no body/image');
   assert.ok(!calls.some(c=>c.path==='/v1/items'));
   assert.equal((await library.read()).length,1);
 });
@@ -87,4 +106,30 @@ test('capture validation rejects managed paths and oversized inputs; receipts st
   for(let i=0;i<260;i++)library.saveCapture(JSON.stringify({item:{...page,url:'https://example.org/'+i},operationId:randomUUID()}));
   const db=new DatabaseSync(join(root,'stashdock.sqlite3'),{readOnly:true});
   try{assert.equal(db.prepare("SELECT COUNT(*) count FROM app_meta WHERE key LIKE 'browser_capture_receipt_v1:%'").get().count,256);}finally{db.close();}
+});
+
+test('Chrome-style GET without Origin cannot block JSON lookup/save, and reads remain non-mutating',async t=>{
+  const {library}=fixture(t),bridge=startCaptureBridge(library,0);await once(bridge,'listening');
+  t.after(async()=>{await new Promise(resolve=>bridge.close(resolve));});
+  const origin='chrome-extension://'+'a'.repeat(32),base=`http://127.0.0.1:${bridge.address().port}`;
+  const headers={'Content-Type':'application/json','X-StashDock-Client':'chrome-extension-v1',Origin:origin};
+  await fetch(base+'/v1/setup',{method:'POST',headers,body:JSON.stringify({browser:'chrome',version:'0.4.14',extensionId:'a'.repeat(32)})});
+  const calls=[];
+  const client=createBrowserLibrary({storage:{get:async()=>({}),set:async()=>{}},fetcher:async(url,options)=>{
+    const path=new URL(url).pathname;calls.push({path,method:options.method||'GET'});
+    // Mimic privileged extension fetch: only non-GET/HEAD gets Origin.
+    return fetch(base+path,{...options,headers:{...options.headers,...(options.method==='POST'?{Origin:origin}:{})}});
+  }});
+  assert.deepEqual(await client.tags(),[]);
+  const denied=await fetch(base+'/v1/capture?url=https%3A%2F%2Fexample.org',{headers:{'X-StashDock-Client':'chrome-extension-v1'}});assert.equal(denied.status,403);
+  const lookup=await fetch(base+'/v1/capture/lookup',{method:'POST',headers,body:JSON.stringify({url:page.url})});assert.equal(lookup.status,200);assert.equal((await library.read()).length,0);
+  const saved=await client.save(page,{operationId:randomUUID()});assert.equal(saved.saved,true);
+  assert.ok(calls.some(c=>c.path==='/v1/capture/lookup'&&c.method==='POST'));
+  assert.ok(calls.some(c=>c.path==='/v1/tags'&&c.method==='POST'));
+  assert.equal(calls.filter(c=>c.path==='/v1/capture').length,1);
+  const evil=await fetch(base+'/v1/capture/lookup',{method:'POST',headers:{...headers,Origin:'https://evil.example'},body:JSON.stringify({url:page.url})});assert.equal(evil.status,403);
+});
+test('provider validation errors are not mislabeled as an absent desktop application',async()=>{
+  const client=createBrowserLibrary({storage:{get:async()=>({}),set:async()=>{}},fetcher:async()=>Response.json({error:'Invalid URL.'},{status:400})});
+  await assert.rejects(client.save(page,{operationId:randomUUID()}),/Invalid URL/);
 });

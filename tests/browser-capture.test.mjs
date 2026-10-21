@@ -224,10 +224,46 @@ test('text and screenshots are captured together, while tab/navigation races abo
     await assert.rejects(captureActivePage(api,expected,async data=>data),/changed/);assert.equal(api.tabs.onUpdated.set.size,0);
   }
 });
-test('permission errors and failed extraction never import metadata-only references', async () => {
+test('restricted page readers still allow metadata-only saves without bypassing access controls', async () => {
   const {api,expected}=browserFixture();api.scripting.executeScript=async()=>{throw Error('Permission missing');};
-  await assert.rejects(captureActivePage(api,expected,async data=>data),/toolbar icon/);
-  api.scripting.executeScript=async()=>[{result:{error:'Post is loading'}}];await assert.rejects(captureActivePage(api,expected,async data=>data),/loading/);
+  const item=await captureActivePage(api,expected,async data=>data);
+  assert.equal(item.url,expected.url);assert.equal(item.content,'');assert.ok(item.title);
+  api.scripting.executeScript=async()=>[{result:{error:'Post is loading'}}];
+  assert.equal((await captureActivePage(api,expected,async data=>data)).content,'');
+  for(const url of ['file:///private','https://user:secret@example.org/']) {
+    await assert.rejects(captureActivePage(api,{...expected,url},async data=>data),/HTTP/);
+  }
+});
+
+test('loaded pages remain saveable with empty text, including unavailable posts and very large DOMs', async () => {
+  for (const [url, html] of [
+    ['https://example.org/empty', '<canvas></canvas>'],
+    ['https://x.com/mira/status/123', '<form>Sign in</form><article>Unrelated recommendation</article>'],
+    ['https://example.org/large', '<span>Not an article</span>'.repeat(20_001)],
+  ]) {
+    const previousDoc=globalThis.document, previousLocation=globalThis.location;
+    try {
+      globalThis.document=page(html,url); globalThis.location={href:url};
+      const read=captureCurrentDocument();
+      assert.equal(read.error,undefined); assert.equal(read.page.url,url); assert.equal(read.page.content,'');
+      assert.ok(read.page.title); assert.doesNotMatch(read.page.content,/Sign in|Unrelated/);
+      const {api,expected}=browserFixture(); expected.url=url;
+      api.tabs.query=async()=>[{id:expected.tabId,url,status:'complete'}];
+      api.scripting.executeScript=async()=>[{frameId:0,result:read}];
+      const result=await captureActivePage(api,expected,async data=>data);
+      assert.equal(result.content,''); assert.equal(result.previewKind,'screenshot');
+    } finally { globalThis.document=previousDoc; globalThis.location=previousLocation; }
+  }
+});
+
+test('optional screenshot failures do not block saving or mislabel a nonexistent screenshot', async () => {
+  for (const failure of ['capture','quota','resize']) {
+    const {api,expected}=browserFixture(); let shots=0;
+    api.tabs.captureVisibleTab=async()=>{shots++;if(failure!=='resize')throw Error(failure==='quota'?'MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND':'Capture unavailable');return 'image';};
+    const item=await captureActivePage(api,expected,async()=>{throw Error('Raster failed');},async()=>{});
+    assert.equal(item.content,'Actual saved text'); assert.equal(item.preview,undefined); assert.equal(item.previewKind,undefined);
+    assert.equal(shots,failure==='quota'?3:1); assert.equal(api.tabs.onUpdated.set.size,0);
+  }
 });
 test('capture fills a bookmark body atomically, never overwrites existing bodies or final-context edits', async t => {
   const root=mkdtempSync(join(tmpdir(),'stashdock-mcp-test-capture-'));const library=createLocalLibrary({dataDir:root});

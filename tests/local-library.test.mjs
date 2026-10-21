@@ -43,6 +43,27 @@ test('SQLite core works with no desktop, preserves concurrent changes, and updat
     a.remove(item.id); assert.equal((await b.read()).length, 0);
   } finally { b.close(); a.close(); }
 });
+test('bulk deletion is atomic, idempotent and retains managed files', async t => {
+  const dataDir = temporary(t), library = createLocalLibrary({ dataDir });
+  const db = new DatabaseSync(join(dataDir, 'stashdock.sqlite3'));
+  try {
+    const [a] = library.importFiles([{ name: 'keep.txt', mimeType: 'text/plain', base64: Buffer.from('original bytes').toString('base64') }]);
+    const [b] = library.importItems([fixture]).items;
+    db.exec(`CREATE TRIGGER reject_bulk_delete BEFORE DELETE ON stash_items WHEN OLD.id='${b.id}' BEGIN SELECT RAISE(ABORT, 'test failure'); END;`);
+    assert.throws(() => library.removeMany([a.id, b.id]), /test failure/);
+    assert.equal((await library.read()).length, 2);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM stash_fts').get().n, 2);
+    db.exec('DROP TRIGGER reject_bulk_delete');
+    assert.throws(() => library.removeMany([a.id, '']), /valid references/);
+    assert.equal((await library.read()).length, 2);
+    assert.deepEqual(library.removeMany([a.id, a.id, b.id]), { deleted: 2 });
+    assert.deepEqual(library.removeMany([a.id, b.id]), { deleted: 0 });
+    assert.equal((await library.read()).length, 0);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM stash_fts').get().n, 0);
+    assert.equal(readFileSync(a.assetPath, 'utf8'), 'original bytes');
+  } finally { db.close(); library.close(); }
+});
+
 test('AI tag patches preserve unmentioned tags and reject stale or ambiguous writes', async t => {
   const library = createLocalLibrary({ dataDir: temporary(t) });
   try {
@@ -93,7 +114,7 @@ test('App management tools are app-only writes; model search remains read-only',
     await server.connect(left); await client.connect(right);
     const { tools } = await client.listTools();
     const writes = tools.filter(tool => tool.annotations.readOnlyHint === false);
-    assert.equal(writes.length, 19);
+    assert.equal(writes.length, 20);
     assert.ok(writes.some(tool => tool.name === 'open_stashdock_integration'));
     assert.ok(writes.some(tool => tool.name === 'save_stashdock_preferences'));
     assert.ok(writes.some(tool => tool.name === 'save_stashdock_capture_platform'));
@@ -104,6 +125,7 @@ test('App management tools are app-only writes; model search remains read-only',
     assert.deepEqual(writes.filter(tool => !tool._meta?.ui?.visibility).map(tool => tool.name), [...modelWrites]);
     assert.equal(tools.find(tool => tool.name === 'search_stashdock').annotations.readOnlyHint, true);
     assert.equal(tools.find(tool => tool.name === 'delete_stashdock_reference').annotations.destructiveHint, true);
+    assert.equal(tools.find(tool => tool.name === 'delete_stashdock_references').annotations.destructiveHint, true);
     const imported = await client.callTool({ name: 'import_stashdock_references', arguments: { items: [fixture] } });
     assert.equal(imported.structuredContent.imported, 1);
     const listed = await client.callTool({ name: 'list_stashdock_shelf', arguments: {} });
@@ -113,6 +135,11 @@ test('App management tools are app-only writes; model search remains read-only',
     const detail = await client.callTool({ name: 'get_stashdock_item', arguments: { id } });
     assert.equal(detail.structuredContent.content, fixture.content); assert.equal(detail.structuredContent.favorite, true);
     assert.equal((await client.callTool({ name: 'delete_stashdock_reference', arguments: { id } })).structuredContent.deleted, true);
+    await client.callTool({ name: 'import_stashdock_references', arguments: { items: [fixture, { ...fixture, url: 'https://second.test', title: 'Second' }] } });
+    const bulkRows = (await client.callTool({ name: 'list_stashdock_shelf', arguments: {} }))._meta.items;
+    assert.equal(bulkRows.length, 2);
+    assert.equal((await client.callTool({ name: 'delete_stashdock_references', arguments: { ids: bulkRows.map(row => row.id) } })).structuredContent.deleted, 2);
+    assert.equal((await client.callTool({ name: 'list_stashdock_shelf', arguments: {} }))._meta.items.length, 0);
   } finally { await client.close(); await server.close(); }
 });
 test('complete context overrides survive reopening, metadata edits and duplicate captures', async t => {

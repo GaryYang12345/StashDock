@@ -7,11 +7,11 @@ import test from 'node:test';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = path => readFile(resolve(root, path));
 
-test('Windows ICO contains matching branded rasters at nine shell sizes', async () => {
+test('Windows app ICO uses white-tile rasters without changing transparent toolbar/tray marks', async () => {
   const ico = await read('src-tauri/icons/icon.ico');
   assert.equal(ico.readUInt16LE(0), 0);
   assert.equal(ico.readUInt16LE(2), 1);
-  const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
+  const sizes = [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256];
   assert.equal(ico.readUInt16LE(4), sizes.length);
   for (const [index, size] of sizes.entries()) {
     const position = 6 + 16 * index;
@@ -23,8 +23,9 @@ test('Windows ICO contains matching branded rasters at nine shell sizes', async 
     assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
     assert.equal(png.readUInt32BE(16), size);
     assert.equal(png.readUInt32BE(20), size);
-    if ([16, 32, 48, 128].includes(size)) assert.deepEqual(png, await read(`extension/icons/icon-${size}.png`));
-    if (size === 32) assert.deepEqual(png, await read('src-tauri/icons/32x32.png'));
+    assert.deepEqual(png, await read(`assets/app-icon/windows/${size}.png`));
+    if ([16, 32, 48, 128].includes(size)) assert.notDeepEqual(png, await read(`extension/icons/icon-${size}.png`));
+    if (size === 32) assert.deepEqual(await read('extension/icons/icon-32.png'), await read('src-tauri/icons/32x32.png'));
     if (size === 256) assert.deepEqual(png, await read('src-tauri/icons/icon.png'));
   }
 });
@@ -49,6 +50,8 @@ test('native, installer and extension select brand assets, never substitute lett
   assert.doesNotMatch(html, /<span class="brand-mark"/);
   const script = (await read('scripts/generate-icon.ps1')).toString();
   assert.match(script, /assets\\brand\\icon.png/);
+  assert.match(script, /generate-app-icons\.mjs/);
+  assert.match((await read('src-tauri/build.rs')).toString(), /cargo:rerun-if-changed=icons\/icon\.ico/);
   assert.doesNotMatch(script, /DrawRectangle|DrawLine|FillPath|SolidBrush/);
   const pkg = JSON.parse(await read('package.json'));
   assert.match(pkg.scripts.prebuild, /npm run assets:brand && npm run assets:ui/);

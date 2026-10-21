@@ -20,7 +20,6 @@
 .feedback { display: grid; gap: var(--space-3); }
 .feedback:has([role="alert"]), .feedback:has([role="status"]) { margin-bottom: var(--space-4); }
 .retry { margin-top: var(--space-3); }
-.dialogActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
 @media (max-width: 880px) {
   .browser { padding: var(--space-4); }
   .browser .shell { height: calc(100dvh - var(--space-8)); }

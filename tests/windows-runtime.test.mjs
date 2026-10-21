@@ -6,7 +6,14 @@ const text = path => readFile(path, 'utf8');
 test('Windows plugin launches its own pinned Node without a bundled browser', async () => {
   const config = JSON.parse(await text('plugins/stashdock/.mcp.json')).mcpServers.stashdock;
   assert.equal(config.command, './bin/win32-x64/node.exe');
-  assert.deepEqual(config.args, ['${PLUGIN_ROOT}/scripts/mcp-server.mjs']);
+  assert.deepEqual(config.args, ['scripts/mcp-server.mjs']);
+  assert.equal(config.cwd, '.');
+  assert.doesNotMatch(JSON.stringify(config), /\$\{|[A-Z]:[\\/]/i);
+  for (const verifier of ['scripts/verify-plugin-release.mjs', 'scripts/verify-installed-mcp-context.mjs']) {
+    const source = await text(verifier);
+    assert.match(source, /args: config\.args, cwd: resolve\((?:plugin|folder), config\.cwd\)/);
+    assert.doesNotMatch(source, /replaceAll\('\$\{PLUGIN_ROOT\}'/);
+  }
   const pin = JSON.parse(await text('scripts/node-runtime-lock.json'));
   assert.match(pin.sha256, /^[a-f0-9]{64}$/);
   assert.equal(new URL(pin.url).hostname, 'nodejs.org');

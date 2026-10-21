@@ -131,7 +131,7 @@ test('host-specific sections keep browsers separate from AI plugins and do not a
   const worker = readFileSync('extension/background.js', 'utf8');
   assert.doesNotMatch(worker, /setup\.html|open-integration/);
   assert.match(worker, /return library.save\(item/);
-  assert.match(readFileSync('extension/library-client.js','utf8'), /Open the latest StashDock Desktop or AI plugin, then retry/);
+  assert.match(readFileSync('extension/library-client.js','utf8'), /Open StashDock Desktop or its AI plugin, then retry/);
 });
 test('settings explanations reuse shared tooltips with a normal pointer and detected integrations open usage guides', () => {
   const help = readFileSync('src/features/settings/SettingHelp.tsx', 'utf8');

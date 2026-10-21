@@ -71,12 +71,16 @@ for (const name of [...packages].sort()) {
 await copyFile(resolve(root, 'public/licenses/Arc-MIT.txt'), resolve(notices, 'Arc-MIT.txt'));
 await copyFile(resolve(root, 'public/licenses/WebView2Com-MIT.txt'), resolve(notices, 'WebView2Com-MIT.txt'));
 await copyFile(resolve(root, 'public/licenses/WindowsRs-MIT.txt'), resolve(notices, 'WindowsRs-MIT.txt'));
+await copyFile(resolve(root, 'public/licenses/Brotli-MIT.txt'), resolve(notices, 'Brotli-MIT.txt'));
+await copyFile(resolve(root, 'public/licenses/Brotli-BSD-3-Clause.txt'), resolve(notices, 'Brotli-BSD-3-Clause.txt'));
+await copyFile(resolve(root, 'public/licenses/Flate2-MIT.txt'), resolve(notices, 'Flate2-MIT.txt'));
+inventory.push('brotli 9.0.0: BSD-3-Clause AND MIT; flate2 1.1.10: MIT (native bounded response decoding)');
 await copyFile(resolve(root, 'public/licenses/LobeIcons-LICENSE'), resolve(notices, 'LobeIcons-LICENSE'));
 await copyFile(resolve(root, 'public/licenses/SimpleIcons-CC0.txt'), resolve(notices, 'SimpleIcons-CC0.txt'));
 await copyFile(resolve(root, 'public/licenses/vscode-icons-MIT.txt'), resolve(notices, 'vscode-icons-MIT.txt'));
 await copyFile(resolve(root, 'public/licenses/FlatColorIcons-LICENSE.md'), resolve(notices, 'FlatColorIcons-LICENSE.md'));
 await copyFile(resolve(root, 'node_modules/pdfjs-dist/LICENSE'), resolve(notices, 'pdfjs-dist--LICENSE'));
-inventory.push('pdfjs-dist 6.4.299: Apache-2.0 (embedded native PDF parser/renderer)');
+inventory.push('pdfjs-dist 6.4.299: Apache-2.0 (embedded first-page PDF cover renderer)');
 inventory.push('@iconify-icons/vscode-icons 2.0.16: MIT (generated local subset)');
 inventory.push('@iconify-icons/flat-color-icons 2.0.0: MIT (generated local subset)');
 await writeFile(resolve(notices, 'README.txt'), 'Bundled dependency notices. Original license files are included beside this inventory.\n\n' + inventory.join('\n'));

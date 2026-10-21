@@ -9,6 +9,8 @@ mod link_metadata;
 mod preview_browser;
 #[path = "../preview_cache.rs"]
 mod preview_cache;
+#[path = "../preview_enrichment.rs"]
+mod preview_enrichment;
 #[path = "../public_web.rs"]
 mod public_web;
 #[path = "../web_images.rs"]
@@ -16,9 +18,8 @@ mod web_images;
 use serde::Deserialize;
 use serde_json::json;
 use std::{
-    io::{self, Read},
+    io::{self, BufRead, Read, Write},
     sync::atomic::AtomicBool,
-    time::{Duration, Instant},
 };
 
 #[derive(Deserialize)]
@@ -30,6 +31,8 @@ struct WebRequest {
     favicon_url: Option<String>,
     #[serde(default)]
     lookup: bool,
+    #[serde(default)]
+    content_only: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -54,9 +57,12 @@ struct ImageRequest {
 fn yes() -> bool {
     true
 }
-fn run(request: Request) -> Result<serde_json::Value, String> {
+fn run(
+    request: Request,
+    progress: impl Fn(&preview_enrichment::Images),
+) -> Result<serde_json::Value, String> {
     match request {
-        Request::Web(request) => web(request),
+        Request::Web(request) => web(request, progress),
         Request::Image(request) => {
             if request.image_operation != "cover" {
                 return Err("Unsupported image request.".into());
@@ -78,89 +84,35 @@ fn run(request: Request) -> Result<serde_json::Value, String> {
         },
     }
 }
-fn web(request: WebRequest) -> Result<serde_json::Value, String> {
+fn web(
+    request: WebRequest,
+    progress: impl Fn(&preview_enrichment::Images),
+) -> Result<serde_json::Value, String> {
     let url = public_web::web_url(&request.url)?;
+    if request.content_only {
+        return serde_json::to_value(link_metadata::fetch_content(url.as_str())?)
+            .map_err(|_| "Page content could not be read.".into());
+    }
     if request.lookup {
         let data = link_metadata::fetch_preview_inline(url.as_str())?;
         return serde_json::to_value(data).map_err(|_| "Page details could not be read.".into());
     }
-    public_web::resolve_public(
-        url.host_str().unwrap(),
-        url.port_or_known_default().unwrap(),
-    )?;
-    let metadata =
-        public_web::fetch_document(url.as_str(), Instant::now() + Duration::from_secs(18)).ok();
-    if let Some(pdf) = metadata
-        .as_ref()
-        .filter(|p| p.content_type.contains("application/pdf") || p.bytes.starts_with(b"%PDF-"))
-    {
-        let data = preview_browser::read_pdf(&pdf.bytes, &AtomicBool::new(false))?;
-        return Ok(
-            json!({"preview":data["preview"],"previewKind":"screenshot","faviconUrl":null,"error":null}),
-        );
-    }
-    let mut candidates = Vec::new();
-    let mut cover = None;
-    if let Some(page) = metadata
-        .as_ref()
-        .filter(|p| p.content_type.contains("html"))
-    {
-        let doc = scraper::Html::parse_document(&String::from_utf8_lossy(&page.bytes));
-        if let Ok(selector) = scraper::Selector::parse("link[rel~='icon']") {
-            for node in doc.select(&selector).take(4) {
-                if let Some(href) = node
-                    .value()
-                    .attr("href")
-                    .and_then(|s| page.url.join(s).ok())
-                {
-                    candidates.push(href.to_string());
-                }
-            }
-        }
-        if let Ok(selector) =
-            scraper::Selector::parse("meta[property='og:image'],meta[name='twitter:image']")
-        {
-            cover = doc.select(&selector).find_map(|node| {
-                page.url
-                    .join(node.value().attr("content")?)
-                    .ok()
-                    .map(String::from)
-            });
-        }
-    }
-    if let Some(icon) = request.favicon_url {
-        candidates.insert(0, icon);
-    }
-    candidates.push(url.join("/favicon.ico").unwrap().to_string());
-    candidates.push(url.join("/favicon.svg").unwrap().to_string());
-    candidates.push(url.join("/favicon.png").unwrap().to_string());
-    candidates.push(url.join("/apple-touch-icon.png").unwrap().to_string());
-    let icon_deadline = Instant::now() + Duration::from_secs(6);
-    let favicon = candidates
-        .iter()
-        .take(6)
-        .find_map(|s| web_images::download(s, true, icon_deadline).ok());
-    let mut kind = "screenshot";
-    let mut reason = None;
-    let preview = if request.need_preview {
-        match preview_browser::capture(url.as_str(), &AtomicBool::new(false)) {
-            Ok(data) => Some(data),
-            Err(error) => {
-                reason = Some(error);
-                kind = "cover";
-                cover.and_then(|s| {
-                    web_images::download(&s, false, Instant::now() + Duration::from_secs(5)).ok()
-                })
-            }
-        }
-    } else {
-        None
-    };
-    Ok(
-        json!({"preview":preview,"previewKind":preview.as_ref().map(|_|kind),"faviconUrl":favicon,"error":if preview.is_none() { reason } else { None }}),
-    )
+    let images = preview_enrichment::enrich(
+        url.as_str(),
+        request.need_preview,
+        request.favicon_url.as_deref(),
+        &AtomicBool::new(false),
+        progress,
+        |url, deadline| web_images::download(url, true, deadline).ok(),
+    );
+    serde_json::to_value(images).map_err(|_| "Preview could not be read.".into())
 }
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--serve") {
+        serve();
+        preview_browser::shutdown_renderer();
+        return;
+    }
     let mut bytes = Vec::new();
     let result = io::stdin()
         .take(6_670_001)
@@ -178,6 +130,50 @@ fn main() {
                 Ok(request)
             }
         })
-        .and_then(run);
+        .and_then(|request| run(request, |_| {}));
     println!("{}", result.unwrap_or_else(|error| json!({"error":error})));
+    preview_browser::shutdown_renderer();
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Envelope {
+    id: u64,
+    request: Request,
+}
+
+fn output(value: serde_json::Value) -> io::Result<()> {
+    let mut stdout = io::stdout().lock();
+    serde_json::to_writer(&mut stdout, &value)?;
+    stdout.write_all(b"\n")?;
+    stdout.flush()
+}
+
+// Parent-owned, serial NDJSON protocol. Never retain unbounded input or accept
+// filesystem paths from pages. Each task keeps the existing renderer deadline.
+fn serve() {
+    let mut input = io::stdin().lock();
+    loop {
+        let mut bytes = Vec::new();
+        match input.by_ref().take(150_001).read_until(b'\n', &mut bytes) {
+            Ok(0) => break,
+            Ok(_) if bytes.len() <= 150_000 && bytes.last() == Some(&b'\n') => {}
+            _ => break,
+        }
+        let Ok(envelope) = serde_json::from_slice::<Envelope>(&bytes) else {
+            break;
+        };
+        let id = envelope.id;
+        let result = run(envelope.request, |images| {
+            let _ = output(json!({"id":id,"event":"images","value":images}));
+        })
+        .unwrap_or_else(|error| json!({"error":error}));
+        let mut response = json!({"id":id,"result":result});
+        if std::env::var_os("STASHDOCK_CAPTURE_DIAGNOSTICS").is_some() {
+            response["renderer"] = preview_browser::renderer_statistics();
+        }
+        if output(response).is_err() {
+            break;
+        }
+    }
 }

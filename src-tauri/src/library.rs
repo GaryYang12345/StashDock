@@ -655,16 +655,32 @@ fn import_extension_items(
 }
 
 fn delete_item_by_id(connection: &mut Connection, id: &str) -> Result<bool, String> {
+    Ok(delete_items_by_id(connection, &[id.to_string()])? > 0)
+}
+
+fn delete_items_by_id(connection: &mut Connection, ids: &[String]) -> Result<usize, String> {
+    if ids.is_empty()
+        || ids.len() > 10_000
+        || ids.iter().any(|id| id.trim().is_empty() || id.len() > 120)
+    {
+        return Err("Select between 1 and 10,000 valid references.".into());
+    }
     let transaction = connection
         .transaction()
         .map_err(|error| error.to_string())?;
-    transaction
-        .execute("DELETE FROM stash_fts WHERE id = ?1", [id])
-        .map_err(|error| error.to_string())?;
-    let deleted = transaction
-        .execute("DELETE FROM stash_items WHERE id = ?1", [id])
-        .map_err(|error| error.to_string())?
-        > 0;
+    let mut deleted = 0;
+    {
+        let mut fts = transaction
+            .prepare("DELETE FROM stash_fts WHERE id = ?1")
+            .map_err(|error| error.to_string())?;
+        let mut items = transaction
+            .prepare("DELETE FROM stash_items WHERE id = ?1")
+            .map_err(|error| error.to_string())?;
+        for id in ids.iter().collect::<HashSet<_>>() {
+            fts.execute([id]).map_err(|error| error.to_string())?;
+            deleted += items.execute([id]).map_err(|error| error.to_string())?;
+        }
+    }
     transaction.commit().map_err(|error| error.to_string())?;
     Ok(deleted)
 }
@@ -808,6 +824,14 @@ pub fn delete_item(id: String, state: &LibraryState) -> Result<bool, String> {
     delete_item_by_id(&mut connection, &id)
 }
 
+pub fn delete_items(ids: Vec<String>, state: &LibraryState) -> Result<usize, String> {
+    let mut connection = state
+        .connection
+        .lock()
+        .map_err(|_| "The local library is busy.".to_string())?;
+    delete_items_by_id(&mut connection, &ids)
+}
+
 fn clean_tags(tags: Vec<String>) -> Result<Vec<String>, String> {
     if tags.len() > 12 {
         return Err("Use at most 12 tags.".into());
@@ -839,7 +863,7 @@ fn edit_metadata(
     let tags = clean_tags(tags)?;
     let changed = connection
         .execute(
-            "UPDATE stash_items SET title=?1, tags_json=?2, updated_at=?3 WHERE id=?4",
+            "UPDATE stash_items SET title=?1, tags_json=?2, updated_at=?3,origin_json=CASE WHEN json_valid(origin_json) THEN json_remove(origin_json,'$.pendingTitle') ELSE origin_json END WHERE id=?4",
             params![
                 title,
                 serde_json::to_string(&tags).map_err(|e| e.to_string())?,
@@ -2144,6 +2168,51 @@ mod tests {
             )
             .expect("count search entries");
         assert_eq!(indexed, 0);
+    }
+
+    #[test]
+    fn bulk_deletion_validates_and_rolls_back_items_and_search_together() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        initialize_schema(&connection).unwrap();
+        for id in ["a", "b", "keep"] {
+            let item: StashItem = serde_json::from_value(serde_json::json!({
+                "id": id, "title": id, "kind": "web", "source": "Test", "excerpt": "test",
+                "tags": [], "createdAt": "2026-10-20T00:00:00Z"
+            }))
+            .unwrap();
+            upsert_item(&connection, &item).unwrap();
+        }
+        connection.execute_batch("CREATE TRIGGER reject_delete BEFORE DELETE ON stash_items WHEN OLD.id='b' BEGIN SELECT RAISE(ABORT, 'test failure'); END;").unwrap();
+        assert!(super::delete_items_by_id(&mut connection, &["a".into(), "b".into()]).is_err());
+        assert_eq!(read_items(&connection).unwrap().len(), 3);
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM stash_fts", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            3
+        );
+        connection
+            .execute_batch("DROP TRIGGER reject_delete")
+            .unwrap();
+        assert!(super::delete_items_by_id(&mut connection, &["a".into(), "".into()]).is_err());
+        assert_eq!(
+            super::delete_items_by_id(&mut connection, &["a".into(), "b".into(), "a".into()])
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            super::delete_items_by_id(&mut connection, &["a".into(), "b".into()]).unwrap(),
+            0
+        );
+        assert_eq!(read_items(&connection).unwrap()[0].id, "keep");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM stash_fts", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
     }
 
     #[test]

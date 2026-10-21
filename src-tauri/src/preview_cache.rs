@@ -104,7 +104,7 @@ pub fn capture(url: &str, stop: &AtomicBool) -> Result<String, String> {
         .lock()
         .map_err(|_| "Preview could not be read.")?;
     while value.is_none()
-        && job.created.elapsed() < Duration::from_secs(24)
+        && job.created.elapsed() < Duration::from_secs(30)
         && !stop.load(Ordering::Relaxed)
     {
         value = job

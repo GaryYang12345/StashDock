@@ -52,3 +52,13 @@ test('helper spawn failure releases its slot and a pre-aborted call starts no ch
   await assert.rejects(run('', {}), /Spawn failed/); await assert.rejects(run('', {}), /Spawn failed/);
   assert.equal(failures, 2);
 });
+
+test('background helpers receive the saved inline favicon instead of fetching it again', async () => {
+  const child = new EventEmitter(); child.stdin = new PassThrough(); child.stdout = new PassThrough();
+  let input = ''; child.stdin.on('data', chunk => { input += chunk; });
+  const run = createPreviewHelperRunner({ launch: () => child });
+  const icon = 'data:image/png;base64,YQ==';
+  const pending = run('fixture', { url: 'https://example.org', needsPreview: true, faviconUrl: icon });
+  assert.equal(JSON.parse(input).faviconUrl, icon);
+  child.stdout.write('{}'); child.emit('close', 0); await pending;
+});

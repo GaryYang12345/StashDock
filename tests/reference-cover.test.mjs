@@ -35,7 +35,7 @@ test('cover picker is opt-in per host and never saves until explicit reference c
   assert.match(field, /alive.current/);
   assert.match(field, /event.target.value = ''/);
   assert.match(await read('src/components/ReferenceFileImport.tsx'), /draft.cover.preview/);
-  assert.match(await read('src/components/DesktopImportDialog.tsx'), /withReferenceCover\(item, covers.link/);
+  assert.match(await read('src/components/DesktopImportDialog.tsx'), /withReferenceCover\(settled, covers.link/);
 });
 
 test('capture through the MCP-owned bridge preserves a local custom cover but may refresh automatic imagery', async t => {

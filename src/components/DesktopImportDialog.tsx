@@ -1,5 +1,7 @@
 import { useI18n } from '../features/settings/locale';
 import { useEffect, useRef, useState } from 'react';
+import { useReducedMotion } from 'motion/react';
+import { motionTokens } from './arc/lib/motion-tokens';
 import { ArrowLeft, Check, Download, FileUp, Link, Plus, RefreshCw, SquarePen } from 'lucide-react';
 import { FluidDialog } from './FluidDialog';
 import { Button } from './arc/button/button';
@@ -19,7 +21,8 @@ import { cleanReferenceTags } from '../features/library/store';
 import { importReferenceFiles } from '../lib/storage';
 import { ReferenceFileImport } from './ReferenceFileImport';
 import type { FileReferencePayload } from '../lib/fileReference';
-import { bookmarkCandidates, desktopLinkImport, makeBrowserLinks, makeLink, normalizeLink, type BrowserSource, type LinkImportService, type LinkPreview } from '../lib/linkImport';
+import { bookmarkCandidates, desktopLinkImport, makeBrowserLinks, makeLink, normalizeLink, prepareImportedLinks, settleImportedLink, readImportDetails, importCapacityError, type BrowserSource, type LinkImportService, type LinkPreview } from '../lib/linkImport';
+import { ImportProgress } from './ImportProgress';
 import type { StashItem } from '../types';
 import styles from './DesktopImportDialog.module.css';
 import chromeIcon from '../assets/brands/chrome.svg?inline';
@@ -58,10 +61,29 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [busy, setBusy] = useState(false);
+    const flight = useRef(false);
+    const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
+    const lookupRequest = useRef<{ url: string; service: LinkImportService; version: number; promise: Promise<LinkPreview> } | null>(null);
+    const lookup = (value: string) => {
+        if (lookupRequest.current?.url === value && lookupRequest.current.service === services && lookupRequest.current.version === generation.current) return lookupRequest.current.promise;
+        const version = generation.current;
+        const promise = Promise.resolve().then(() => readImportDetails(value, services.preview, () => generation.current === version && lookupRequest.current?.url === value));
+        lookupRequest.current = { url: value, service: services, version, promise };
+        return promise;
+    };
     const [reading, setReading] = useState(false);
     const [error, setError] = useState('');
     const [lookupError, setLookupError] = useState('');
     const [looking, setLooking] = useState(false);
+    const reducedMotion = useReducedMotion();
+    const [readingDots, setReadingDots] = useState(1);
+    useEffect(() => {
+        if (!looking || !open || reducedMotion) return;
+        setReadingDots(1);
+        const timer = setInterval(() => setReadingDots(value => value % 3 + 1), motionTokens.duration.considered * 1000);
+        return () => clearInterval(timer);
+    }, [looking, open, reducedMotion]);
+    const dots = '.'.repeat(reducedMotion ? 3 : readingDots);
     const [preview, setPreview] = useState<LinkPreview | null>(null);
     const [retry, setRetry] = useState(0);
     const [urlError, setUrlError] = useState('');
@@ -73,8 +95,8 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
     const edited = useRef({ title: false, content: false });
     const generation = useRef(0);
     const attemptedIcons = useRef(new Set<string>());
-    const iconView = useRef({ open, mode, sourceId: source?.id });
-    iconView.current = { open, mode, sourceId: source?.id };
+    const iconView = useRef({ open, mode, sourceId: source?.id, busy });
+    iconView.current = { open, mode, sourceId: source?.id, busy };
     const tagField = useRef<HTMLDivElement>(null);
     const currentTags = useRef<string[]>([]);
     let normalized = '';
@@ -82,7 +104,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         normalized = normalizeLink(url);
     }
     catch { /* Keep invalid input editable. */ }
-    const reset = () => { setMode('link'); setPlatform(null); setUrl(''); setTitle(''); setContent(''); setTags([]); setCovers({}); setCoverReading(false); currentTags.current = []; setSource(null); setCandidates([]); setSelected(new Set()); setError(''); setUrlError(''); setLookupError(''); setPreview(null); drafts.current = {}; edited.current = { title: false, content: false }; };
+    const reset = () => { setMode('link'); setPlatform(null); setUrl(''); setTitle(''); setContent(''); setTags([]); setCovers({}); setCoverReading(false); setProgress(null); lookupRequest.current = null; currentTags.current = []; setSource(null); setCandidates([]); setSelected(new Set()); setError(''); setUrlError(''); setLookupError(''); setPreview(null); drafts.current = {}; edited.current = { title: false, content: false }; };
     useEffect(() => {
         if (!open || !services.available())
             return;
@@ -102,25 +124,28 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         let current = true;
         setLooking(true);
         setLookupError('');
+        const version = generation.current;
+        const isCurrent = () => current && generation.current === version;
         const timer = setTimeout(() => {
-            services.preview(normalized).then(result => {
-                if (!current)
+            lookup(normalized).then(result => {
+                if (!isCurrent())
                     return;
                 setPreview(result);
                 if (!edited.current.title)
                     setTitle(result.title);
                 if (!edited.current.content)
                     setContent(result.content);
-            }).catch(reason => { if (current)
-                setLookupError(typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : 'Could not read this page. You can enter its details manually.'); }).finally(() => { if (current)
+            }).catch(reason => { if (isCurrent())
+                setLookupError(typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : 'Could not read this page. You can enter its details manually.'); }).finally(() => { if (isCurrent())
                 setLooking(false); });
         }, 650);
         return () => { current = false; clearTimeout(timer); };
     }, [open, mode, source, platform, normalized, services, retry]);
     useEffect(() => { if (!open)
         generation.current++; }, [open]);
+    useEffect(() => () => { generation.current++; }, []);
     useEffect(() => {
-        if (!open || mode !== 'link' || !source || reading || !services.icons) return;
+        if (!open || mode !== 'link' || !source || reading || busy || !services.icons) return;
         const urls = candidates.slice(0, visibleCount).filter(item => !normalizeFavicon(item.faviconUrl) && !attemptedIcons.current.has(item.url)).map(item => item.url);
         urls.forEach(url => attemptedIcons.current.add(url));
         const version = generation.current;
@@ -128,7 +153,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         // bounded batches. Both hosts use the same validated native rasterizer.
         void (async () => {
             for (let offset = 0; offset < urls.length; offset += 12) {
-                if (version !== generation.current || !iconView.current.open || iconView.current.mode !== 'link' || iconView.current.sourceId !== source.id) return;
+                if (version !== generation.current || !iconView.current.open || iconView.current.busy || iconView.current.mode !== 'link' || iconView.current.sourceId !== source.id) return;
                 try {
                     const icons = await services.icons!(urls.slice(offset, offset + 12));
                     if (version !== generation.current || !iconView.current.open || iconView.current.mode !== 'link' || iconView.current.sourceId !== source.id) return;
@@ -139,7 +164,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
                 } catch { /* Optional icons never block selecting or importing. */ }
             }
         })();
-    }, [open, mode, source, reading, candidates, visibleCount, services]);
+    }, [open, mode, source, reading, busy, candidates, visibleCount, services]);
     const updateTags = (next: string[]) => {
         try {
             const values = cleanReferenceTags(next.map(name => availableTags.find(tag => tag.toLowerCase() === name.trim().toLowerCase()) ?? name));
@@ -156,18 +181,33 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         const canonical = availableTags.find(tag => tag.toLowerCase() === draft.toLowerCase()) ?? draft;
         return cleanReferenceTags(canonical && !currentTags.current.some(tag => tag.toLowerCase() === canonical.toLowerCase()) ? [...currentTags.current, canonical] : currentTags.current);
     };
-    const save = async (items: StashItem[], persisted = false) => {
+    const save = async (items: StashItem[], persisted = false, prepare?: (batch: StashItem[], offset: number) => Promise<StashItem[]>) => {
+        if (flight.current) return;
+        flight.current = true;
+        const version = generation.current;
         setBusy(true);
         setError('');
         try {
-            await onAdd(items, persisted);
+            // Bound retained bodies and each IPC payload, not just request count.
+            // Already committed chunks survive a host close or later save error.
+            const batchSize = prepare ? 8 : Math.max(1, items.length);
+            for (let offset = 0; offset < items.length; offset += batchSize) {
+                if (version !== generation.current) return;
+                const batch = items.slice(offset, offset + batchSize);
+                const prepared = prepare ? await prepare(batch, offset) : batch;
+                if (version !== generation.current) return;
+                await onAdd(prepared, persisted);
+            }
+            setProgress(current => current ? { ...current, completed: current.total } : null);
             onClose();
         }
         catch (reason) {
             setError(reason instanceof Error ? reason.message : 'References could not be saved. Try again.');
         }
         finally {
+            flight.current = false;
             setBusy(false);
+            setProgress(null);
         }
     };
     const readSource = async (next: BrowserSource) => {
@@ -217,7 +257,9 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         try {
             const values = committedTags();
             if (mode === 'link') {
+                const version = generation.current;
                 const existingUrls = await services.existingUrls?.() ?? [];
+                if (version !== generation.current) return;
                 if ([...existingItems, ...existingUrls.map(url => ({ url } as StashItem))].some(item => { try {
                     return item.url && normalizeLink(item.url) === normalizeLink(url);
                 }
@@ -228,8 +270,15 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
                     return;
                 }
                 const item = makeLink({ url, title, content, tags: values, faviconUrl: preview?.faviconUrl, preview: preview?.preview });
+                if (item.origin && edited.current.content) item.origin.contentEdited = true;
                 if (item.origin && preview?.previewKind) item.origin.previewKind = preview.previewKind;
-                await save([withReferenceCover(item, covers.link ?? null)]);
+                await save([item], false, async () => {
+                    let details: LinkPreview | undefined;
+                    try { if (services.available()) details = await lookup(normalized); } catch (error) { if (importCapacityError(error)) throw error; /* Unavailable pages remain valid links. */ }
+                    const settled = settleImportedLink(item, edited.current.content ? { ...details, title: details?.title || item.title, content } : details);
+                    if (!edited.current.title && details?.title.trim()) settled.title = details.title;
+                    return [withReferenceCover(settled, covers.link ?? null)];
+                });
             }
             else {
                 if (!content.trim()) {
@@ -247,7 +296,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
     const available = candidates.filter(item => !item.saved);
     const browsers = sources.filter((item, index) => sources.findIndex(other => other.browser === item.browser) === index);
     const selectedCount = available.filter(item => selected.has(item.key)).length;
-    return <FluidDialog open={open} onClose={onClose} onExited={reset} busy={busy || coverReading} size="import" title={t("Import references")}>
+    return <FluidDialog open={open} onClose={onClose} onExited={reset} busy={busy || coverReading} size="import" title={t(progress ? 'Importing references' : 'Import references')} progress={progress && <ImportProgress completed={progress.completed} total={progress.total} />}>
     <Tabs className={styles.importTabs} value={mode} onValueChange={next => { if (busy || coverReading)
         return; drafts.current[mode] = { title, content }; generation.current++; setReading(false); setMode(next); setPlatform(null); setSource(null); setError(''); setTitle(drafts.current[next]?.title || ''); setContent(drafts.current[next]?.content || ''); setPreview(null); edited.current = { title: Boolean(drafts.current[next]?.title), content: Boolean(drafts.current[next]?.content) }; }}>
       <div className={styles.typeBar}><TabsList aria-label={t("Reference type")}><TabsTrigger className={styles.typeTab} value="link" disabled={busy}><span className={styles.tabLabel}><Link size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Link")}</span></TabsTrigger><TabsTrigger className={styles.typeTab} value="note" disabled={busy}><span className={styles.tabLabel}><SquarePen size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Note")}</span></TabsTrigger><TabsTrigger className={styles.typeTab} value="file" disabled={busy}><span className={styles.tabLabel}><FileUp size={16} strokeWidth={1.75} aria-hidden="true"/>{t("File")}</span></TabsTrigger></TabsList>{mode === "link" && !source && !platform && <div inert={busy || sourceLoading} aria-busy={sourceLoading || undefined}><DropdownMenu label={t("Import from")} icon={<Download size={16} strokeWidth={1.75} aria-hidden="true"/>} items={[...browsers.map(item => ({ label: item.browser, icon: <BrowserIcon browser={item.browser}/>, onSelect: () => { void readSource(item); } })), ...(services.openCaptureSite ? [{ label: t('Platforms'), content: <PlatformGroup/>, separatorBefore: browsers.length > 0, onSelect: () => { generation.current++; setPlatform(true); setError(''); } }] : []), ...(!browsers.length && !services.openCaptureSite ? [{ label: t(services.available() ? 'No browser profiles found' : 'Available in the desktop app'), disabled: true }] : [])]}/></div>}</div>
@@ -264,8 +313,10 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
             else
                 next.delete(item.key); return next; })}/><SiteFavicon candidates={faviconCandidates(item)} remoteFallback={!services.icons} label={new URL(item.url).hostname}/><div><span className={styles.bookmarkTitle} data-tooltip={item.title}>{item.title}</span><div className={styles.bookmarkSource}><span>{item.folderPath.length ? item.folderPath.join(' / ') : new URL(item.url).hostname}</span>{item.saved && <span className={styles.saved}><Check size={12} aria-hidden="true"/>{t("Saved")}</span>}</div></div></li>)}</ul>{candidates.length > visibleCount && <Button variant="ghost" size="sm" disabled={busy} onClick={() => setVisibleCount(count => count + 100)}>{t("Show 100 more")}</Button>}{!candidates.length && <p className={styles.status}>{t("No web bookmarks found")}</p>}</div>
           </>}
-          <div className={styles.actions}><Button variant="secondary" disabled={busy || reading} onClick={() => void readSource(source)}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Refresh bookmarks")}</Button><Button variant="primary" loading={busy} disabled={reading || !selectedCount} onClick={() => { try {
-            void save(makeBrowserLinks(available.filter(item => selected.has(item.key)), source));
+          <div className={styles.actions}><Button variant="secondary" disabled={busy || reading} onClick={() => void readSource(source)}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Refresh bookmarks")}</Button><Button variant="primary" disabled={busy || reading || !selectedCount} onClick={() => { try {
+            const items = makeBrowserLinks(available.filter(item => selected.has(item.key)), source);
+            const version = generation.current;
+            void save(items, false, (batch, offset) => prepareImportedLinks(batch, services.preview, completed => setProgress({ completed: Math.min(offset + completed, items.length - 1), total: items.length }), () => generation.current === version));
         }
         catch (reason) {
             setError(reason instanceof Error ? reason.message : 'Links could not be imported.');
@@ -273,15 +324,25 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         </div> : <>
           <form className={`${styles.fields} ${styles.importForm}`} onSubmit={event => { void submit(event); }}>
             <div className={styles.linkRow}>
-            <Input label={t("Link")} value={url} maxLength={8192} error={t(urlError)} onBlur={() => setUrlError(url.trim() && !normalized ? 'Enter a complete http:// or https:// link.' : '')} onChange={event => { setUrl(event.target.value); setUrlError(''); setPreview(null); setLookupError(''); setError(''); if (!edited.current.title)
-            setTitle(''); if (!edited.current.content)
-            setContent(''); }} placeholder={t("Paste a link")} disabled={busy} autoComplete="url"/>
-            {normalized && <Input label={t("Title")} value={title} maxLength={500} onChange={event => { edited.current.title = true; setTitle(event.target.value); }} placeholder={looking ? t("Reading title…") : new URL(normalized).hostname} disabled={busy}/>}
+            <Input label={t("Link")} value={url} maxLength={8192} error={t(urlError)} onBlur={() => setUrlError(url.trim() && !normalized ? 'Enter a complete http:// or https:// link.' : '')} onChange={event => {
+                const value = event.target.value;
+                let next = '';
+                try { next = normalizeLink(value); } catch { /* Invalid input also supersedes an old lookup. */ }
+                setUrl(value); setUrlError(''); setError('');
+                if (next !== normalized) {
+                    generation.current++;
+                    lookupRequest.current = null;
+                    edited.current = { title: false, content: false };
+                    setTitle(''); setContent(''); setPreview(null); setLookupError('');
+                    setLooking(Boolean(next && services.available()));
+                }
+            }} placeholder={t("Paste a link")} disabled={busy} autoComplete="url"/>
+            {normalized && <Input label={t("Title")} value={title} maxLength={500} onChange={event => { edited.current.title = true; setTitle(event.target.value); }} placeholder={looking ? t("Reading title") + dots : new URL(normalized).hostname} aria-busy={looking || undefined} disabled={busy}/>}
             </div>
             {normalized && <>
               {looking && <span className="sr-only" role="status">{t("Reading page details…")}</span>}
-              {lookupError && <div className={styles.entry}><p className={styles.status} role="status">{t(lookupError)}</p><Button type="button" variant="ghost" size="sm" disabled={looking || busy} onClick={() => setRetry(value => value + 1)}>{t("Retry lookup")}</Button></div>}
-              <Textarea label={t("Content")} rows={3} maxLength={50000} value={content} onChange={event => { edited.current.content = true; setContent(event.target.value); }} placeholder={t("Add or edit the content for AI")} disabled={busy}/>
+              {lookupError && <div className={styles.entry}><p className={styles.status} role="status">{t(lookupError)}</p><Button type="button" variant="ghost" size="sm" disabled={looking || busy} onClick={() => { lookupRequest.current = null; setRetry(value => value + 1); }}>{t("Retry lookup")}</Button></div>}
+              <Textarea label={t("Content")} rows={3} maxLength={50000} value={content} onChange={event => { edited.current.content = true; setContent(event.target.value); }} placeholder={looking ? t("Reading content") + dots : t("Add or edit the content for AI")} aria-busy={looking || undefined} disabled={busy}/>
               {coverField}
               {tagsField}
             </>}

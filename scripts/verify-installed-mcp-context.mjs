@@ -1,11 +1,16 @@
 // Read-only release smoke check; never exercises app-only writes on real data.
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SHELF_URI } from '../plugins/stashdock/server/create-server.mjs';
 const folder = 'C:/Users/86137/.codex/plugins/cache/personal/stashdock/0.4.27';
+const config = JSON.parse(await readFile(resolve(folder, '.mcp.json'), 'utf8')).mcpServers.stashdock;
+assert.equal(config.cwd, '.');
+assert.deepEqual(config.args, ['scripts/mcp-server.mjs']);
 const client = new Client({ name: 'StashDock release verification', version: '1' });
-const transport = new StdioClientTransport({ command: process.execPath, args: [folder + '/scripts/mcp-server.mjs'], cwd: folder, env: { ...process.env, STASHDOCK_DATA_DIR: 'D:/StashDockData' }, stderr: 'pipe' });
+const transport = new StdioClientTransport({ command: config.command, args: config.args, cwd: resolve(folder, config.cwd), env: { ...process.env, STASHDOCK_DATA_DIR: 'D:/StashDockData' }, stderr: 'pipe' });
 try {
   await client.connect(transport);
   assert.equal(client.getServerVersion().version, '0.4.27');

@@ -35,6 +35,10 @@ pub async fn delete_item(app: AppHandle, id: String) -> Result<bool, String> {
     run(app, move |s| super::delete_item(id, s)).await
 }
 #[tauri::command]
+pub async fn delete_items(app: AppHandle, ids: Vec<String>) -> Result<usize, String> {
+    run(app, move |s| super::delete_items(ids, s)).await
+}
+#[tauri::command]
 pub async fn edit_item(
     app: AppHandle,
     id: String,

@@ -45,6 +45,7 @@ pub fn install_tray(app: &AppHandle) -> tauri::Result<()> {
     let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
     if let Some(window) = app.get_webview_window("main") {
         window.set_icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)?;
+        crate::window_frame::set_taskbar_icon(&window).map_err(std::io::Error::other)?;
     }
     TrayIconBuilder::with_id("stashdock")
         .icon(icon)

@@ -1,5 +1,12 @@
 .close {
-  --focus-outline: var(--border-strong);
+  /* The close face belongs to the fixed silver folder artwork in both themes. */
+  --folder-control-surface: oklch(100% 0 0);
+  --folder-control-muted: oklch(97.8% 0 0);
+  --folder-control-border: oklch(93.5% 0 0);
+  --folder-control-edge: oklch(82% 0 0);
+  --folder-control-ink: oklch(46% 0 0);
+  --folder-control-hover-ink: oklch(15% 0 0);
+  --focus-outline: var(--folder-control-edge);
   --focus-outline-width: 1px;
   --focus-outline-offset: -7px;
   position: absolute;
@@ -13,7 +20,7 @@
   padding: 0;
   border: 0;
   border-radius: var(--radius-pill);
-  color: var(--text-secondary);
+  color: var(--folder-control-ink);
   background: transparent;
   cursor: pointer;
   z-index: 1;
@@ -24,16 +31,16 @@
   width: calc(var(--space-5) - 2px);
   height: calc(var(--space-5) - 2px);
   place-items: center;
-  border: 1px solid var(--border);
+  border: 1px solid var(--folder-control-border);
   border-radius: var(--radius-pill);
   /* Part of the approved folder material, not a general Arc button treatment. */
-  background-color: var(--surface);
-  background-image: linear-gradient(165deg, color-mix(in oklab, var(--surface-raised) 80%, transparent), color-mix(in oklab, var(--surface-muted) 65%, transparent));
-  box-shadow: inset 0 .5px 0 var(--surface-raised), inset 0 -1px 2px color-mix(in oklab, var(--border-strong) 30%, transparent);
+  background-color: var(--folder-control-surface);
+  background-image: linear-gradient(165deg, color-mix(in oklab, var(--folder-control-surface) 80%, transparent), color-mix(in oklab, var(--folder-control-muted) 65%, transparent));
+  box-shadow: inset 0 .5px 0 var(--folder-control-surface), inset 0 -1px 2px color-mix(in oklab, var(--folder-control-edge) 30%, transparent);
   backdrop-filter: blur(6px);
   transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
   pointer-events: none;
 }
-.close:hover .circle { background-color: var(--surface-muted); color: var(--foreground); }
-.close:focus-visible .circle { background-color: var(--surface-muted); color: var(--foreground); }
+.close:hover .circle { background-color: var(--folder-control-muted); color: var(--folder-control-hover-ink); }
+.close:focus-visible .circle { background-color: var(--folder-control-muted); color: var(--folder-control-hover-ink); }
 @media (prefers-reduced-motion: reduce) { .circle { transition: none; } }

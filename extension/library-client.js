@@ -15,26 +15,32 @@ export function createBrowserLibrary({ storage, fetcher = fetch, locks = globalT
   const write = data => storage.set({ [key]: data });
   async function at(base, path, options = {}, retrySetup = true) {
     const response = await fetcher(`${base}/v1${path}`, { ...options, signal: AbortSignal.timeout(1800), headers: { 'Content-Type': 'application/json', 'X-StashDock-Client': 'chrome-extension-v1' } });
-    const payload = await response.json();
+    let payload; try { payload = await response.json(); } catch { payload = {}; }
     if (response.status === 403 && retrySetup && setup) {
       const status = await setup();
       if (status?.connected) return at(base, path, options, false);
     }
-    if (!response.ok) throw Error(payload.error || 'The page could not be saved. Retry.');
+    if (!response.ok) {
+      const error=Error(response.status===404 ? 'Update StashDock Desktop or its AI plugin, then retry.' : payload.error || 'The page could not be saved. Retry.');
+      error.status=response.status; throw error;
+    }
     return payload;
   }
-  async function query(path) {
+  async function query(path, options) {
+    let failure;
     for (const port of [17864,17863]) {
       const base = `http://127.0.0.1:${port}`;
-      try { return { base, value: await at(base,path) }; } catch { /* Try the other local provider. */ }
+      try { return { base, value: await at(base,path,options) }; } catch(error) { if(error.status && (!failure || error.status!==404)) failure=error; }
     }
-    throw Error('Open the latest StashDock Desktop or AI plugin, then retry.');
+    throw failure || Error('Open StashDock Desktop or its AI plugin, then retry.');
   }
-  const lookup = (url, suffix='') => query('/capture?url=' + encodeURIComponent(url) + suffix);
+  // Extension GET/HEAD requests may omit Origin despite host permissions.
+  // JSON POST preserves browser-supplied origin authentication for read RPCs.
+  const lookup = (url, options={}) => query('/capture/lookup',{method:'POST',body:JSON.stringify({url,...options})});
   return {
     tags: () => serial(async () => {
       const data = await read();
-      try { const { value } = await query('/tags'); if (Array.isArray(value.tags)) data.knownTags = value.tags; } catch { /* Keep the last tag names for offline editing. */ }
+      try { const { value } = await query('/tags',{method:'POST',body:'{}'}); if (Array.isArray(value.tags)) data.knownTags = value.tags; } catch { /* Keep the last tag names for offline editing. */ }
       await write(data); return data.knownTags;
     }),
     save: (item, options) => serial(async () => {
@@ -42,7 +48,7 @@ export function createBrowserLibrary({ storage, fetcher = fetch, locks = globalT
       const body=JSON.stringify({item,...options});
       const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body));
       const digest=[...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join('');
-      const { base, value } = await lookup(item.url,'&operationId='+encodeURIComponent(options.operationId)+'&digest='+digest);
+      const { base, value } = await lookup(item.url,{operationId:options.operationId,digest});
       if(value.saved)return value;
       if (!options.replace && value.duplicate) return value;
       // One mutation attempt. A retry uses the same operation ID; providers share

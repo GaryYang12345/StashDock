@@ -137,6 +137,7 @@ vfile 6.0.3: MIT
 vfile-message 4.0.3: MIT
 zod 4.6.5: MIT
 zod-to-json-schema 3.25.2: ISC
-pdfjs-dist 6.4.299: Apache-2.0 (embedded native PDF parser/renderer)
+brotli 9.0.0: BSD-3-Clause AND MIT; flate2 1.1.10: MIT (native bounded response decoding)
+pdfjs-dist 6.4.299: Apache-2.0 (embedded first-page PDF cover renderer)
 @iconify-icons/vscode-icons 2.0.16: MIT (generated local subset)
 @iconify-icons/flat-color-icons 2.0.0: MIT (generated local subset)

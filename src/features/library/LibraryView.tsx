@@ -12,7 +12,7 @@ import { handleTitlebarDrag, handleTitlebarDoubleClick } from '../../lib/desktop
 import { Alert } from "../../components/arc/alert/alert";
 import { ScrollArea } from "../../components/arc/scroll-area/scroll-area";
 import { Button } from "../../components/arc/button/button";
-import { FluidDialog } from "../../components/FluidDialog";
+import { ReferenceDeleteDialog } from "../../components/ReferenceDeleteDialog";
 import { LoadingReferences } from "../../components/LoadingReferences";
 import { ContextBar } from "../../components/ContextBar";
 import { EmptyState } from "../../components/EmptyState";
@@ -27,7 +27,6 @@ import { useLibraryController } from "./useLibraryController";
 import { usePinnedTags } from './usePinnedTags';
 import styles from "./LibraryView.module.css";
 import listStyles from '../../components/ReferenceList.module.css';
-import { DestructiveButton } from '../../components/DestructiveButton';
 import { ReferenceImportDialog } from '../../components/ReferenceImportDialog';
 
 const SettingsView = lazy(() => import('../settings/SettingsView'));
@@ -56,7 +55,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     setContentEditing(item);
   }, []);
   useEffect(() => { if (!active) { setEditing(null); setContentEditing(null); setTagOperation(null); } }, [active]);
-  const { storageReady, error, refresh, refreshing, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
+  const { storageReady, error, refresh, refreshing, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
   const pinnedError = useCallback((message: string) => setNotice(message, 5000), [setNotice]);
   const { pinnedTags, pinTag, reconcileTag } = usePinnedTags(pinnedError);
   return (
@@ -121,7 +120,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
             )}
           </ScrollArea>
 
-          <ContextBar items={selectedItems} copied={copied} onCopy={handleCopy} onClear={() => setSelectedIds([])}
+          <ContextBar items={selectedItems} copied={copied} onCopy={handleCopy} onClear={() => setSelectedIds([])} onDelete={handleDeleteSelected} busy={deleting}
             onSelectAll={() => setSelectedIds(Array.from(visibleItems, item => item.id))} allSelected={visibleItems.every(item => selectedSet.has(item.id))} />
         </section>
         {settingsOpen && <div className={styles.main}><Suspense fallback={<LoadingReferences />}><SettingsView onClose={closeSettings} onBusyChange={setSettingsBusy} /></Suspense></div>}
@@ -136,10 +135,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
         if (activeTag?.toLowerCase() === name.toLowerCase()) setActiveTag(replacement);
         await reconcileTag(name, replacement);
       }} />
-      <FluidDialog open={Boolean(pendingDelete)} onClose={() => setPendingDelete(null)} busy={deleting} title={t("Delete reference?")} description={pendingDelete ? t('Remove “{title}” from StashDock.', { title: pendingDelete.title }) : undefined}>
-        <Alert tone="danger" title={t("Delete failed")} open={Boolean(deleteError)}>{t(deleteError)}</Alert>
-        <div className={styles.dialogActions}><Button variant="secondary" disabled={deleting} onClick={() => setPendingDelete(null)}>{t("Keep reference")}</Button><DestructiveButton loading={deleting} onClick={() => void confirmDelete()}>{t("Delete reference")}</DestructiveButton></div>
-      </FluidDialog>
+      <ReferenceDeleteDialog target={pendingDelete} busy={deleting} error={deleteError} onClose={() => setPendingDelete(null)} onConfirm={confirmDelete} returnFocus={searchRef} />
     </div>
   );
 }

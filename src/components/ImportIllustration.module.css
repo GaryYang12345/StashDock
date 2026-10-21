@@ -1,0 +1,29 @@
+.artwork { position: relative; height: 96px; display: grid; place-items: center; opacity: .85; }
+.papers {
+  --paper-face: color-mix(in oklab, var(--surface-raised) 96%, var(--foreground));
+  --paper-edge: color-mix(in oklab, var(--foreground) 14%, var(--surface-raised));
+  --paper-ink: color-mix(in oklab, var(--foreground) 24%, var(--surface-raised));
+  --paper-soft: color-mix(in oklab, var(--foreground) 9%, var(--surface-raised));
+  --paper-shadow: color-mix(in oklab, var(--foreground) 9%, transparent);
+  position: relative; width: 132px; height: 96px;
+}
+:global([data-theme="dark"]) .papers {
+  --paper-face: color-mix(in oklab, var(--foreground) 88%, var(--surface-raised));
+  --paper-edge: color-mix(in oklab, var(--foreground) 65%, var(--surface-raised));
+  --paper-ink: color-mix(in oklab, var(--foreground) 40%, var(--surface-raised));
+  --paper-soft: color-mix(in oklab, var(--foreground) 76%, var(--surface-raised));
+  --paper-shadow: color-mix(in oklab, var(--surface-raised) 32%, transparent);
+}
+.paper { position: absolute; width: 60px; height: 76px; left: 36px; top: 10px; padding: 10px; border-radius: 7px; border: 1px solid var(--paper-edge); background: var(--paper-face); box-shadow: 0 3px 6px var(--paper-shadow); }
+.paper:nth-child(1) { transform: translate(-28px, 4px) rotate(-14deg); }
+.paper:nth-child(2) { transform: translate(28px, 4px) rotate(14deg); }
+.paper:nth-child(3) { transform: translateY(-4px); }
+.top { height: 22px; display: flex; align-items: flex-start; color: var(--paper-ink); }
+.top > span { width: 16px; height: 5px; border-radius: 2px; background: var(--paper-ink); margin-top: 3px; }
+.lines { display: grid; gap: 5px; margin-top: 5px; }
+.lines i { display: block; height: 3px; border-radius: 2px; background: var(--paper-ink); }
+.lines i:nth-child(2) { width: 86%; }
+.lines i:nth-child(3) { width: 60%; background: var(--paper-soft); }
+.photo { height: 28px; border-radius: 3px; display: grid; place-items: center; background: var(--paper-soft); color: var(--paper-ink); }
+.photo + .lines { gap: 4px; }
+.photo + .lines i:last-child { display: none; }

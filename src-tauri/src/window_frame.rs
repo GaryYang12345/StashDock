@@ -1,14 +1,13 @@
 //! Static client/frame sizing. Handoffs never animate native bounds.
 use tauri::WebviewWindow;
 
-/// Hide through Tauri so Tao's visibility cache stays synchronized. DWM must
-/// remove the outgoing surface immediately before the other surface is shown.
-pub fn hide_immediately(window: &WebviewWindow) -> Result<(), String> {
+/// Apply the same policy before SHOW as before HIDE. Setting this only when
+/// hiding leaves the folder's first reveal subject to the OS entrance fade.
+fn disable_transitions(window: &WebviewWindow) -> Result<(), String> {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::{
-            Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED},
-            UI::WindowsAndMessaging::IsWindowVisible,
+        use windows_sys::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
         };
         let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as _;
         let disabled: i32 = 1;
@@ -23,16 +22,122 @@ pub fn hide_immediately(window: &WebviewWindow) -> Result<(), String> {
                 eprintln!("Could not disable the native window transition: {result:#x}");
             }
         }
-        window.hide().map_err(|e| e.to_string())?;
-        unsafe {
-            if IsWindowVisible(hwnd) != 0 {
-                return Err("Could not hide the StashDock window".into());
+    }
+    let _ = window;
+    Ok(())
+}
+
+pub fn show_immediately(window: &WebviewWindow) -> Result<(), String> {
+    disable_transitions(window)?;
+    window.show().map_err(|e| e.to_string())
+}
+
+pub fn minimize_immediately(window: &WebviewWindow) -> Result<(), String> {
+    disable_transitions(window)?;
+    window.minimize().map_err(|e| e.to_string())
+}
+
+/// A minimized panel must be restored before measuring/repositioning its real
+/// client frame. Keep that preparation out of sight, without changing Tauri's
+/// visibility cache or using a transparent/layered dashboard window.
+pub struct PreparedRestore {
+    window: WebviewWindow,
+    cloaked: bool,
+}
+impl PreparedRestore {
+    pub fn new(window: &WebviewWindow) -> Result<Self, String> {
+        let mut restore = Self {
+            window: window.clone(),
+            cloaked: false,
+        };
+        if window.is_minimized().map_err(|e| e.to_string())? {
+            disable_transitions(window)?;
+            #[cfg(windows)]
+            {
+                set_cloaked(window, true)?;
+                restore.cloaked = true;
             }
+            window.unminimize().map_err(|e| e.to_string())?;
+        }
+        Ok(restore)
+    }
+    pub fn reveal(&mut self) -> Result<(), String> {
+        if self.cloaked {
+            set_cloaked(&self.window, false)?;
+            self.cloaked = false;
         }
         Ok(())
     }
-    #[cfg(not(windows))]
-    window.hide().map_err(|e| e.to_string())
+}
+impl Drop for PreparedRestore {
+    fn drop(&mut self) {
+        if self.cloaked {
+            // Failure before reveal must not expose the partially prepared
+            // destination or leave a permanently cloaked window behind.
+            let _ = self.window.hide();
+            if let Err(error) = set_cloaked(&self.window, false) {
+                eprintln!("Could not reset the panel's preparation state: {error}");
+            }
+        }
+    }
+}
+fn set_cloaked(window: &WebviewWindow, cloaked: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as _;
+        let value = i32::from(cloaked);
+        let result = unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_CLOAK as u32,
+                (&value as *const i32).cast(),
+                std::mem::size_of_val(&value) as u32,
+            )
+        };
+        if result < 0 {
+            return Err(format!("Could not prepare the panel: {result:#x}"));
+        }
+    }
+    let _ = (window, cloaked);
+    Ok(())
+}
+
+/// Tauri/Tao's set_icon updates ICON_SMALL only. Publish the same high-resolution
+/// image as ICON_BIG instead of letting Shell fall back to a class/default icon.
+/// Tao owns this handle for the window's lifetime; never destroy this borrowed
+/// handle or introduce a second icon cache/owner.
+pub fn set_taskbar_icon(window: &WebviewWindow) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SendMessageW, ICON_BIG, ICON_SMALL, WM_GETICON, WM_SETICON,
+        };
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as _;
+        let icon = unsafe { SendMessageW(hwnd, WM_GETICON, ICON_SMALL as usize, 0) };
+        if icon == 0 {
+            return Err("The StashDock window icon is unavailable".into());
+        }
+        unsafe {
+            SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon);
+        }
+    }
+    let _ = window;
+    Ok(())
+}
+
+/// Framework visibility remains authoritative, including on repeated switches.
+pub fn hide_immediately(window: &WebviewWindow) -> Result<(), String> {
+    disable_transitions(window)?;
+    window.hide().map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    unsafe {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as _;
+        if windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(hwnd) != 0 {
+            return Err("Could not hide the StashDock window".into());
+        }
+    }
+    Ok(())
 }
 
 pub fn client_frame_size(outer: (u32, u32), inner: (u32, u32), desired: (u32, u32)) -> (u32, u32) {

@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "source": "../brand/icon.svg",
+  "sourceSha256": "9f7257aaee229e01e114b957e25756f1e5469798791084a61990e2f069b16a13",
+  "canvas": {
+    "width": 1024,
+    "height": 1024,
+    "colorSpace": "sRGB"
+  },
+  "mark": {
+    "width": 640,
+    "transform": "translate(192 257.0292397660819) scale(0.935672514619883)",
+    "geometryUnchanged": true
+  },
+  "windows": {
+    "outsideGutter": 0,
+    "compositionScale": 1.103448275862069,
+    "plateToMarkRatioUnchanged": true
+  },
+  "apple": {
+    "background": "white",
+    "foreground": "apple/02-mark.svg",
+    "darkForeground": "apple/02-mark-dark.svg",
+    "layersUnmasked": true,
+    "bakedEffects": false,
+    "composerFileCreated": false,
+    "nativeLiquidGlassVerified": false
+  }
+}

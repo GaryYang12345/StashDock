@@ -1,6 +1,14 @@
 // Interface copy only. Never run saved titles, content, URLs or tag names
 // through this catalog. English source keys also keep untranslated hosts stable.
 export const zh = {
+  'Importing references': '正在导入',
+  'Delete selected references': '删除已选收藏',
+  'Delete selected references?': '删除已选收藏？',
+  'Remove {count} selected references from StashDock?': '是否从 StashDock 中删除已选的 {count} 条收藏？',
+  'Keep references': '保留收藏', 'Delete references': '删除收藏',
+  'References deleted.': '收藏已删除。',
+  'References could not be deleted. Try again.': '无法删除收藏，请重试。',
+  'Import browser bookmarks, links, notes, or local files.': '导入浏览器书签、链接、笔记或本地文件。',
   'Floating window': '悬浮窗',
   'Minimize to a floating folder.': '最小化为悬浮文件夹。',
   'Minimize to the taskbar. Close to quit.': '最小化进入任务栏，关闭窗口即退出。',
@@ -77,7 +85,7 @@ export const zh = {
   'Content could not be saved': '无法保存内容', 'Import': '导入', 'Import could not be completed': '无法完成导入',
   'Loading preview': '正在加载预览', 'Loading reference': '正在加载收藏', 'No web bookmarks found': '没有找到网页书签',
   'Note title': '笔记标题', 'Paste a link': '粘贴链接', 'Reading bookmarks': '正在读取书签', 'Reading page details…': '正在读取网页信息…',
-  'Reading title…': '正在读取标题…', 'Reference type': '收藏类型', 'Refresh bookmarks': '刷新书签', 'Retry lookup': '重新获取',
+  'Reading title': '正在读取标题', 'Reading content': '正在读取正文', 'Reference type': '收藏类型', 'Refresh bookmarks': '刷新书签', 'Retry lookup': '重新获取',
   'Save name': '保存名称', 'Removed': '已移除', 'Select': '选择', 'Show 100 more': '再显示 100 项', 'Tag name': '标签名称',
   'Tag could not be changed': '无法修改标签', 'Tag updated': '标签已更新', 'Write or paste a note': '输入或粘贴笔记',
   'Import {count} links': '导入 {count} 个链接', 'Import {count} link': '导入 {count} 个链接',

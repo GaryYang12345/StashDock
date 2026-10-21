@@ -100,9 +100,59 @@ export function makeLink({ url, title, content, tags, faviconUrl, preview }: {
 }
 export function makeBrowserLinks(bookmarks: BrowserBookmark[], source: BrowserSource): StashItem[] {
     return bookmarks.map(bookmark => {
-        const item = makeLink({ url: bookmark.url, title: bookmark.title, content: '', tags: [], faviconUrl: bookmark.faviconUrl });
+        const item = makeLink({ url: bookmark.url, title: bookmark.title, content: '', tags: [source.browser], faviconUrl: bookmark.faviconUrl });
         // Recent means added to StashDock. Preserve the browser's older date separately.
         return { ...item,
             origin: { ...item.origin!, platform: source.browser, importMethod: 'browser_bookmarks', folderPath: bookmark.folderPath, savedAt: bookmark.savedAt } };
     });
+}
+
+export const importCapacityError = (error: unknown) => /StashDock is busy|renderer is busy/i.test(String(error));
+export async function readImportDetails(url: string, read: LinkImportService['preview'], current = () => true): Promise<LinkPreview> {
+    const until = Date.now() + 45_000;
+    while (current()) {
+        try { return await read(url); }
+        catch (error) {
+            if (!importCapacityError(error) || Date.now() >= until) throw error;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+    throw Error('Import cancelled.');
+}
+
+// One bounded preparation flow for both hosts. Failed reads still produce valid
+// links; completion freezes this import's result, never a promise of full text.
+export async function prepareImportedLinks(items: StashItem[], read: LinkImportService['preview'], progress: (completed: number) => void, current = () => true): Promise<StashItem[]> {
+    const result = [...items];
+    let next = 0, completed = 0;
+    let capacityFailure: unknown;
+    progress(0);
+    await Promise.all(Array.from({ length: Math.min(4, items.length) }, async () => {
+        while (!capacityFailure && current()) {
+            const index = next++;
+            if (index >= items.length) return;
+            const item = items[index];
+            let details: LinkPreview | undefined;
+            // A previous debounced lookup can still own native admission. Busy
+            // means wait for capacity, not that this page has no readable text.
+            try { details = await readImportDetails(item.url!, read, () => current() && !capacityFailure); }
+            catch (error) { if (importCapacityError(error)) capacityFailure = error; }
+            if (!current()) return;
+            result[index] = settleImportedLink(item, details);
+            progress(++completed);
+        }
+    }));
+    if (!current()) throw Error('Import cancelled.');
+    if (capacityFailure) throw capacityFailure;
+    return result;
+}
+
+export function settleImportedLink(item: StashItem, details?: LinkPreview): StashItem {
+    const content = details?.content?.trim() || '';
+    return { ...item, content: content || undefined,
+        excerpt: Array.from(content.split(/\s+/).join(' ')).slice(0, 180).join(''),
+        ...(details?.preview ? { preview: details.preview } : {}),
+        origin: { ...item.origin!, contentSettled: true,
+            faviconUrl: item.origin?.faviconUrl || details?.faviconUrl,
+            ...(details?.previewKind ? { previewKind: details.previewKind } : {}) } };
 }

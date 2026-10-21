@@ -1,0 +1,5 @@
+.illustration { margin-bottom: var(--space-6); }
+.heading { text-align: center; margin-bottom: var(--space-6); }
+.progressRow { display: flex; align-items: center; gap: var(--space-3); }
+.title { min-width: 0; font-family: var(--font-body); font-size: var(--text-lg); font-weight: 500; line-height: var(--leading-body); letter-spacing: var(--tracking-body); color: var(--foreground); }
+.percentage { flex: none; min-width: 4ch; text-align: right; font-size: var(--text-sm); font-weight: 400; line-height: var(--leading-body); color: var(--text-secondary); font-variant-numeric: tabular-nums; }

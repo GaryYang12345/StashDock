@@ -91,7 +91,7 @@ function article(doc) {
   return { content, title: parsed?.title || '', author: parsed?.byline || '' };
 }
 
-export function capturePage(doc, href, { allowSelection = true } = {}) {
+export function capturePage(doc, href, { allowSelection = true, metadataOnly = false } = {}) {
   const rawUrl = safeUrl(href, href);
   if (!rawUrl) throw Error('Open an HTTP or HTTPS page to save a reference.');
   const url = new URL(rawUrl);
@@ -99,7 +99,8 @@ export function capturePage(doc, href, { allowSelection = true } = {}) {
   const selection = doc.defaultView?.getSelection();
   const inField = node => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('form,input,textarea,select,[contenteditable]');
   const selected = allowSelection && selection && !inField(selection.anchorNode) && !inField(selection.focusNode) ? normalize(selection.toString()) : '';
-  const extracted = selected ? { content: selected, method: 'selection' } : { ...(adaptedPost(doc, url) || article(doc)), method: 'page' };
+  const extracted = metadataOnly ? { content: '', method: 'page' }
+    : selected ? { content: selected, method: 'selection' } : { ...(adaptedPost(doc, url) || article(doc)), method: 'page' };
   const truncated = Boolean(extracted.truncated || [...extracted.content].length > MAX_CONTENT);
   const content = [...extracted.content].slice(0, MAX_CONTENT).join('');
   return { url: rawUrl, title: (extracted.title || metadata(doc, 'og:title') || doc.title || url.hostname).slice(0, 300),
@@ -113,7 +114,13 @@ export function capturePage(doc, href, { allowSelection = true } = {}) {
 
 export function captureCurrentDocument() {
   try { return { page: capturePage(document, location.href, { allowSelection: false }) }; }
-  catch (error) { const message = error.message || 'The page could not be read. Try again.'; return { error: message, retryable: /not loaded|No .* post text|No readable page content/.test(message) }; }
+  catch (error) {
+    // A reader failure is not a failed bookmark. Keep the current page's identity
+    // and an empty body; never substitute unrelated feed, login or private text.
+    // The document observer still refreshes this draft when post text arrives.
+    try { return { page: capturePage(document, location.href, { allowSelection: false, metadataOnly: true }) }; }
+    catch { return { error: error.message || 'Open an HTTP or HTTPS page to save a reference.' }; }
+  }
 }
 
 export function stopObservingDocument(token) {

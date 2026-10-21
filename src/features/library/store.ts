@@ -7,6 +7,7 @@ export type LibraryRepository = {
   load: () => Promise<StashItem[]>;
   add: (items: StashItem[], next: StashItem[]) => Promise<void | StashItem[]>;
   remove: (id: string, next: StashItem[]) => Promise<void>;
+  removeMany?: (ids: string[], next: StashItem[]) => Promise<void>;
   favorite: (id: string, value: boolean, next: StashItem[]) => Promise<void>;
   edit?: (id: string, title: string, tags: string[], next: StashItem[], cover?: ReferenceCoverEdit) => Promise<StashItem[]>;
   editContent?: (id: string, content: string, next: StashItem[]) => Promise<StashItem[]>;
@@ -81,6 +82,15 @@ export function createLibraryStore(repository: LibraryRepository) {
     remove: (id: string) => enqueue(async () => {
       const next = snapshot.items.filter(item => item.id !== id);
       await repository.remove(id, next);
+      publish(next);
+    }),
+    removeMany: (ids: string[]) => enqueue(async () => {
+      const unique = [...new Set(ids)];
+      if (!unique.length) return;
+      if (!repository.removeMany) throw new Error('Reference deletion is unavailable.');
+      const deleted = new Set(unique);
+      const next = snapshot.items.filter(item => !deleted.has(item.id));
+      await repository.removeMany(unique, next);
       publish(next);
     }),
     toggleFavorite: (id: string) => enqueue(async () => {

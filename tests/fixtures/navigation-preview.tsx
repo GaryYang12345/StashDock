@@ -2,6 +2,7 @@
 import { createRoot } from 'react-dom/client';
 import { MotionConfig } from 'motion/react';
 import LibraryView from '../../src/features/library/LibraryView';
+import { FloatingFolder } from '../../src/components/FloatingFolder';
 import { TooltipLayer } from '../../src/components/TooltipLayer';
 import '../../src/index.css';
 import '../../src/components/arc/foundation.css';
@@ -14,9 +15,9 @@ document.documentElement.dataset.theme = dark ? 'dark' : 'light';
 document.documentElement.dataset.accent = dark ? 'blue' : 'neutral';
 
 const base = { source: 'Fixture', excerpt: '', createdAt: '2026-10-19', content: '# Project context\n\n## Rules\n\n- Keep original files\n- **Preserve tags**\n\n```ts\nconst ready = true;\n```\n\n| Type | Count |\n| --- | --- |\n| Files | 2 |\n\n- [x] Checked', previewStatus: 'ready' };
-localStorage.setItem('stashdock.items.v1', JSON.stringify([
+localStorage.setItem('stashdock.items.v1', JSON.stringify(new URL(location.href).searchParams.has('empty') ? [] : [
   { ...base, id: 'codex-file', title: 'Codex file', kind: 'file', tags: ['Codex'] },
   { ...base, id: 'codex-web', title: 'Codex web', kind: 'web', url: 'https://example.org', tags: ['Codex'] },
   { ...base, id: 'other-file', title: 'Other file', kind: 'file', tags: ['Other'] },
 ]));
-createRoot(document.getElementById('root')!).render(<MotionConfig reducedMotion={new URL(location.href).searchParams.has('reduced') ? 'always' : 'user'}><TooltipLayer /><LibraryView /></MotionConfig>);
+createRoot(document.getElementById('root')!).render(<MotionConfig reducedMotion={new URL(location.href).searchParams.has('reduced') ? 'always' : 'user'}><TooltipLayer />{new URL(location.href).searchParams.has('folder') ? <FloatingFolder onOpen={() => {}} /> : <LibraryView />}</MotionConfig>);

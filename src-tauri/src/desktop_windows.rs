@@ -1,5 +1,6 @@
 //! One lifecycle authority for two independent windows. UI is never the owner
 //! of native bounds, Z-order or application lifetime.
+use crate::desktop_window_policy::{self as policy, Intent, Mode};
 use crate::window_frame;
 use crate::window_geometry::{self, Geometry, SavedWindows, WorkArea};
 use serde::{Deserialize, Serialize};
@@ -34,13 +35,38 @@ pub struct Status {
     pub maximized: bool,
 }
 struct Inner {
-    status: Status,
-    last: Surface,
+    mode: Mode,
+    pending: Option<Mode>,
+    maximized: bool,
+    last: Mode,
+    reconcile_queued: bool,
+    panel_frame: Option<PanelFrame>,
     panel_ready: bool,
     folder_ready: bool,
     saved: SavedWindows,
     expansion: Option<Expansion>,
     floating_enabled: bool,
+}
+impl Inner {
+    fn status(&self) -> Status {
+        Status {
+            visible: mode_surface(self.mode),
+            requested: mode_surface(self.pending.unwrap_or(self.mode)),
+            maximized: self.maximized,
+        }
+    }
+}
+#[derive(Clone, Copy)]
+struct PanelFrame {
+    position: (i32, i32),
+    size: (u32, u32),
+}
+fn mode_surface(mode: Mode) -> Option<Surface> {
+    match mode {
+        Mode::Panel => Some(Surface::Panel),
+        Mode::Folder => Some(Surface::Folder),
+        _ => None,
+    }
 }
 /// Keep the pre-reveal folder separate from the panel's edge-clamped bounds.
 /// This is transient handoff state, not another persisted window position.
@@ -79,11 +105,9 @@ impl Persistence {
     }
 }
 fn status(app: &AppHandle) -> Status {
-    app.state::<DesktopWindows>()
-        .inner
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .status
+    let state = app.state::<DesktopWindows>();
+    let inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+    inner.status()
 }
 fn emit(app: &AppHandle) {
     let _ = app.emit("desktop-window-state", status(app));
@@ -104,14 +128,21 @@ pub fn set_floating_enabled(app: &AppHandle, enabled: bool) -> Result<(), String
     let copy = app.clone();
     app.run_on_main_thread(move || {
         let result = (|| {
-            if !enabled && status(&copy).visible == Some(Surface::Folder) {
-                apply(&copy, Some(Surface::Panel))?;
+            let previous = copy
+                .state::<DesktopWindows>()
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .mode;
+            let next = policy::preference_mode(previous, enabled);
+            if next != previous {
+                apply(&copy, next)?;
             }
             let state = copy.state::<DesktopWindows>();
             let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.floating_enabled = enabled;
             if !enabled {
-                inner.last = Surface::Panel;
+                inner.last = Mode::Panel;
                 inner.expansion = None;
             }
             Ok(())
@@ -206,12 +237,12 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
         .unwrap_or_default();
     app.manage(DesktopWindows {
         inner: Mutex::new(Inner {
-            status: Status {
-                visible: None,
-                requested: Some(Surface::Panel),
-                maximized: false,
-            },
-            last: Surface::Panel,
+            mode: Mode::Panel,
+            pending: None,
+            maximized: false,
+            last: Mode::Panel,
+            reconcile_queued: false,
+            panel_frame: None,
             panel_ready: false,
             folder_ready: false,
             saved: saved.clone(),
@@ -238,19 +269,36 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
     // leave the application trapped behind a hidden JavaScript-ready handshake.
     main.show().map_err(|e| e.to_string())?;
     main.set_focus().map_err(|e| e.to_string())?;
-    app.state::<DesktopWindows>()
-        .inner
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .status
-        .visible = Some(Surface::Panel);
+    remember_panel_frame(app, &main);
     Ok(())
+}
+fn remember_panel_frame(app: &AppHandle, window: &WebviewWindow) {
+    if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
+        return;
+    }
+    if let (Ok(p), Ok(size)) = (window.outer_position(), window.outer_size()) {
+        // The tiny iconic rectangle is not a usable anchor. This transient
+        // frame is independent of renderer readiness and saved client size.
+        if size.width >= 144 && size.height >= 144 {
+            app.state::<DesktopWindows>()
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .panel_frame = Some(PanelFrame {
+                position: (p.x, p.y),
+                size: (size.width, size.height),
+            });
+        }
+    }
 }
 pub fn remember(app: &AppHandle, window: &WebviewWindow) {
     let Some(state) = app.try_state::<DesktopWindows>() else {
         return;
     };
     let Ok(which) = surface(window) else { return };
+    if which == Surface::Panel {
+        remember_panel_frame(app, window);
+    }
     let ready = {
         let inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
         if which == Surface::Panel {
@@ -264,7 +312,10 @@ pub fn remember(app: &AppHandle, window: &WebviewWindow) {
     if !ready || !window.is_visible().unwrap_or(false) {
         return;
     }
-    if window.is_maximized().unwrap_or(false) || window.is_minimized().unwrap_or(false) {
+    if window.is_minimized().unwrap_or(false) {
+        return;
+    }
+    if window.is_maximized().unwrap_or(false) {
         return;
     }
     let (Ok(p), Ok(size), Ok(scale)) = (
@@ -348,23 +399,53 @@ pub fn persist_now(app: &AppHandle) {
 
 /// Direct native show/hide. The two WebViews stay mounted, with no animation
 /// state, temporary visual window or renderer completion handshake.
-fn apply(app: &AppHandle, target: Option<Surface>) -> Result<Status, String> {
+fn dispatch(app: &AppHandle, intent: Intent) -> Result<Status, String> {
     let state = app.state::<DesktopWindows>();
-    let old = {
-        let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
-        inner.status.requested = target;
-        inner.status.visible
+    let (mode, last, floating) = {
+        let inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+        (inner.mode, inner.last, inner.floating_enabled)
     };
+    // Fold native facts into this decision without presenting an intermediate
+    // mode when a shortcut arrives before a queued system notification.
+    let effective = native_action(app, mode)?
+        .map_or(mode, |event| policy::resolve(mode, last, floating, event));
+    let target = policy::resolve(effective, last, floating, intent);
+    apply(app, target)
+}
+
+/// One inactive-window policy, reused by normal transitions and rollback.
+fn conceal(window: &WebviewWindow, which: Surface, mode: Mode) -> Result<(), String> {
+    if which == Surface::Panel && matches!(mode, Mode::Folder | Mode::Minimized) {
+        if !window.is_visible().map_err(|e| e.to_string())? {
+            window_frame::show_immediately(window)?;
+        }
+        window_frame::minimize_immediately(window)
+    } else {
+        window_frame::hide_immediately(window)
+    }
+}
+
+fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
+    let state = app.state::<DesktopWindows>();
+    let old_mode = {
+        let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.pending = Some(mode);
+        inner.mode
+    };
+    let old = mode_surface(old_mode);
+    let target = mode_surface(mode);
     if let Some(previous) = old {
         if let Some(window) = app.get_webview_window(previous.label()) {
             remember(app, &window);
         }
     }
     let result = (|| -> Result<(), String> {
+        let mut restore = None;
         if let Some(next) = target {
             let window = app
                 .get_webview_window(next.label())
                 .ok_or("The requested window is unavailable")?;
+            restore = Some(window_frame::PreparedRestore::new(&window)?);
             if old != target && !window.is_maximized().unwrap_or(false) {
                 if old == Some(Surface::Folder) && next == Surface::Panel {
                     prepare_placement(app)?;
@@ -392,26 +473,31 @@ fn apply(app: &AppHandle, target: Option<Surface>) -> Result<Status, String> {
             window
                 .set_always_on_top(next == Surface::Folder)
                 .map_err(|e| e.to_string())?;
-            if old != target {
+            // On collapse, reveal the already-mounted folder before
+            // minimizing the panel. Both operations are synchronous on this UI thread,
+            // with native fades disabled, so no deliberate empty interval or
+            // fading panel is left underneath it. Expansion keeps the folder
+            // hidden first: its topmost surface must never cover the panel.
+            let reveal_first = old == Some(Surface::Panel) && next == Surface::Folder;
+            if old != target && !reveal_first {
                 if let Some(previous) = old {
                     if let Some(outgoing) = app.get_webview_window(previous.label()) {
                         window_frame::hide_immediately(&outgoing)?;
                     }
                 }
             }
-            if window.is_minimized().unwrap_or(false) {
-                window.unminimize().map_err(|e| e.to_string())?;
-            }
-            // Hide either outgoing surface first. The rollback below restores
-            // the source if showing/focusing the destination fails.
-            window.show().map_err(|e| e.to_string())?;
+            // Rollback below restores the source if reveal/focus fails.
+            window_frame::show_immediately(&window)?;
         }
         for surface in [Surface::Panel, Surface::Folder] {
             if Some(surface) != target {
                 if let Some(window) = app.get_webview_window(surface.label()) {
-                    window_frame::hide_immediately(&window)?;
+                    conceal(&window, surface, mode)?;
                 }
             }
+        }
+        if let Some(restore) = restore.as_mut() {
+            restore.reveal()?;
         }
         if let Some(next) = target {
             app.get_webview_window(next.label())
@@ -426,10 +512,14 @@ fn apply(app: &AppHandle, target: Option<Surface>) -> Result<Status, String> {
             if let Some(window) = app.get_webview_window(surface.label()) {
                 let _ = window.set_always_on_top(surface == Surface::Folder);
                 if Some(surface) == old {
-                    let _ = window.show();
+                    let mut restore = window_frame::PreparedRestore::new(&window).ok();
+                    let _ = window_frame::show_immediately(&window);
+                    if let Some(restore) = restore.as_mut() {
+                        let _ = restore.reveal();
+                    }
                     let _ = window.set_focus();
                 } else {
-                    let _ = window_frame::hide_immediately(&window);
+                    let _ = conceal(&window, surface, old_mode);
                 }
             }
         }
@@ -437,8 +527,7 @@ fn apply(app: &AppHandle, target: Option<Surface>) -> Result<Status, String> {
             .inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .status
-            .requested = old;
+            .pending = None;
         emit(app);
         return Err(error);
     }
@@ -459,12 +548,13 @@ fn apply(app: &AppHandle, target: Option<Surface>) -> Result<Status, String> {
         } else if target == Some(Surface::Folder) && old != target {
             inner.expansion = None;
         }
-        inner.status.visible = target;
-        inner.status.maximized = app
+        inner.mode = mode;
+        inner.pending = None;
+        inner.maximized = app
             .get_webview_window("main")
             .is_some_and(|window| window.is_maximized().unwrap_or(false));
-        if let Some(next) = target {
-            inner.last = next;
+        if matches!(mode, Mode::Panel | Mode::Folder) {
+            inner.last = mode;
         }
     }
     persist_later(app);
@@ -542,14 +632,28 @@ fn prepare_folder_placement(app: &AppHandle) -> Result<(), String> {
     let folder = app
         .get_webview_window("folder")
         .ok_or("Folder is unavailable")?;
-    let position = panel.outer_position().map_err(|e| e.to_string())?;
+    let frame = if panel.is_minimized().map_err(|e| e.to_string())? {
+        app.state::<DesktopWindows>()
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .panel_frame
+            .ok_or("The panel's normal bounds are unavailable")?
+    } else {
+        let position = panel.outer_position().map_err(|e| e.to_string())?;
+        let size = panel.outer_size().map_err(|e| e.to_string())?;
+        PanelFrame {
+            position: (position.x, position.y),
+            size: (size.width, size.height),
+        }
+    };
     let original = app
         .state::<DesktopWindows>()
         .inner
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .expansion
-        .and_then(|origin| origin.return_folder((position.x, position.y)));
+        .and_then(|origin| origin.return_folder(frame.position));
     if let Some(original) = original {
         // configure still clamps for a removed monitor or changed work area.
         configure(&folder, Some(original), true, false)?;
@@ -561,10 +665,9 @@ fn prepare_folder_placement(app: &AppHandle) -> Result<(), String> {
             .folder = Some(original);
         return Ok(());
     }
-    let size = panel.outer_size().map_err(|e| e.to_string())?;
     let center = (
-        position.x as f64 + size.width as f64 / 2.0,
-        position.y as f64 + size.height as f64 / 2.0,
+        frame.position.0 as f64 + frame.size.0 as f64 / 2.0,
+        frame.position.1 as f64 + frame.size.1 as f64 / 2.0,
     );
     let monitors = panel.available_monitors().map_err(|e| e.to_string())?;
     let monitor = monitors
@@ -601,52 +704,15 @@ fn prepare_folder_placement(app: &AppHandle) -> Result<(), String> {
 pub fn show_last(app: &AppHandle) {
     let copy = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let mut target = copy
-            .state::<DesktopWindows>()
-            .inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .last;
-        if !floating_enabled(&copy) {
-            target = Surface::Panel;
-        }
-        if let Err(error) = apply(&copy, Some(target)) {
+        if let Err(error) = dispatch(&copy, Intent::ShowLast) {
             eprintln!("Could not reopen StashDock: {error}");
         }
     });
 }
-fn toggle_target(current: Status, last: Surface, minimized: bool) -> Surface {
-    if minimized {
-        return Surface::Panel;
-    }
-    match current.requested.or(current.visible) {
-        Some(Surface::Panel) => Surface::Folder,
-        Some(Surface::Folder) => Surface::Panel,
-        None => last,
-    }
-}
 pub fn toggle(app: &AppHandle) {
     let copy = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let current = status(&copy);
-        let last = copy
-            .state::<DesktopWindows>()
-            .inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .last;
-        let minimized = current.visible == Some(Surface::Panel)
-            && copy
-                .get_webview_window("main")
-                .is_some_and(|w| w.is_minimized().unwrap_or(false));
-        let target = if floating_enabled(&copy) {
-            Some(toggle_target(current, last, minimized))
-        } else if current.visible == Some(Surface::Panel) && !minimized {
-            None
-        } else {
-            Some(Surface::Panel)
-        };
-        if let Err(error) = apply(&copy, target) {
+        if let Err(error) = dispatch(&copy, Intent::Toggle) {
             eprintln!("Could not switch StashDock: {error}");
         }
     });
@@ -654,7 +720,7 @@ pub fn toggle(app: &AppHandle) {
 pub fn hide(app: &AppHandle) {
     let copy = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Err(error) = apply(&copy, None) {
+        if let Err(error) = dispatch(&copy, Intent::Hide) {
             eprintln!("Could not hide StashDock: {error}");
         }
     });
@@ -669,18 +735,94 @@ pub fn window_event(app: &AppHandle, window: &tauri::Window, event: &tauri::Wind
             persist_later(app);
         }
         if window.label() == "main" && matches!(event, tauri::WindowEvent::Resized(_)) {
+            remember(app, &webview);
             let maximized = webview.is_maximized().unwrap_or(false);
             let changed = {
                 let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
-                let changed = inner.status.maximized != maximized;
-                inner.status.maximized = maximized;
+                let changed = inner.maximized != maximized;
+                inner.maximized = maximized;
                 changed
             };
             if changed {
                 emit(app);
             }
         }
+        if window.label() == "main" && matches!(event, tauri::WindowEvent::Moved(_)) {
+            remember(app, &webview);
+        }
+        if window.label() == "main"
+            && matches!(
+                event,
+                tauri::WindowEvent::Focused(_) | tauri::WindowEvent::Resized(_)
+            )
+        {
+            queue_native_reconcile(app);
+        }
     }
+}
+
+fn reconcile_native(app: &AppHandle) -> Result<Status, String> {
+    let state = app.state::<DesktopWindows>();
+    let mode = {
+        let inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.pending.is_some() {
+            return Ok(inner.status());
+        }
+        inner.mode
+    };
+    if let Some(intent) = native_action(app, mode)? {
+        dispatch(app, intent)
+    } else {
+        Ok(status(app))
+    }
+}
+
+fn native_action(app: &AppHandle, mode: Mode) -> Result<Option<Intent>, String> {
+    let panel = app
+        .get_webview_window("main")
+        .ok_or("Panel is unavailable")?;
+    Ok(policy::native_intent(
+        mode,
+        panel.is_visible().map_err(|e| e.to_string())?,
+        panel.is_minimized().map_err(|e| e.to_string())?,
+    ))
+}
+
+fn queue_native_reconcile(app: &AppHandle) {
+    let state = app.state::<DesktopWindows>();
+    let mode = state.inner.lock().unwrap_or_else(|e| e.into_inner()).mode;
+    if !matches!(native_action(app, mode), Ok(Some(_))) {
+        return;
+    }
+    {
+        let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.pending.is_some() || inner.reconcile_queued {
+            return;
+        }
+        inner.reconcile_queued = true;
+    }
+    // Defer out of the native callback. One queued reconciliation reads current
+    // native facts and product intent; no event payload can replay an old mode.
+    let copy = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = on_ui(copy.clone(), |app| {
+            app.state::<DesktopWindows>()
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .reconcile_queued = false;
+            reconcile_native(app)
+        })
+        .await;
+        if let Err(error) = result {
+            copy.state::<DesktopWindows>()
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .reconcile_queued = false;
+            eprintln!("Could not reconcile StashDock windows: {error}");
+        }
+    });
 }
 async fn on_ui(
     app: AppHandle,
@@ -705,14 +847,13 @@ pub fn desktop_window_status(window: WebviewWindow) -> Result<Status, String> {
 pub async fn set_desktop_surface(window: WebviewWindow, target: Surface) -> Result<Status, String> {
     surface(&window)?;
     on_ui(window.app_handle().clone(), move |app| {
-        if target == Surface::Folder && !floating_enabled(app) {
-            app.get_webview_window("main")
-                .ok_or("Panel is unavailable")?
-                .minimize()
-                .map_err(|e| e.to_string())?;
-            return Ok(status(app));
-        }
-        apply(app, Some(target))
+        dispatch(
+            app,
+            match target {
+                Surface::Panel => Intent::Open,
+                Surface::Folder => Intent::Minimize,
+            },
+        )
     })
     .await
 }
@@ -724,7 +865,7 @@ pub async fn hide_stashdock(window: WebviewWindow) -> Result<Status, String> {
             app.exit(0);
             return Ok(status(app));
         }
-        apply(app, None)
+        dispatch(app, Intent::Hide)
     })
     .await
 }
@@ -733,14 +874,14 @@ pub async fn desktop_window_ready(window: WebviewWindow) -> Result<Status, Strin
     let which = surface(&window)?;
     on_ui(window.app_handle().clone(), move |app| {
         let state = app.state::<DesktopWindows>();
-        let (already_ready, requested, visible) = {
+        let already_ready = {
             let inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
             let already = if which == Surface::Panel {
                 inner.panel_ready
             } else {
                 inner.folder_ready
             };
-            (already, inner.status.requested, inner.status.visible)
+            already
         };
         if which == Surface::Panel && !already_ready {
             let saved = state
@@ -765,11 +906,8 @@ pub async fn desktop_window_ready(window: WebviewWindow) -> Result<Status, Strin
                 inner.folder_ready = true;
             }
         }
-        if requested == visible {
-            Ok(status(app))
-        } else {
-            apply(app, requested)
-        }
+        remember(app, &window);
+        Ok(status(app))
     })
     .await
 }
@@ -808,33 +946,5 @@ mod tests {
         assert_eq!((original.x, original.y), (1750, 800));
         assert!(origin.return_folder((701, 200)).is_none());
         assert!(origin.return_folder((-1200, -400)).is_none());
-    }
-    #[test]
-    fn pending_switches_follow_latest_intent_and_tray_restores_last_form() {
-        let state = |visible, requested| Status {
-            visible,
-            requested,
-            maximized: false,
-        };
-        assert_eq!(
-            toggle_target(
-                state(Some(Surface::Panel), Some(Surface::Folder)),
-                Surface::Panel,
-                false
-            ),
-            Surface::Panel
-        );
-        assert_eq!(
-            toggle_target(state(None, None), Surface::Folder, false),
-            Surface::Folder
-        );
-        assert_eq!(
-            toggle_target(
-                state(Some(Surface::Panel), Some(Surface::Panel)),
-                Surface::Panel,
-                true
-            ),
-            Surface::Panel
-        );
     }
 }

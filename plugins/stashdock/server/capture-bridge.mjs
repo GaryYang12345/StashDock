@@ -44,7 +44,15 @@ export function startCaptureBridge(library, port = 17864, { openApp = openIntegr
         if (!input || Object.keys(input).join(',') !== 'id' || !['chrome','edge','firefox','codex','claude','desktop'].includes(input.id)) throw Error('Choose a supported StashDock app.');
         result = await openApp(input.id, { desktopPath: library.desktopExecutable?.() });
       }
-      else if (request.method === 'GET' && request.url === '/v1/tags') result = { tags: library.captureTags() };
+      else if (['GET','POST'].includes(request.method) && request.url === '/v1/tags') result = { tags: library.captureTags() };
+      else if (request.method === 'POST' && request.url === '/v1/capture/lookup') {
+        if (!request.headers['content-type']?.startsWith('application/json')) throw Error('Use a JSON request.');
+        let size=0,chunks=[];
+        for await(const chunk of request){size+=chunk.length;if(size>16384)throw Error('Invalid lookup request.');chunks.push(chunk);}
+        const input=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if(!input || typeof input.url!=='string' || input.url.length>8000 || Object.keys(input).some(key=>!['url','operationId','digest'].includes(key)))throw Error('Invalid lookup request.');
+        result=library.lookupCapture(input.url,input.operationId,input.digest);
+      }
       else if (request.method === 'GET' && request.url?.startsWith('/v1/capture?')) {
         const params=new URL(request.url, 'http://localhost').searchParams;
         const url=params.get('url'); if(!url || url.length>8000)throw Error('Invalid URL.');
