@@ -207,11 +207,16 @@ pub fn spawn_connector(executable: &std::path::Path, root: &std::path::Path) -> 
     }
 }
 pub fn relaunch_if_needed() -> Result<bool, String> {
-    #[cfg(windows)]
+    // `tauri dev` stops its Vite server as soon as the process it started exits,
+    // so a handed-off development window would load a refused localhost page.
+    // Development builds stay attached to the developer's terminal instead.
+    #[cfg(dev)]
+    return Ok(false);
+    #[cfg(all(windows, not(dev)))]
     {
         return windows::relaunch()
             .map_err(|error| format!("StashDock could not start independently: {error}"));
     }
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(dev)))]
     Ok(false)
 }
