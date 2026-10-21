@@ -1,5 +1,4 @@
-//! Enrichment connections are pinned to checked public DNS results. With the
-//! user's enabled system proxy, a direct route and the proxy race per host.
+//! All enrichment connections are pinned to checked public DNS results. No system proxies.
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},
@@ -190,7 +189,7 @@ pub fn web_url(value: &str) -> Result<Url, String> {
     Ok(url)
 }
 // Only the OS user's enabled configuration may nominate an upstream proxy.
-// Page URLs cannot choose it. Destinations are still checked: see direct_candidate.
+// Page URLs cannot choose it. Destinations are still checked: see check_proxied.
 pub fn proxy_address(value: &str) -> Option<std::net::SocketAddr> {
     let value = value
         .split(';')
@@ -394,6 +393,31 @@ fn fake_ip(ip: IpAddr) -> bool {
     matches!(ip, IpAddr::V4(ip) if ip.octets()[0] == 198 && matches!(ip.octets()[1], 18 | 19))
 }
 
+/// With a system proxy the proxy resolves and routes the name (users in many
+/// regions rely on it for blocked sites). The name is still refused when this
+/// computer resolves it to a private, loopback or local address; a failed or
+/// fake-IP answer is left to the proxy.
+pub fn check_proxied(host: &str, port: u16) -> Result<(), String> {
+    let host = web_host(host, port)?;
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return if public_ip(ip) {
+            Ok(())
+        } else {
+            Err("Automatic previews are only available for public websites.".into())
+        };
+    }
+    match lookup(host, port) {
+        Ok(addresses)
+            if addresses
+                .iter()
+                .any(|address| !public_ip(address.ip()) && !fake_ip(address.ip())) =>
+        {
+            Err("Automatic previews are only available for public websites.".into())
+        }
+        _ => Ok(()),
+    }
+}
+
 pub fn resolve_public(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     let host = web_host(host, port)?;
     let key = (host.to_ascii_lowercase(), port);
@@ -475,321 +499,6 @@ pub fn fetch_context_document(value: &str, deadline: Instant) -> Result<WebRespo
         DocumentPolicy::Context,
     )
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Route {
-    Direct(SocketAddr),
-    Proxy(SocketAddr),
-}
-
-enum Outcome {
-    Done(Result<WebResponse, String>),
-    Redirect(Url),
-    /// The route did not answer; `stalled` means it accepted and then hung.
-    Failed {
-        stalled: bool,
-    },
-}
-
-const READ_FAILED: &str =
-    "Page details could not be read. Retry the lookup or enter them manually.";
-/// How long a direct connection may try before the system proxy joins the race.
-const DIRECT_HEAD_START: Duration = Duration::from_millis(1200);
-const ROUTE_MEMORY: Duration = Duration::from_secs(600);
-type RouteCache = HashMap<String, (Instant, bool)>;
-static ROUTES: OnceLock<Mutex<RouteCache>> = OnceLock::new();
-
-/// Whether this host last answered through the system proxy (true) or directly.
-pub fn preferred_route(host: &str) -> Option<bool> {
-    let cache = ROUTES
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .ok()?;
-    cache
-        .get(&host.to_ascii_lowercase())
-        .filter(|(time, _)| time.elapsed() < ROUTE_MEMORY)
-        .map(|(_, proxied)| *proxied)
-}
-
-fn remember_route(host: &str, route: Route) {
-    if let Ok(mut cache) = ROUTES.get_or_init(|| Mutex::new(HashMap::new())).lock() {
-        if cache.len() >= 256 {
-            cache.retain(|_, (time, _)| time.elapsed() < ROUTE_MEMORY);
-        }
-        if cache.len() < 256 {
-            cache.insert(
-                host.to_ascii_lowercase(),
-                (Instant::now(), matches!(route, Route::Proxy(_))),
-            );
-        }
-    }
-}
-
-/// With a system proxy, a checked public address this computer can try directly
-/// (None when the name only resolves through the proxy, for example fake-IP
-/// answers). Private, loopback and local answers are refused.
-pub fn direct_candidate(host: &str, port: u16) -> Result<Option<SocketAddr>, String> {
-    let name = web_host(host, port)?;
-    if name.parse::<IpAddr>().is_ok() {
-        return resolve_public(host, port).map(|addresses| addresses.first().copied());
-    }
-    match lookup(name, port) {
-        Ok(addresses)
-            if addresses
-                .iter()
-                .any(|address| !public_ip(address.ip()) && !fake_ip(address.ip())) =>
-        {
-            Err("Automatic previews are only available for public websites.".into())
-        }
-        Ok(addresses) if addresses.iter().all(|address| public_ip(address.ip())) => {
-            Ok(addresses.first().copied())
-        }
-        _ => Ok(None),
-    }
-}
-
-fn diagnostics() -> bool {
-    std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn attempt(
-    url: &Url,
-    host: &str,
-    port: u16,
-    route: Route,
-    accept: &str,
-    limit: usize,
-    policy: DocumentPolicy,
-    timeout: Duration,
-) -> Outcome {
-    let document = policy != DocumentPolicy::Raster;
-    let client = match route {
-        Route::Direct(address) => client_for(host, address),
-        Route::Proxy(proxy) => proxied_client(proxy),
-    };
-    let client = match client {
-        Ok(client) => client,
-        Err(error) => return Outcome::Done(Err(error)),
-    };
-    let label = match route {
-        Route::Direct(address) => address.to_string(),
-        Route::Proxy(_) => "system proxy".into(),
-    };
-    let request = client
-        .get(url.clone())
-        .header("Accept", accept)
-        .timeout(timeout);
-    // Document limits below apply to decompressed bytes too. Raster
-    // downloads keep their existing wire representation and limits.
-    let request = if document {
-        request.header("Accept-Encoding", "gzip, br")
-    } else {
-        request.header("Accept-Encoding", "identity")
-    };
-    let response = match request.send() {
-        Ok(response) => response,
-        Err(error) => {
-            if diagnostics() {
-                eprintln!("Preview transport for {host} at {label}: {error:?}");
-            }
-            return Outcome::Failed {
-                stalled: error.is_timeout() && !error.is_connect(),
-            };
-        }
-    };
-    if response.status().is_redirection() {
-        let next = response
-            .headers()
-            .get(reqwest::header::LOCATION)
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| "Invalid redirect.".to_string())
-            .and_then(|location| {
-                url.join(location)
-                    .map_err(|_| "Invalid redirect.".to_string())
-            })
-            .and_then(|next| web_url(next.as_str()));
-        return match next {
-            Ok(next) => Outcome::Redirect(next),
-            Err(error) => Outcome::Done(Err(error)),
-        };
-    }
-    if !response.status().is_success() {
-        return Outcome::Done(Err("This website requires access or is unavailable.".into()));
-    }
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let pdf_only = || {
-        Outcome::Done(Ok(WebResponse {
-            url: url.clone(),
-            content_type: "application/pdf".into(),
-            bytes: Vec::new(),
-        }))
-    };
-    if policy.skips_body(&content_type, &[]) {
-        return pdf_only();
-    }
-    let content_length = response.content_length();
-    let mut body = match decoded_body(response) {
-        Ok(body) => body,
-        Err(error) => return Outcome::Done(Err(error)),
-    };
-    let mut prefix = Vec::with_capacity(64);
-    if let Err(error) = body.by_ref().take(64).read_to_end(&mut prefix) {
-        if diagnostics() {
-            eprintln!("Preview body for {host} at {label}: {error:?}");
-        }
-        return Outcome::Failed { stalled: false };
-    }
-    let pdf = document && is_pdf(&content_type, &prefix);
-    if policy.skips_body(&content_type, &prefix) {
-        return pdf_only();
-    }
-    let limit = if pdf { 5 * 1024 * 1024 } else { limit };
-    let strict = !document || pdf;
-    let too_large = || {
-        Outcome::Done(Err(if pdf {
-            "This PDF exceeds the automatic-cover size limit."
-        } else {
-            "Web image is too large."
-        }
-        .into()))
-    };
-    if strict && content_length.is_some_and(|n| n > limit as u64) {
-        return too_large();
-    }
-    let mut bytes = prefix;
-    if let Err(error) = body
-        .take(limit.saturating_sub(bytes.len()) as u64 + u64::from(strict))
-        .read_to_end(&mut bytes)
-    {
-        // A successful response header is not a successful lookup. Retry
-        // an interrupted body on another route; never save it.
-        if diagnostics() {
-            eprintln!("Preview body for {host} at {label}: {error:?}");
-        }
-        return Outcome::Failed { stalled: false };
-    }
-    if strict && bytes.len() > limit {
-        return too_large();
-    }
-    if let Route::Direct(address) = route {
-        remember_endpoint(host, port, address);
-    }
-    Outcome::Done(Ok(WebResponse {
-        url: url.clone(),
-        content_type,
-        bytes,
-    }))
-}
-
-struct Hop<'a> {
-    url: &'a Url,
-    host: &'a str,
-    port: u16,
-    accept: &'a str,
-    limit: usize,
-    policy: DocumentPolicy,
-    deadline: Instant,
-}
-
-impl Hop<'_> {
-    fn timeout(&self) -> Duration {
-        self.deadline
-            .saturating_duration_since(Instant::now())
-            .min(Duration::from_secs(9))
-    }
-
-    /// Try routes in order. A refused or lost connection is retried on the next
-    /// route (a dropped SYN is common on lossy links), but a route that accepted
-    /// and then stalled is not tried again.
-    fn sequential(&self, routes: &[Route]) -> Outcome {
-        let mut stalled = Vec::new();
-        for route in routes {
-            let timeout = self.timeout();
-            if timeout.is_zero() {
-                break;
-            }
-            if stalled.contains(route) {
-                continue;
-            }
-            match attempt(
-                self.url,
-                self.host,
-                self.port,
-                *route,
-                self.accept,
-                self.limit,
-                self.policy,
-                timeout,
-            ) {
-                Outcome::Failed { stalled: true } => stalled.push(*route),
-                Outcome::Failed { stalled: false } => {}
-                answered => {
-                    remember_route(self.host, *route);
-                    return answered;
-                }
-            }
-        }
-        Outcome::Failed { stalled: false }
-    }
-
-    /// Direct first; the system proxy joins when the direct route fails or has
-    /// not answered within a short head start. The first answer wins and is
-    /// remembered for this host. Many proxies serve blocked sites well but
-    /// domestic sites slowly, and the reverse holds for direct connections.
-    fn race(&self, direct: SocketAddr, proxy: SocketAddr) -> Outcome {
-        let (sender, receiver) = mpsc::channel();
-        let start = |route: Route| {
-            let sender = sender.clone();
-            let (url, host, accept) = (
-                self.url.clone(),
-                self.host.to_string(),
-                self.accept.to_string(),
-            );
-            let (port, limit, policy, timeout) =
-                (self.port, self.limit, self.policy, self.timeout());
-            std::thread::spawn(move || {
-                let outcome = attempt(&url, &host, port, route, &accept, limit, policy, timeout);
-                let _ = sender.send((route, outcome));
-            });
-        };
-        start(Route::Direct(direct));
-        let (mut pending, mut proxied) = (1, false);
-        loop {
-            let remaining = self.deadline.saturating_duration_since(Instant::now());
-            let wait = if proxied {
-                remaining
-            } else {
-                remaining.min(DIRECT_HEAD_START)
-            };
-            match receiver.recv_timeout(wait) {
-                Ok((_, Outcome::Failed { .. })) => {
-                    pending -= 1;
-                    if !proxied && !remaining.is_zero() {
-                        start(Route::Proxy(proxy));
-                        (pending, proxied) = (pending + 1, true);
-                    } else if pending == 0 {
-                        return Outcome::Failed { stalled: false };
-                    }
-                }
-                Ok((route, answered)) => {
-                    remember_route(self.host, route);
-                    return answered;
-                }
-                Err(_) if !proxied && !remaining.is_zero() => {
-                    start(Route::Proxy(proxy));
-                    (pending, proxied) = (pending + 1, true);
-                }
-                Err(_) => return Outcome::Failed { stalled: false },
-            }
-        }
-    }
-}
-
 fn fetch_with_policy(
     value: &str,
     limit: usize,
@@ -797,53 +506,169 @@ fn fetch_with_policy(
     deadline: Instant,
     policy: DocumentPolicy,
 ) -> Result<WebResponse, String> {
+    let document = policy != DocumentPolicy::Raster;
     let mut url = web_url(value)?;
-    for _ in 0..5 {
-        if deadline.saturating_duration_since(Instant::now()).is_zero() {
-            break;
-        }
-        let host = url.host_str().unwrap().trim_matches(['[', ']']).to_string();
+    'redirect: for _ in 0..5 {
+        let host = url.host_str().unwrap().trim_matches(['[', ']']);
         let port = url.port_or_known_default().unwrap();
-        let hop = Hop {
-            url: &url,
-            host: &host,
-            port,
-            accept,
-            limit,
-            policy,
-            deadline,
-        };
-        let outcome = match system_proxy().for_host(&host) {
-            // Without a system proxy, connect only to the checked public addresses.
+        // With a system proxy, the proxy resolves and routes the name; otherwise
+        // connect only to the checked public addresses.
+        let proxy = system_proxy().for_host(host);
+        let routes: Vec<Option<SocketAddr>> = match proxy {
+            Some(_) => {
+                check_proxied(host, port)?;
+                vec![None, None]
+            }
             None => {
-                let addresses = resolve_public(&host, port)?;
+                let addresses = resolve_public(host, port)?;
                 let count = addresses.len().min(4);
-                let routes: Vec<Route> = addresses
+                addresses
                     .into_iter()
                     .take(4)
                     .cycle()
                     .take(count * 2)
-                    .map(Route::Direct)
-                    .collect();
-                hop.sequential(&routes)
+                    .map(Some)
+                    .collect()
             }
-            // With one, the proxy resolves and routes the name when used.
-            Some(proxy) => match (direct_candidate(&host, port)?, preferred_route(&host)) {
-                (None, _) => hop.sequential(&[Route::Proxy(proxy), Route::Proxy(proxy)]),
-                (Some(direct), Some(false)) => {
-                    hop.sequential(&[Route::Direct(direct), Route::Proxy(proxy)])
-                }
-                (Some(direct), Some(true)) => {
-                    hop.sequential(&[Route::Proxy(proxy), Route::Direct(direct)])
-                }
-                (Some(direct), None) => hop.race(direct, proxy),
-            },
         };
-        match outcome {
-            Outcome::Done(result) => return result,
-            Outcome::Redirect(next) => url = next,
-            Outcome::Failed { .. } => return Err(READ_FAILED.into()),
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
         }
+        let mut last_error =
+            "Page details could not be read. Retry the lookup or enter them manually.".to_string();
+        // A refused or lost connection is retried once (a dropped SYN is common
+        // on lossy links), but a server that accepted and then stalled is not.
+        let mut stalled = Vec::new();
+        for route in routes {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            if stalled.contains(&route) {
+                continue;
+            }
+            let client = match (route, proxy) {
+                (Some(address), _) => client_for(host, address)?,
+                (None, Some(proxy)) => proxied_client(proxy)?,
+                (None, None) => unreachable!("a direct route always has an address"),
+            };
+            let address = route
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "system proxy".into());
+            let request = client
+                .get(url.clone())
+                .header("Accept", accept)
+                .timeout(remaining.min(Duration::from_secs(9)));
+            // Document limits below apply to decompressed bytes too. Raster
+            // downloads keep their existing wire representation and limits.
+            let request = if document {
+                request.header("Accept-Encoding", "gzip, br")
+            } else {
+                request.header("Accept-Encoding", "identity")
+            };
+            let response = request.send();
+            let response = match response {
+                Ok(response) => response,
+                Err(error) => {
+                    if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
+                        eprintln!("Preview transport for {host} at {address}: {error:?}");
+                    }
+                    if error.is_timeout() && !error.is_connect() {
+                        stalled.push(route);
+                    }
+                    continue;
+                }
+            };
+            if response.status().is_redirection() {
+                let location = response
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or("Invalid redirect.")?;
+                url = web_url(
+                    url.join(location)
+                        .map_err(|_| "Invalid redirect.")?
+                        .as_str(),
+                )?;
+                continue 'redirect;
+            }
+            if !response.status().is_success() {
+                return Err("This website requires access or is unavailable.".into());
+            }
+            let content_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if policy.skips_body(&content_type, &[]) {
+                return Ok(WebResponse {
+                    url,
+                    content_type: "application/pdf".into(),
+                    bytes: Vec::new(),
+                });
+            }
+            let content_length = response.content_length();
+            let mut body = decoded_body(response)?;
+            let mut prefix = Vec::with_capacity(64);
+            if let Err(error) = body.by_ref().take(64).read_to_end(&mut prefix) {
+                if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
+                    eprintln!("Preview body for {host} at {address}: {error:?}");
+                }
+                last_error =
+                    "Page details could not be read. Retry the lookup or enter them manually."
+                        .into();
+                continue;
+            }
+            let pdf = document && is_pdf(&content_type, &prefix);
+            if policy.skips_body(&content_type, &prefix) {
+                return Ok(WebResponse {
+                    url,
+                    content_type: "application/pdf".into(),
+                    bytes: Vec::new(),
+                });
+            }
+            let limit = if pdf { 5 * 1024 * 1024 } else { limit };
+            let strict = !document || pdf;
+            if strict && content_length.is_some_and(|n| n > limit as u64) {
+                return Err(if pdf {
+                    "This PDF exceeds the automatic-cover size limit."
+                } else {
+                    "Web image is too large."
+                }
+                .into());
+            }
+            let mut bytes = prefix;
+            if let Err(error) = body
+                .take(limit.saturating_sub(bytes.len()) as u64 + u64::from(strict))
+                .read_to_end(&mut bytes)
+            {
+                // A successful response header is not a successful lookup. Retry
+                // an interrupted body on another checked endpoint; never save it.
+                if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
+                    eprintln!("Preview body for {host} at {address}: {error:?}");
+                }
+                continue;
+            }
+            if strict && bytes.len() > limit {
+                return Err(if pdf {
+                    "This PDF exceeds the automatic-cover size limit."
+                } else {
+                    "Web image is too large."
+                }
+                .into());
+            }
+            if let Some(address) = route {
+                remember_endpoint(host, port, address);
+            }
+            return Ok(WebResponse {
+                url,
+                content_type,
+                bytes,
+            });
+        }
+        return Err(last_error);
     }
     Err("This website took too long to resolve.".into())
 }
