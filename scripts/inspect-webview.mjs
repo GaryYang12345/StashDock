@@ -11,6 +11,16 @@ const option = (name, fallback) => { const index = process.argv.indexOf(`--${nam
 const port = Number(option('port', 9229)), seconds = Number(option('seconds', 4)), reload = process.argv.includes('--reload');
 // Fixed, read-mostly layout probes. Each may open UI (never saves or deletes).
 const probes = {
+  // Read-only: what one library refresh costs and how often the page has asked for one.
+  'library-load': `(async () => {
+    const calls = performance.getEntriesByType('resource').filter(entry => entry.name.startsWith('http://ipc.localhost/'));
+    const byCommand = {};
+    for (const entry of calls) { const name = entry.name.slice(21); const row = byCommand[name] ??= { count: 0, totalMs: 0, maxMs: 0 }; row.count++; row.totalMs += Math.round(entry.duration); row.maxMs = Math.max(row.maxMs, Math.round(entry.duration)); }
+    const runs = [];
+    for (let i = 0; i < 3; i++) { const started = performance.now(); const items = await window.__TAURI_INTERNALS__.invoke('list_items'); const json = JSON.stringify(items);
+      runs.push({ ms: Math.round(performance.now() - started), items: items.length, bytes: json.length, contentBytes: items.reduce((sum, item) => sum + (item.content?.length || 0) + (item.contextOverride?.length || 0), 0), previewBytes: items.reduce((sum, item) => sum + (item.preview?.length || 0), 0) }); }
+    return { sinceLoadSeconds: Math.round(performance.now() / 1000), ipc: byCommand, listItems: runs };
+  })()`,
   'import-dialog': `(async () => {
     let dialog = document.querySelector('[data-size="import"]');
     if (!dialog) { [...document.querySelectorAll('button')].find(button => /Import references|导入引用/.test(button.textContent))?.click(); await new Promise(done => setTimeout(done, 1500)); dialog = document.querySelector('[data-size="import"]'); }
