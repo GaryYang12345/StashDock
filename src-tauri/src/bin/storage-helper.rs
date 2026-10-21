@@ -32,8 +32,13 @@ fn run(request: Request) -> Result<Value, String> {
             if title.len() > 200 {
                 return Err("The dialog title is too long.".into());
             }
-            let paths = rfd::FileDialog::new().set_title(title).pick_files().unwrap_or_default();
-            Ok(json!({ "paths": paths.iter().map(|path| path.to_string_lossy()).collect::<Vec<_>>() }))
+            let paths = rfd::FileDialog::new()
+                .set_title(title)
+                .pick_files()
+                .unwrap_or_default();
+            Ok(
+                json!({ "paths": paths.iter().map(|path| path.to_string_lossy()).collect::<Vec<_>>() }),
+            )
         }
         Request::Move { source, target } => {
             if source.len() > 32768

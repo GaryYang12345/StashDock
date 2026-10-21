@@ -13,6 +13,10 @@ import styles from "./StashCard.module.css";
 import { ReferenceDefaultCover } from './ReferenceVisual';
 import { referenceOpenTarget } from '../lib/referenceOpen';
 
+// Desktop serves covers from its library protocol with CORS, so a card image can
+// still be painted into the native drag preview canvas without tainting it.
+const libraryPreviewUrl = (value: string) => /^(?:http:\/\/stashdock-preview\.localhost\/|stashdock-preview:\/\/)/.test(value);
+
 export function PreviewArtwork({ item }: { item: StashItem }) {
   const { t } = useI18n();
   const [failed, setFailed] = useState(false);
@@ -22,7 +26,7 @@ export function PreviewArtwork({ item }: { item: StashItem }) {
       <Skeleton className={styles.previewDocument} label={t("Loading preview")} lines={5} />
       <Skeleton className={styles.previewCompact} label={t("Loading preview")} lines={3} />
     </div> :
-    item.preview && !failed ? <img src={item.preview} alt="" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} />
+    item.preview && !failed ? <img src={item.preview} crossOrigin={libraryPreviewUrl(item.preview) ? 'anonymous' : undefined} alt="" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} />
       : <ReferenceDefaultCover item={item} />}
   </div>;
 }

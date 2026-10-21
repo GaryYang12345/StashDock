@@ -20,7 +20,12 @@ pub(crate) struct Resolved {
 
 pub(crate) fn fingerprint(path: &Path) -> Option<(u64, i64)> {
     let metadata = fs::metadata(path).ok().filter(|value| value.is_file())?;
-    let modified = metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_millis() as i64;
+    let modified = metadata
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_millis() as i64;
     Some((metadata.len(), modified))
 }
 
@@ -30,11 +35,17 @@ pub(crate) fn fingerprint_json(value: (u64, i64)) -> serde_json::Value {
 
 fn recorded(origin: &serde_json::Value) -> Option<(u64, i64)> {
     let value = origin.get("originalFingerprint")?;
-    Some((value.get("size")?.as_u64()?, value.get("modifiedMs")?.as_i64()?))
+    Some((
+        value.get("size")?.as_u64()?,
+        value.get("modifiedMs")?.as_i64()?,
+    ))
 }
 
 fn same_extension(a: &Path, b: &Path) -> bool {
-    let extension = |path: &Path| path.extension().map(|value| value.to_string_lossy().to_lowercase());
+    let extension = |path: &Path| {
+        path.extension()
+            .map(|value| value.to_string_lossy().to_lowercase())
+    };
     extension(a) == extension(b)
 }
 
@@ -61,21 +72,34 @@ fn replace_backup(original: &Path, managed: &Path) -> Result<(), String> {
     result
 }
 
-pub(super) fn synchronize(connection: &Connection, assets: &Path, id: &str) -> Result<Resolved, String> {
-    let (asset, original, origin, mime): (Option<String>, Option<String>, Option<String>, Option<String>) = connection
+pub(super) fn synchronize(
+    connection: &Connection,
+    assets: &Path,
+    id: &str,
+) -> Result<Resolved, String> {
+    let (asset, original, origin, mime): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = connection
         .query_row(
             "SELECT asset_path, original_path, origin_json, mime_type FROM stash_items WHERE id=?1",
             [id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|_| "The saved file was not found.".to_string())?;
-    let raw = asset.filter(|value| !value.is_empty()).ok_or("This reference has no saved file.")?;
+    let raw = asset
+        .filter(|value| !value.is_empty())
+        .ok_or("This reference has no saved file.")?;
     let mut origin: serde_json::Value = origin
         .and_then(|value| serde_json::from_str(&value).ok())
         .filter(serde_json::Value::is_object)
         .unwrap_or_else(|| serde_json::json!({}));
     // The backup path must stay inside the library even when its file is gone.
-    let root = assets.canonicalize().map_err(|_| "The file library is unavailable.")?;
+    let root = assets
+        .canonicalize()
+        .map_err(|_| "The file library is unavailable.")?;
     let backup = Path::new(&raw);
     let managed = match backup.canonicalize() {
         Ok(path) if path.starts_with(&root) && path.is_file() => path,
@@ -91,34 +115,65 @@ pub(super) fn synchronize(connection: &Connection, assets: &Path, id: &str) -> R
         if !managed.is_file() {
             return Err("This file is missing. Import it again.".into());
         }
-        return Ok(Resolved { current: managed.clone(), open: managed });
+        return Ok(Resolved {
+            current: managed.clone(),
+            open: managed,
+        });
     };
     let backup_fingerprint = fingerprint(&managed);
     let Some(current) = fingerprint(&original) else {
-        let fallback = if backup_fingerprint.is_some() { managed } else { original };
-        return Ok(Resolved { current: fallback.clone(), open: fallback });
+        let fallback = if backup_fingerprint.is_some() {
+            managed
+        } else {
+            original
+        };
+        return Ok(Resolved {
+            current: fallback.clone(),
+            open: fallback,
+        });
     };
     if backup_fingerprint.is_some() && recorded(&origin) == Some(current) {
-        return Ok(Resolved { current: managed, open: original });
+        return Ok(Resolved {
+            current: managed,
+            open: original,
+        });
     }
     // Older references have no fingerprint. A backup edited after the original
     // (through the previous Open behaviour) is the user's newer version.
-    if recorded(&origin).is_none() && backup_fingerprint.is_some_and(|(_, modified)| modified > current.1) {
-        return Ok(Resolved { current: managed.clone(), open: managed });
+    if recorded(&origin).is_none()
+        && backup_fingerprint.is_some_and(|(_, modified)| modified > current.1)
+    {
+        return Ok(Resolved {
+            current: managed.clone(),
+            open: managed,
+        });
     }
     if current.0 > MAX_ORIGINAL_BYTES {
-        return Ok(Resolved { current: original.clone(), open: original });
+        return Ok(Resolved {
+            current: original.clone(),
+            open: original,
+        });
     }
     if replace_backup(&original, &managed).is_err() {
         // The backup may be open elsewhere; the original still has current bytes.
-        return Ok(Resolved { current: original.clone(), open: original });
+        return Ok(Resolved {
+            current: original.clone(),
+            open: original,
+        });
     }
     origin["originalFingerprint"] = fingerprint_json(current);
-    let edited = origin.get("contentEdited").and_then(|value| value.as_bool()) == Some(true);
+    let edited = origin
+        .get("contentEdited")
+        .and_then(|value| value.as_bool())
+        == Some(true);
     let mime = mime.unwrap_or_default();
     // Text files re-derive their searchable text unless the user wrote it.
     let refresh = !edited && is_text_mime(&mime);
-    let content = if refresh { extract_text(&managed, &mime)? } else { None };
+    let content = if refresh {
+        extract_text(&managed, &mime)?
+    } else {
+        None
+    };
     connection
         .execute(
             "UPDATE stash_items SET size_bytes=?1, origin_json=?2, updated_at=?3,
@@ -136,7 +191,10 @@ pub(super) fn synchronize(connection: &Connection, assets: &Path, id: &str) -> R
             ],
         )
         .map_err(|e| e.to_string())?;
-    Ok(Resolved { current: managed, open: original })
+    Ok(Resolved {
+        current: managed,
+        open: original,
+    })
 }
 
 #[cfg(test)]
@@ -155,7 +213,8 @@ mod tests {
     }
     fn touch(path: &Path, seconds: u64) {
         let file = fs::OpenOptions::new().write(true).open(path).unwrap();
-        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)).unwrap();
+        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(seconds))
+            .unwrap();
     }
     fn fixture(original_text: &str, fingerprinted: bool) -> (Fixture, PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("stashdock-originals-{}", Uuid::new_v4()));
@@ -181,14 +240,24 @@ mod tests {
                 params!["[]", managed.to_string_lossy(), original.to_string_lossy(), original_text.len() as i64, original_text, origin.to_string()],
             )
             .unwrap();
-        (Fixture { root, connection }, original.canonicalize().unwrap(), managed.canonicalize().unwrap())
+        (
+            Fixture { root, connection },
+            original.canonicalize().unwrap(),
+            managed.canonicalize().unwrap(),
+        )
     }
 
     #[test]
     fn unchanged_original_opens_the_original_and_uses_the_backup() {
         let (f, original, managed) = fixture("alpha", true);
         let resolved = synchronize(&f.connection, &f.root.join("assets"), "item").unwrap();
-        assert_eq!(resolved, Resolved { current: managed, open: original });
+        assert_eq!(
+            resolved,
+            Resolved {
+                current: managed,
+                open: original
+            }
+        );
     }
 
     #[test]
@@ -201,13 +270,27 @@ mod tests {
         assert_eq!(fs::read_to_string(&managed).unwrap(), "bravo updated");
         let (content, size): (String, i64) = f
             .connection
-            .query_row("SELECT content,size_bytes FROM stash_items WHERE id='item'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT content,size_bytes FROM stash_items WHERE id='item'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
         assert_eq!((content.as_str(), size), ("bravo updated", 13));
-        assert_eq!(super::super::search::search_ids(&f.connection, "updated").unwrap().unwrap(), vec!["item"]);
+        assert_eq!(
+            super::super::search::search_ids(&f.connection, "updated")
+                .unwrap()
+                .unwrap(),
+            vec!["item"]
+        );
         // The next use sees the recorded fingerprint and does no copy.
         fs::write(&managed, "bravo updated").unwrap();
-        assert_eq!(synchronize(&f.connection, &f.root.join("assets"), "item").unwrap().open, original);
+        assert_eq!(
+            synchronize(&f.connection, &f.root.join("assets"), "item")
+                .unwrap()
+                .open,
+            original
+        );
     }
 
     #[test]
@@ -220,7 +303,10 @@ mod tests {
         touch(&original, 2_000);
         synchronize(&f.connection, &f.root.join("assets"), "item").unwrap();
         assert_eq!(fs::read_to_string(&managed).unwrap(), "bravo");
-        let content: String = f.connection.query_row("SELECT content FROM stash_items", [], |r| r.get(0)).unwrap();
+        let content: String = f
+            .connection
+            .query_row("SELECT content FROM stash_items", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(content, "my words");
     }
 
@@ -229,11 +315,23 @@ mod tests {
         let (f, original, managed) = fixture("alpha", true);
         fs::remove_file(&managed).unwrap();
         let resolved = synchronize(&f.connection, &f.root.join("assets"), "item").unwrap();
-        assert_eq!(resolved, Resolved { current: managed.clone(), open: original.clone() });
+        assert_eq!(
+            resolved,
+            Resolved {
+                current: managed.clone(),
+                open: original.clone()
+            }
+        );
         assert_eq!(fs::read_to_string(&managed).unwrap(), "alpha");
         fs::remove_file(&original).unwrap();
         let resolved = synchronize(&f.connection, &f.root.join("assets"), "item").unwrap();
-        assert_eq!(resolved, Resolved { current: managed.clone(), open: managed });
+        assert_eq!(
+            resolved,
+            Resolved {
+                current: managed.clone(),
+                open: managed
+            }
+        );
     }
 
     #[test]
@@ -242,7 +340,13 @@ mod tests {
         fs::write(&managed, "edited backup").unwrap();
         touch(&managed, 3_000);
         let resolved = synchronize(&f.connection, &f.root.join("assets"), "item").unwrap();
-        assert_eq!(resolved, Resolved { current: managed.clone(), open: managed.clone() });
+        assert_eq!(
+            resolved,
+            Resolved {
+                current: managed.clone(),
+                open: managed.clone()
+            }
+        );
         assert_eq!(fs::read_to_string(&managed).unwrap(), "edited backup");
     }
 
@@ -252,11 +356,22 @@ mod tests {
         let other = f.root.join("Notes.exe");
         fs::write(&other, "x").unwrap();
         f.connection
-            .execute("UPDATE stash_items SET original_path=?1", [other.to_string_lossy()])
+            .execute(
+                "UPDATE stash_items SET original_path=?1",
+                [other.to_string_lossy()],
+            )
             .unwrap();
-        assert_eq!(synchronize(&f.connection, &f.root.join("assets"), "item").unwrap().open, managed);
+        assert_eq!(
+            synchronize(&f.connection, &f.root.join("assets"), "item")
+                .unwrap()
+                .open,
+            managed
+        );
         f.connection
-            .execute("UPDATE stash_items SET asset_path=?1", [f.root.join("elsewhere.md").to_string_lossy()])
+            .execute(
+                "UPDATE stash_items SET asset_path=?1",
+                [f.root.join("elsewhere.md").to_string_lossy()],
+            )
             .unwrap();
         assert!(synchronize(&f.connection, &f.root.join("assets"), "item").is_err());
     }

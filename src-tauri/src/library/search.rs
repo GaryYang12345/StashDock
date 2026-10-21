@@ -25,7 +25,9 @@ fn index_sql() -> (&'static str, &'static str) {
 /// Call inside a write transaction.
 pub(super) fn prepare_index(connection: &Connection) -> rusqlite::Result<()> {
     let ready = connection
-        .query_row("SELECT 1 FROM app_meta WHERE key = ?1", [INDEX_KEY], |_| Ok(()))
+        .query_row("SELECT 1 FROM app_meta WHERE key = ?1", [INDEX_KEY], |_| {
+            Ok(())
+        })
         .optional()?
         .is_some();
     let (definition, rebuild) = index_sql();
@@ -121,7 +123,10 @@ pub(super) fn statement(terms: &[String]) -> (String, Vec<String>) {
 }
 
 /// Ordered matching reference IDs, or `None` when the query has no terms.
-pub(super) fn search_ids(connection: &Connection, query: &str) -> Result<Option<Vec<String>>, String> {
+pub(super) fn search_ids(
+    connection: &Connection,
+    query: &str,
+) -> Result<Option<Vec<String>>, String> {
     let terms = search_terms(query);
     if terms.is_empty() {
         return Ok(None);
@@ -129,7 +134,9 @@ pub(super) fn search_ids(connection: &Connection, query: &str) -> Result<Option<
     let (sql, values) = statement(&terms);
     let mut prepared = connection.prepare(&sql).map_err(|e| e.to_string())?;
     let ids = prepared
-        .query_map(params_from_iter(values.iter()), |row| row.get::<_, String>(0))
+        .query_map(params_from_iter(values.iter()), |row| {
+            row.get::<_, String>(0)
+        })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -142,7 +149,8 @@ mod tests {
 
     fn contract_library() -> (Connection, serde_json::Value) {
         let contract: serde_json::Value =
-            serde_json::from_str(include_str!("../../../tests/fixtures/search-contract.json")).unwrap();
+            serde_json::from_str(include_str!("../../../tests/fixtures/search-contract.json"))
+                .unwrap();
         let connection = Connection::open_in_memory().unwrap();
         super::super::initialize_schema(&connection).unwrap();
         for (index, item) in contract["items"].as_array().unwrap().iter().enumerate() {
@@ -185,10 +193,18 @@ mod tests {
     fn triggers_follow_updates_and_deletes() {
         let (connection, _) = contract_library();
         connection
-            .execute("UPDATE stash_items SET title='机器学习手册' WHERE id='zh-title'", [])
+            .execute(
+                "UPDATE stash_items SET title='机器学习手册' WHERE id='zh-title'",
+                [],
+            )
             .unwrap();
-        assert_eq!(search_ids(&connection, "机器").unwrap().unwrap(), vec!["zh-title"]);
-        connection.execute("DELETE FROM stash_items WHERE id='zh-title'", []).unwrap();
+        assert_eq!(
+            search_ids(&connection, "机器").unwrap().unwrap(),
+            vec!["zh-title"]
+        );
+        connection
+            .execute("DELETE FROM stash_items WHERE id='zh-title'", [])
+            .unwrap();
         assert!(search_ids(&connection, "机器").unwrap().unwrap().is_empty());
     }
 
@@ -207,7 +223,10 @@ mod tests {
             )
             .unwrap();
         super::super::initialize_schema(&connection).unwrap();
-        assert_eq!(search_ids(&connection, "学习").unwrap().unwrap(), vec!["old"]);
+        assert_eq!(
+            search_ids(&connection, "学习").unwrap().unwrap(),
+            vec!["old"]
+        );
         let count: i64 = connection
             .query_row("SELECT count(*) FROM stash_fts", [], |row| row.get(0))
             .unwrap();

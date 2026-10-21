@@ -67,7 +67,9 @@ pub(crate) fn describe(paths: Vec<PathBuf>) -> Result<Vec<ChosenFile>, String> {
     paths
         .into_iter()
         .map(|path| {
-            let path = path.canonicalize().map_err(|_| "A chosen file could not be read.")?;
+            let path = path
+                .canonicalize()
+                .map_err(|_| "A chosen file could not be read.")?;
             let metadata = fs::metadata(&path).map_err(|_| "A chosen file could not be read.")?;
             if !metadata.is_file() {
                 return Err("Choose files, not folders.".to_string());
@@ -92,18 +94,29 @@ pub(crate) fn describe(paths: Vec<PathBuf>) -> Result<Vec<ChosenFile>, String> {
         .collect()
 }
 
-fn prepare(drafts: Vec<ChosenDraft>, tags: Vec<String>, assets: &Path) -> Result<Vec<StashItem>, String> {
+fn prepare(
+    drafts: Vec<ChosenDraft>,
+    tags: Vec<String>,
+    assets: &Path,
+) -> Result<Vec<StashItem>, String> {
     let tags = clean_tags(tags)?;
     if drafts.is_empty() || drafts.len() > MAX_FILES {
         return Err("Choose 1 to 10 files.".into());
     }
     let mut prepared = Vec::new();
     for draft in drafts {
-        if draft.title.trim().is_empty() || draft.title.chars().count() > 500 || draft.content.chars().count() > STAGED_CHARACTERS {
+        if draft.title.trim().is_empty()
+            || draft.title.chars().count() > 500
+            || draft.content.chars().count() > STAGED_CHARACTERS
+        {
             return Err("Check the file title and content, then retry.".into());
         }
         let original = chosen_path(&draft.token)?;
-        let cover = draft.preview.as_deref().map(crate::reference_cover::from_data_url).transpose()?;
+        let cover = draft
+            .preview
+            .as_deref()
+            .map(crate::reference_cover::from_data_url)
+            .transpose()?;
         prepared.push((draft, original, cover));
     }
     let mut written: Vec<PathBuf> = Vec::new();
@@ -184,10 +197,17 @@ fn prepare(drafts: Vec<ChosenDraft>, tags: Vec<String>, assets: &Path) -> Result
     result
 }
 
-pub fn import(drafts: Vec<ChosenDraft>, tags: Vec<String>, state: &LibraryState) -> Result<Vec<StashItem>, String> {
+pub fn import(
+    drafts: Vec<ChosenDraft>,
+    tags: Vec<String>,
+    state: &LibraryState,
+) -> Result<Vec<StashItem>, String> {
     let imported = prepare(drafts, tags, &state.assets_dir)?;
     let result = (|| {
-        let mut connection = state.connection.lock().map_err(|_| "The local library is busy.")?;
+        let mut connection = state
+            .connection
+            .lock()
+            .map_err(|_| "The local library is busy.")?;
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         for item in &imported {
             upsert_item(&tx, item)?;
@@ -196,7 +216,11 @@ pub fn import(drafts: Vec<ChosenDraft>, tags: Vec<String>, state: &LibraryState)
     })();
     if let Err(error) = result {
         for item in &imported {
-            if let Some(folder) = item.asset_path.as_deref().and_then(|path| Path::new(path).parent()) {
+            if let Some(folder) = item
+                .asset_path
+                .as_deref()
+                .and_then(|path| Path::new(path).parent())
+            {
                 let _ = fs::remove_dir_all(folder);
             }
         }
@@ -236,20 +260,50 @@ mod tests {
         assert_eq!(chosen[0].content, "# Plan\nShip it");
         assert_eq!(chosen[1].content, "");
         let drafts = vec![
-            ChosenDraft { token: chosen[0].token.clone(), title: "Plan".into(), content: chosen[0].content.clone(), preview: None },
-            ChosenDraft { token: chosen[1].token.clone(), title: "Paper".into(), content: "My summary".into(), preview: None },
+            ChosenDraft {
+                token: chosen[0].token.clone(),
+                title: "Plan".into(),
+                content: chosen[0].content.clone(),
+                preview: None,
+            },
+            ChosenDraft {
+                token: chosen[1].token.clone(),
+                title: "Paper".into(),
+                content: "My summary".into(),
+                preview: None,
+            },
         ];
         let items = prepare(drafts, vec!["Work".into()], &assets).unwrap();
-        assert_eq!(items[0].original_path.as_deref(), Some(note.canonicalize().unwrap().to_string_lossy().as_ref()));
-        assert!(items[0].asset_path.as_deref().unwrap().starts_with(assets.to_string_lossy().as_ref()));
-        assert_eq!(fs::read_to_string(items[0].asset_path.as_ref().unwrap()).unwrap(), "# Plan\nShip it");
+        assert_eq!(
+            items[0].original_path.as_deref(),
+            Some(note.canonicalize().unwrap().to_string_lossy().as_ref())
+        );
+        assert!(items[0]
+            .asset_path
+            .as_deref()
+            .unwrap()
+            .starts_with(assets.to_string_lossy().as_ref()));
+        assert_eq!(
+            fs::read_to_string(items[0].asset_path.as_ref().unwrap()).unwrap(),
+            "# Plan\nShip it"
+        );
         let origin = items[0].origin.as_ref().unwrap();
         assert!(origin.get("contentEdited").is_none());
         assert!(origin["originalFingerprint"]["size"].as_u64().is_some());
         assert_eq!(items[1].content.as_deref(), Some("My summary"));
         assert_eq!(items[1].origin.as_ref().unwrap()["contentEdited"], true);
         assert_eq!(items[1].kind, "pdf");
-        assert!(prepare(vec![ChosenDraft { token: "unknown".into(), title: "x".into(), content: String::new(), preview: None }], vec![], &assets).is_err());
+        assert!(prepare(
+            vec![ChosenDraft {
+                token: "unknown".into(),
+                title: "x".into(),
+                content: String::new(),
+                preview: None
+            }],
+            vec![],
+            &assets
+        )
+        .is_err());
         assert!(describe(vec![root.clone()]).is_err(), "folders are refused");
         let _ = fs::remove_dir_all(root);
     }

@@ -7,6 +7,7 @@ pub mod file_payload;
 mod legacy;
 mod note_files;
 mod originals;
+pub mod preview_protocol;
 mod search;
 #[cfg(test)]
 use bridge::json_response;

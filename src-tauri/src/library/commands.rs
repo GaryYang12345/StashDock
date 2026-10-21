@@ -1,5 +1,6 @@
 //! Tauri adapters: disk/SQLite/image work never runs on the window thread.
 //! The reservation bounds blocking workers and retained command payloads.
+use super::preview_protocol;
 use super::*;
 static WORK: crate::blocking_work::WorkLimit = crate::blocking_work::WorkLimit::new(4);
 pub(crate) async fn run<T: Send + 'static>(
@@ -20,7 +21,9 @@ pub async fn save_items(app: AppHandle, items: Vec<StashItem>) -> Result<(), Str
 }
 #[tauri::command]
 pub async fn list_items(app: AppHandle) -> Result<Vec<StashItem>, String> {
-    run(app, super::list_items).await
+    run(app, super::list_items)
+        .await
+        .map(preview_protocol::for_webview)
 }
 #[tauri::command]
 pub async fn search_items(app: AppHandle, query: String) -> Result<Vec<String>, String> {
@@ -46,7 +49,9 @@ pub async fn edit_item(
     tags: Vec<String>,
     cover: Option<CoverEdit>,
 ) -> Result<Vec<StashItem>, String> {
-    run(app, move |s| super::edit_item(id, title, tags, cover, s)).await
+    run(app, move |s| super::edit_item(id, title, tags, cover, s))
+        .await
+        .map(preview_protocol::for_webview)
 }
 #[tauri::command]
 pub async fn edit_item_content(
@@ -54,7 +59,9 @@ pub async fn edit_item_content(
     id: String,
     content: String,
 ) -> Result<Vec<StashItem>, String> {
-    run(app, move |s| super::edit_item_content(id, content, s)).await
+    run(app, move |s| super::edit_item_content(id, content, s))
+        .await
+        .map(preview_protocol::for_webview)
 }
 #[tauri::command]
 pub async fn list_pinned_tags(app: AppHandle) -> Result<Vec<String>, String> {
@@ -78,6 +85,7 @@ pub async fn change_library_tag(
         super::change_library_tag(name, replacement, s)
     })
     .await
+    .map(preview_protocol::for_webview)
 }
 #[tauri::command]
 pub async fn import_files(
@@ -85,7 +93,9 @@ pub async fn import_files(
     paths: Vec<String>,
     tags: Option<Vec<String>>,
 ) -> Result<Vec<StashItem>, String> {
-    run(app, move |s| super::import_files(paths, tags, s)).await
+    run(app, move |s| super::import_files(paths, tags, s))
+        .await
+        .map(preview_protocol::for_webview)
 }
 #[tauri::command]
 pub async fn import_file_payloads(
@@ -97,10 +107,13 @@ pub async fn import_file_payloads(
         file_payload::import_file_payloads(files, tags, s)
     })
     .await
+    .map(preview_protocol::for_webview)
 }
 /// The system dialog waits for the user, so it never holds a library work slot.
 #[tauri::command]
-pub async fn choose_reference_files(app: AppHandle) -> Result<Vec<chosen_files::ChosenFile>, String> {
+pub async fn choose_reference_files(
+    app: AppHandle,
+) -> Result<Vec<chosen_files::ChosenFile>, String> {
     tauri::async_runtime::spawn_blocking(move || chosen_files::choose(&app))
         .await
         .map_err(|_| "The file dialog could not open.".to_string())?
@@ -111,7 +124,9 @@ pub async fn import_chosen_files(
     files: Vec<chosen_files::ChosenDraft>,
     tags: Vec<String>,
 ) -> Result<Vec<StashItem>, String> {
-    run(app, move |s| chosen_files::import(files, tags, s)).await
+    run(app, move |s| chosen_files::import(files, tags, s))
+        .await
+        .map(preview_protocol::for_webview)
 }
 #[tauri::command]
 pub async fn open_reference_file(app: AppHandle, id: String) -> Result<(), String> {

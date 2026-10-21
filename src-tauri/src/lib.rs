@@ -64,7 +64,7 @@ async fn preview_link(url: String) -> Result<link_metadata::LinkPreview, String>
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    library::preview_protocol::register(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             lifecycle::show_main(app);
         }))

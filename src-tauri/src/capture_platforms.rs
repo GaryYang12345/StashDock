@@ -59,18 +59,27 @@ fn read(connection: &rusqlite::Connection) -> Result<Vec<CapturePlatform>, Strin
 #[tauri::command]
 pub async fn list_capture_platforms(app: AppHandle) -> Result<Vec<CapturePlatform>, String> {
     crate::library::commands::run(app, |state| {
-        let connection = state.connection.lock().map_err(|_| "The library is busy.")?;
+        let connection = state
+            .connection
+            .lock()
+            .map_err(|_| "The library is busy.")?;
         read(&connection)
     })
     .await
 }
 #[tauri::command]
-pub async fn save_capture_platform(app: AppHandle, url: String) -> Result<Vec<CapturePlatform>, String> {
+pub async fn save_capture_platform(
+    app: AppHandle,
+    url: String,
+) -> Result<Vec<CapturePlatform>, String> {
     let platform = normalize(&url)?;
     crate::library::commands::run(app, move |state| save(state, platform)).await
 }
 fn save(state: &LibraryState, platform: CapturePlatform) -> Result<Vec<CapturePlatform>, String> {
-    let mut connection = state.connection.lock().map_err(|_| "The library is busy.")?;
+    let mut connection = state
+        .connection
+        .lock()
+        .map_err(|_| "The library is busy.")?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
