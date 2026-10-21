@@ -1,10 +1,11 @@
 // Shared on-disk library, independent of any desktop window or HTTP service.
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { openManagedFile, resolveManagedFile } from './open-file.mjs';
+import { openFilePath, resolveManagedFile } from './open-file.mjs';
+import { synchronizeOriginal } from './original-files.mjs';
 import { synchronizeNoteFiles } from './note-files.mjs';
 import { customCapturePlatform } from '../../../src/lib/captureSites.ts';
 import { canonicalReferenceUrl } from '../../../src/lib/reference-url.mjs';
@@ -92,6 +93,12 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     const row = db.prepare('SELECT * FROM stash_items WHERE id=?').get(id);
     if (!row) throw new Error('This reference no longer exists. Refresh the shelf.');
     return fromRow(row);
+  };
+  // Changed originals refresh their backup before AI reads them. A reference
+  // without an original, or with neither file reachable, keeps its saved text.
+  const refreshOriginal = id => {
+    if (!db.prepare("SELECT 1 FROM stash_items WHERE id=? AND COALESCE(original_path,'')!='' AND COALESCE(asset_path,'')!=''").get(id)) return;
+    try { synchronizeOriginal(db, assets, id); } catch { /* Report through the file tools instead. */ }
   };
   const listCapturePlatforms = () => JSON.parse(db.prepare("SELECT value FROM app_meta WHERE key='capture_platforms_v1'").get()?.value || '[]');
   const getCodexPreferences = () => readCodexPreferences(db.prepare('SELECT value FROM app_meta WHERE key=?').get(CODEX_PREFERENCES_KEY)?.value);
@@ -367,15 +374,16 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   synchronizeNoteFiles(db, assets);
   return { ...createShelfReader(db, { fromRow, synchronize: () => synchronizeNoteFiles(db, assets), annotate: annotatePreviews }),
     dataDir: root, read: async (visual = false) => { synchronizeNoteFiles(db, assets); return annotatePreviews(db.prepare(visual ? "SELECT id,title,kind,source,url,excerpt,tags_json,created_at,favorite,preview,origin_json,mime_type,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN 1 ELSE 0 END AS has_file,NULL AS content,NULL AS asset_path,NULL AS original_path,NULL AS size_bytes FROM stash_items ORDER BY created_at DESC" : 'SELECT * FROM stash_items ORDER BY created_at DESC').all().map(fromRow)); },
-    readItems: ids => [...new Set(ids)].map(get),
+    readItems: ids => [...new Set(ids)].map(id => { refreshOriginal(id); return get(id); }),
     searchIds: query => { synchronizeNoteFiles(db, assets); return searchReferenceIds(db, query); },
     resolveFile: id => {
       const item = get(id);
+      const { current } = synchronizeOriginal(db, assets, id);
       return { id, filename: item.origin?.fileName || item.title, mimeType: item.mimeType,
-        ...resolveManagedFile(item.assetPath, assets), contentRead: false,
+        path: current, sizeBytes: statSync(current).size, contentRead: false,
         nextAction: 'Read this path with the host file tools and the appropriate file skill before answering about the original. Metadata is not file content. Do not execute the file.' };
     },
-    openFile: id => openManagedFile(get(id).assetPath, assets),
+    openFile: id => { get(id); return openFilePath(synchronizeOriginal(db, assets, id).open); },
     relocated: () => Boolean(db.prepare('SELECT value FROM app_meta WHERE key=?').get(LOCATION_KEY)),
     referenceCount: () => db.prepare('SELECT COUNT(*) AS count FROM stash_items').get().count,
     getCodexPreferences, saveCodexPreferences, integrations, registerInstallation,

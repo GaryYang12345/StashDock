@@ -5,6 +5,7 @@ mod context;
 pub mod file_payload;
 mod legacy;
 mod note_files;
+mod originals;
 mod search;
 #[cfg(test)]
 use bridge::json_response;
@@ -334,6 +335,13 @@ pub(crate) fn reference_transfer_snapshot(
         .busy_timeout(std::time::Duration::from_secs(1))
         .map_err(|e| e.to_string())?;
     note_files::synchronize(&connection)?;
+    // Send the current bytes of changed originals. A reference whose files are
+    // both gone keeps its existing error path in the exporter.
+    if let Some(assets) = database.parent().map(|root| root.join("assets")) {
+        for id in ids {
+            let _ = originals::synchronize(&connection, &assets, id);
+        }
+    }
     let tx = connection
         .unchecked_transaction()
         .map_err(|e| e.to_string())?;
@@ -1196,7 +1204,7 @@ fn copy_file_to_library(source_path: &Path, assets_dir: &Path) -> Result<StashIt
 
     Ok(StashItem {
         id,
-        title: file_name,
+        title: file_name.clone(),
         kind: kind.to_string(),
         source: "Managed file".to_string(),
         url: None,
@@ -1220,6 +1228,8 @@ fn copy_file_to_library(source_path: &Path, assets_dir: &Path) -> Result<StashIt
             "platform": "Local file",
             "importMethod": "local_file",
             "importedAt": imported_at,
+            "fileName": file_name,
+            "originalFingerprint": originals::fingerprint(source_path).map(originals::fingerprint_json),
         })),
     })
 }

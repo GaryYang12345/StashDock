@@ -141,7 +141,12 @@ pub(crate) fn managed_asset_path(assets: &Path, raw: &str) -> Result<PathBuf, St
 }
 
 pub(super) fn managed_path(assets: &Path, raw: &str) -> Result<PathBuf, String> {
-    let path = managed_asset_path(assets, raw)?;
+    openable(&managed_asset_path(assets, raw)?)
+}
+
+/// Only document/media types open directly; executables and scripts never do.
+fn openable(path: &Path) -> Result<PathBuf, String> {
+    let path = path.to_path_buf();
     let extension = path
         .extension()
         .and_then(|s| s.to_str())
@@ -164,15 +169,10 @@ pub fn open_reference_file(id: String, app: AppHandle, state: &LibraryState) -> 
         .connection
         .lock()
         .map_err(|_| "The local library is busy.")?;
-    let raw: String = connection
-        .query_row(
-            "SELECT asset_path FROM stash_items WHERE id=?1",
-            [&id],
-            |row| row.get(0),
-        )
-        .map_err(|_| "The saved file was not found.")?;
-    let path = managed_path(&state.assets_dir, &raw)?;
+    // Open shows the user's original when it is still available, else the backup.
+    let resolved = super::originals::synchronize(&connection, &state.assets_dir, &id)?;
     drop(connection);
+    let path = openable(&resolved.open)?;
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
         .map_err(|_| "The file could not be opened. Check its default app is installed.".into())

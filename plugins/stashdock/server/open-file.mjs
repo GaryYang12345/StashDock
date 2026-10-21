@@ -14,8 +14,12 @@ export function resolveManagedFile(raw, assets) {
   return { path, sizeBytes: stat.size };
 }
 
-export async function openManagedFile(raw, assets, { launch = spawn, platform = process.platform } = {}) {
-  const { path } = resolveManagedFile(raw, assets);
+export async function openManagedFile(raw, assets, options) {
+  return openFilePath(resolveManagedFile(raw, assets).path, options);
+}
+
+/** Opens an already validated reference file (managed backup or its original). */
+export async function openFilePath(path, { launch = spawn, platform = process.platform } = {}) {
   if (!supported.has(extname(path).toLowerCase())) throw Error('Open this file type from your file manager.');
   const [command, args] = platform === 'win32' ? ['explorer.exe', [path]] : platform === 'darwin' ? ['open', [path]] : ['xdg-open', [path]];
   await new Promise((resolve, reject) => {
