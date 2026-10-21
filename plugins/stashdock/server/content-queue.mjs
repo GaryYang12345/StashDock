@@ -35,7 +35,7 @@ export function createContentQueue(dataDir, owner, { now = () => Math.floor(Date
       OR json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.pendingTitle')=s.title)
     AND json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.importMethod') IN ('browser_bookmarks','manual_url')
     AND (j.id IS NULL OR (j.status!='done' AND j.attempts<3 AND j.retry_at<=?))
-    ORDER BY CASE WHEN j.id IS NULL THEN 0 ELSE 1 END,s.created_at DESC,s.id LIMIT 1`).get(now());
+    ORDER BY CASE WHEN j.id IS NULL THEN 0 ELSE 1 END,s.created_at DESC,s.rowid LIMIT 1`).get(now());
     if (!row) { emptyVersion = version; emptyUntil = now() + 15; }
     return row;
   };

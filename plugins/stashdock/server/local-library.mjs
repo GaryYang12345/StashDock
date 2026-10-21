@@ -397,7 +397,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   };
   synchronizeNoteFiles(db, assets);
   return { ...createShelfReader(db, { fromRow, synchronize: () => synchronizeNoteFiles(db, assets), annotate: annotatePreviews }),
-    dataDir: root, read: async (visual = false) => { synchronizeNoteFiles(db, assets); return annotatePreviews(db.prepare(visual ? "SELECT id,title,kind,source,url,excerpt,tags_json,created_at,favorite,preview,origin_json,mime_type,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN 1 ELSE 0 END AS has_file,NULL AS content,NULL AS asset_path,NULL AS original_path,NULL AS size_bytes FROM stash_items ORDER BY created_at DESC" : 'SELECT * FROM stash_items ORDER BY created_at DESC').all().map(fromRow)); },
+    dataDir: root, read: async (visual = false) => { synchronizeNoteFiles(db, assets); return annotatePreviews(db.prepare(visual ? "SELECT id,title,kind,source,url,excerpt,tags_json,created_at,favorite,preview,origin_json,mime_type,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN 1 ELSE 0 END AS has_file,NULL AS content,NULL AS asset_path,NULL AS original_path,NULL AS size_bytes FROM stash_items ORDER BY created_at DESC,rowid" : 'SELECT * FROM stash_items ORDER BY created_at DESC').all().map(fromRow)); },
     readItems: ids => [...new Set(ids)].map(id => { refreshOriginal(id); return get(id); }),
     searchIds: query => { synchronizeNoteFiles(db, assets); return searchReferenceIds(db, query); },
     resolveFile: id => {

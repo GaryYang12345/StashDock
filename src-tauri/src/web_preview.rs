@@ -249,7 +249,7 @@ fn next_job(db: &Connection) -> rusqlite::Result<Option<Job>> {
         WHERE s.kind IN ('web','repo') AND s.url IS NOT NULL
           AND (s.preview IS NULL OR s.preview='' OR COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END, '$.faviconUrl'),'') NOT LIKE 'data:image/%')
           AND (j.id IS NULL OR (j.status != 'done' AND j.attempts < 2 AND (j.status != 'working' OR j.retry_at <= ?1)))
-        ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END, CASE WHEN j.status='queued' THEN 0 WHEN j.id IS NULL THEN 1 ELSE 2 END, s.created_at DESC, s.id LIMIT 1", [timestamp()], |row| {
+        ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END, CASE WHEN j.status='queued' THEN 0 WHEN j.id IS NULL THEN 1 ELSE 2 END, s.created_at DESC, s.rowid LIMIT 1", [timestamp()], |row| {
             let origin: Option<String> = row.get(3)?;
             let favicon = origin.and_then(|value| serde_json::from_str::<Value>(&value).ok()).and_then(|origin| origin["faviconUrl"].as_str().map(str::to_string));
             let preview: Option<String> = row.get(2)?;
@@ -483,6 +483,34 @@ mod tests {
         schema(&db).unwrap();
         db.execute("INSERT INTO stash_items(id,title,kind,source,url,excerpt,created_at,updated_at,tags_json,favorite,content,context_override,origin_json) VALUES('one','User title','web','example.org','https://example.org/','Kept', '2026-10-11','original','[\"My tag\"]',1,'Original content','My AI context','{\"platform\":\"Chrome\",\"faviconUrl\":\"https://example.org/icon.png\"}')", []).unwrap();
         db
+    }
+    #[test]
+    fn a_batch_imported_together_gets_covers_in_shelf_order() {
+        let db = database();
+        db.execute("DELETE FROM stash_items", []).unwrap();
+        // One import gives every reference the same timestamp; random IDs must not decide.
+        for id in ["zz", "aa", "mm"] {
+            db.execute("INSERT INTO stash_items(id,title,kind,source,url,excerpt,created_at,updated_at,tags_json) VALUES(?1,?1,'web','e','https://example.org/'||?1,'','2026-10-22T00:00:00Z','now','[]')", [id]).unwrap();
+        }
+        let order: Vec<String> = db
+            .prepare("SELECT id FROM stash_items ORDER BY created_at DESC, rowid")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(order, ["zz", "aa", "mm"]);
+        let mut claimed = Vec::new();
+        while let Some(job) = next_job(&db).unwrap() {
+            claim(&db, &job).unwrap();
+            db.execute(
+                "UPDATE web_preview_jobs SET status='done' WHERE id=?1",
+                [&job.id],
+            )
+            .unwrap();
+            claimed.push(job.id);
+        }
+        assert_eq!(claimed, order);
     }
     #[test]
     fn quitting_returns_unfinished_work_without_spending_an_attempt() {

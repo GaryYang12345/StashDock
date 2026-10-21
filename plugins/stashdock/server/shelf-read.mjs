@@ -8,7 +8,7 @@ export function createShelfReader(db, { fromRow, synchronize, annotate }) {
     CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN 1 ELSE 0 END AS has_file`;
   const readIndex = (withContent = false) => {
     if (withContent) synchronize();
-    return db.prepare(`SELECT ${fields},${withContent ? 'content,context_override' : 'NULL AS content,NULL AS context_override'} FROM stash_items ORDER BY created_at DESC`).all().map(fromRow);
+    return db.prepare(`SELECT ${fields},${withContent ? 'content,context_override' : 'NULL AS content,NULL AS context_override'} FROM stash_items ORDER BY created_at DESC,rowid`).all().map(fromRow);
   };
   return {
     readIndex,
@@ -17,7 +17,7 @@ export function createShelfReader(db, { fromRow, synchronize, annotate }) {
       if (args.query?.trim()) synchronize();
       db.exec('BEGIN');
       try {
-        const rows = db.prepare(`SELECT ${fields},NULL AS content,NULL AS context_override FROM stash_items ORDER BY created_at DESC`).all().map(fromRow);
+        const rows = db.prepare(`SELECT ${fields},NULL AS content,NULL AS context_override FROM stash_items ORDER BY created_at DESC,rowid`).all().map(fromRow);
         const rankedIds = searchReferenceIds(db, args.query) ?? undefined;
         const result = search(rows, { ...args, limit: args.limit ?? 30, rankedIds });
         const image = db.prepare('SELECT preview FROM stash_items WHERE id=?');

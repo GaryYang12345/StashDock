@@ -285,7 +285,7 @@ fn read_all(connection: &Connection, columns: &str) -> Result<Vec<StashItem>, St
     note_files::synchronize(connection)?;
     let mut statement = connection
         .prepare(&format!(
-            "SELECT {columns} FROM stash_items ORDER BY created_at DESC"
+            "SELECT {columns} FROM stash_items ORDER BY created_at DESC, rowid"
         ))
         .map_err(|error| error.to_string())?;
     let mut items = statement
@@ -766,7 +766,7 @@ pub fn search_items(query: String, state: &LibraryState) -> Result<Vec<String>, 
     match search::search_ids(&connection, &query)? {
         Some(ids) => Ok(ids),
         None => connection
-            .prepare("SELECT id FROM stash_items ORDER BY created_at DESC")
+            .prepare("SELECT id FROM stash_items ORDER BY created_at DESC, rowid")
             .and_then(|mut statement| {
                 statement
                     .query_map([], |row| row.get::<_, String>(0))?

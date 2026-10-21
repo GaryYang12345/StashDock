@@ -65,7 +65,7 @@ fn next(db: &Connection) -> rusqlite::Result<Option<Job>> {
         OR json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.pendingTitle')=s.title)
       AND json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.importMethod') IN ('browser_bookmarks','manual_url')
       AND (j.id IS NULL OR (j.status!='done' AND j.attempts<3 AND j.retry_at<=?1))
-      ORDER BY CASE WHEN j.id IS NULL THEN 0 ELSE 1 END,s.created_at DESC,s.id LIMIT 1", [now()], |r| Ok(Job{id:r.get(0)?,url:r.get(1)?})).optional()
+      ORDER BY CASE WHEN j.id IS NULL THEN 0 ELSE 1 END,s.created_at DESC,s.rowid LIMIT 1", [now()], |r| Ok(Job{id:r.get(0)?,url:r.get(1)?})).optional()
 }
 fn claim(db: &mut Connection, owner: &str) -> rusqlite::Result<Option<Job>> {
     if !owns(db, owner)? || next(db)?.is_none() {

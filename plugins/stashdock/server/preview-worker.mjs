@@ -47,7 +47,7 @@ export function previewQueue(dataDir, { now = () => Math.floor(Date.now()/1000),
     if (version === emptyVersion && now() < emptyUntil) return null;
     const row = db.prepare(`SELECT s.id,s.url,CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END AS preview,s.origin_json FROM stash_items s LEFT JOIN web_preview_jobs j ON j.id=s.id AND j.url=s.url
     WHERE s.kind IN ('web','repo') AND s.url IS NOT NULL AND (s.preview IS NULL OR s.preview='' OR COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.faviconUrl'),'') NOT LIKE 'data:image/%')
-    AND (j.id IS NULL OR (j.status!='done' AND j.attempts<2 AND (j.status!='working' OR j.retry_at<=?))) ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END,CASE WHEN j.status='queued' THEN 0 WHEN j.id IS NULL THEN 1 ELSE 2 END,s.created_at DESC,s.id LIMIT 1`).get(now());
+    AND (j.id IS NULL OR (j.status!='done' AND j.attempts<2 AND (j.status!='working' OR j.retry_at<=?))) ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END,CASE WHEN j.status='queued' THEN 0 WHEN j.id IS NULL THEN 1 ELSE 2 END,s.created_at DESC,s.rowid LIMIT 1`).get(now());
     if (!row) { emptyVersion = version; emptyUntil = now() + 15; }
     return row;
   };
