@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { seedItems } from "../data/seed";
 import type { StashItem } from "../types";
+import { matchesSearchTerms, referenceSearchText, searchTerms } from "./reference-search.mjs";
 import type { FileReferencePayload } from './fileReference';
 
 export async function importReferenceFiles(files: FileReferencePayload[], tags: string[]): Promise<StashItem[]> {
@@ -10,20 +11,22 @@ export async function importReferenceFiles(files: FileReferencePayload[], tags: 
 
 const STORAGE_KEY = "stashdock.items.v1";
 
-function loadLegacyItems(): StashItem[] {
+// Demonstration references belong only to the browser-only UI workbench.
+// A desktop library migrates genuine legacy WebView data or starts empty.
+function loadLegacyItems(fallback: StashItem[]): StashItem[] {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    return saved ? (JSON.parse(saved) as StashItem[]) : seedItems;
+    return saved ? (JSON.parse(saved) as StashItem[]) : fallback;
   } catch {
-    return seedItems;
+    return fallback;
   }
 }
 
 let initialization: Promise<void> | undefined;
 export async function loadItems(): Promise<StashItem[]> {
-  if (!isTauri()) return loadLegacyItems();
+  if (!isTauri()) return loadLegacyItems(seedItems);
   if (!initialization) {
-    initialization = invoke<void>("initialize_library", { items: loadLegacyItems() });
+    initialization = invoke<void>("initialize_library", { items: loadLegacyItems([]) });
     try { await initialization; }
     catch (error) { initialization = undefined; throw error; }
   }
@@ -49,21 +52,12 @@ export async function setItemFavorite(id: string, favorite: boolean): Promise<vo
   await invoke("set_item_favorite", { id, favorite });
 }
 
-export async function searchItems(query: string, items: StashItem[]): Promise<StashItem[]> {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return items;
-
-  if (!isTauri()) {
-    return items.filter((item) =>
-      [item.title, item.source, item.excerpt, item.assetPath || item.hasFile ? item.content : item.contextOverride ?? item.content, item.contextOverride, ...item.tags]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized),
-    );
-  }
-
-  return invoke<StashItem[]>("search_items", { query });
+/** Ordered IDs of references matching every query term (shared contract in reference-search.mjs). */
+export async function searchItems(query: string, items: StashItem[]): Promise<string[]> {
+  const terms = searchTerms(query);
+  if (!terms.length) return items.map(item => item.id);
+  if (!isTauri()) return items.filter(item => matchesSearchTerms(referenceSearchText(item), terms)).map(item => item.id);
+  return invoke<string[]>("search_items", { query });
 }
 
 export async function chooseAndImportFiles(tags?: string[]): Promise<StashItem[]> {
