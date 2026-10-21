@@ -84,6 +84,41 @@ fn build_client(host: &str, address: SocketAddr) -> Result<reqwest::blocking::Cl
         .build()
         .map_err(|_| "Web preview is unavailable.".into())
 }
+/// One client per system proxy address. The proxy sees host names, never a
+/// destination chosen by the page beyond the checked URL.
+fn proxied_client(proxy: SocketAddr) -> Result<reqwest::blocking::Client, String> {
+    static CLIENT: OnceLock<Mutex<Option<(SocketAddr, reqwest::blocking::Client)>>> =
+        OnceLock::new();
+    let mut cached = CLIENT
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| "Web preview is unavailable.".to_string())?;
+    if let Some((address, client)) = cached.as_ref().filter(|(address, _)| *address == proxy) {
+        let _ = address;
+        return Ok(client.clone());
+    }
+    let client = reqwest::blocking::Client::builder();
+    #[cfg(windows)]
+    let client = client.tls_backend_native();
+    let client = client
+        .proxy(
+            reqwest::Proxy::all(format!("http://{proxy}"))
+                .map_err(|_| "Web preview is unavailable.")?,
+        )
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(3))
+        .pool_idle_timeout(CLIENT_IDLE)
+        .pool_max_idle_per_host(2)
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
+        .user_agent("StashDock/0.2.1 WebPreview")
+        .build()
+        .map_err(|_| "Web preview is unavailable.".to_string())?;
+    *cached = Some((proxy, client.clone()));
+    Ok(client)
+}
 fn client_for(host: &str, address: SocketAddr) -> Result<reqwest::blocking::Client, String> {
     if !public_ip(address.ip()) || !matches!(address.port(), 80 | 443) {
         return Err("Automatic previews are only available for public websites.".into());
@@ -153,27 +188,96 @@ pub fn web_url(value: &str) -> Result<Url, String> {
     }
     Ok(url)
 }
-static RESOLVING: AtomicUsize = AtomicUsize::new(0);
-pub fn resolve_public(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
-    if !matches!(port, 80 | 443) {
-        return Err("Unsupported web port.".into());
+// Only the OS user's enabled configuration may nominate an upstream proxy.
+// Page URLs cannot choose it. Destinations are still checked: see check_proxied.
+pub fn proxy_address(value: &str) -> Option<std::net::SocketAddr> {
+    let value = value
+        .split(';')
+        .find_map(|entry| entry.strip_prefix("https="))
+        .or_else(|| {
+            value
+                .split(';')
+                .find_map(|entry| entry.strip_prefix("http="))
+        })
+        .unwrap_or(value)
+        .trim();
+    let url = url::Url::parse(&format!(
+        "http://{}",
+        value.strip_prefix("http://").unwrap_or(value)
+    ))
+    .ok()?;
+    if url.username() != ""
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return None;
     }
-    let host = host.trim_matches(['[', ']']);
-    let key = (host.to_ascii_lowercase(), port);
-    let cache = DNS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(cache) = cache.lock() {
-        if let Some((time, addresses)) = cache.get(&key) {
-            if time.elapsed() < Duration::from_secs(60) {
-                return Ok(addresses.clone());
-            }
-        }
-    }
-    if !host.contains('.') && host.parse::<IpAddr>().is_err() {
-        return Err("Local hostnames are not previewed.".into());
-    }
-    let addresses = if let Ok(ip) = host.parse::<IpAddr>() {
-        vec![SocketAddr::new(ip, port)]
+    let host = url.host_str()?.trim_matches(['[', ']']);
+    let ip = if host == "localhost" {
+        "127.0.0.1".parse().ok()?
     } else {
+        host.parse::<std::net::IpAddr>().ok()?
+    };
+    let port = value.rsplit_once(':')?.1.parse::<u16>().ok()?;
+    (port > 0).then_some(std::net::SocketAddr::new(ip, port))
+}
+pub fn system_proxy() -> Option<std::net::SocketAddr> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Registry::{
+            RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
+        };
+        let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+        let key = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings");
+        let mut enabled = 0u32;
+        let mut bytes = 4u32;
+        if unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                wide("ProxyEnable").as_ptr(),
+                RRF_RT_REG_DWORD,
+                std::ptr::null_mut(),
+                (&mut enabled as *mut u32).cast(),
+                &mut bytes,
+            )
+        } != 0
+            || enabled != 1
+        {
+            return None;
+        }
+        let mut buffer = [0u16; 2048];
+        let mut bytes = (buffer.len() * 2) as u32;
+        if unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                wide("ProxyServer").as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                buffer.as_mut_ptr().cast(),
+                &mut bytes,
+            )
+        } != 0
+        {
+            return None;
+        }
+        let length = buffer.iter().position(|v| *v == 0)?;
+        proxy_address(&String::from_utf16(&buffer[..length]).ok()?)
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+static RESOLVING: AtomicUsize = AtomicUsize::new(0);
+fn lookup(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+    {
         // OS name resolution is blocking. Bound the wait and the number of leftover
         // resolver threads if the system resolver itself stalls.
         if RESOLVING
@@ -193,11 +297,68 @@ pub fn resolve_public(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> 
             RESOLVING.fetch_sub(1, Ordering::Relaxed);
             let _ = send.send(result);
         });
-        receive
+        Ok(receive
             .recv_timeout(Duration::from_secs(3))
             .map_err(|_| "Website name resolution timed out.")?
-            .map_err(|_| "This website could not be reached.")?
-    };
+            .map_err(|_| "This website could not be reached.")?)
+    }
+}
+
+fn web_host(host: &str, port: u16) -> Result<&str, String> {
+    if !matches!(port, 80 | 443) {
+        return Err("Unsupported web port.".into());
+    }
+    let host = host.trim_matches(['[', ']']);
+    if host.eq_ignore_ascii_case("localhost")
+        || (!host.contains('.') && host.parse::<IpAddr>().is_err())
+    {
+        return Err("Local hostnames are not previewed.".into());
+    }
+    Ok(host)
+}
+
+// Proxy clients with fake-IP DNS answer every name from 198.18.0.0/15.
+fn fake_ip(ip: IpAddr) -> bool {
+    matches!(ip, IpAddr::V4(ip) if ip.octets()[0] == 198 && matches!(ip.octets()[1], 18 | 19))
+}
+
+/// With a system proxy the proxy resolves and routes the name (users in many
+/// regions rely on it for blocked sites). The name is still refused when this
+/// computer resolves it to a private, loopback or local address; a failed or
+/// fake-IP answer is left to the proxy.
+pub fn check_proxied(host: &str, port: u16) -> Result<(), String> {
+    let host = web_host(host, port)?;
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return if public_ip(ip) {
+            Ok(())
+        } else {
+            Err("Automatic previews are only available for public websites.".into())
+        };
+    }
+    match lookup(host, port) {
+        Ok(addresses)
+            if addresses
+                .iter()
+                .any(|address| !public_ip(address.ip()) && !fake_ip(address.ip())) =>
+        {
+            Err("Automatic previews are only available for public websites.".into())
+        }
+        _ => Ok(()),
+    }
+}
+
+pub fn resolve_public(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    let host = web_host(host, port)?;
+    let key = (host.to_ascii_lowercase(), port);
+    let cache = DNS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(cache) = cache.lock() {
+        if let Some((time, addresses)) = cache.get(&key) {
+            if time.elapsed() < Duration::from_secs(60) {
+                return Ok(addresses.clone());
+            }
+        }
+    }
+    let addresses = lookup(host, port)?;
     if addresses.is_empty() || addresses.iter().any(|address| !public_ip(address.ip())) {
         return Err("Automatic previews are only available for public websites.".into());
     }
@@ -278,30 +439,52 @@ fn fetch_with_policy(
     let mut url = web_url(value)?;
     'redirect: for _ in 0..5 {
         let host = url.host_str().unwrap().trim_matches(['[', ']']);
-        let addresses = resolve_public(host, url.port_or_known_default().unwrap())?;
+        let port = url.port_or_known_default().unwrap();
+        // With a system proxy, the proxy resolves and routes the name; otherwise
+        // connect only to the checked public addresses.
+        let proxy = system_proxy();
+        let routes: Vec<Option<SocketAddr>> = match proxy {
+            Some(_) => {
+                check_proxied(host, port)?;
+                vec![None, None]
+            }
+            None => {
+                let addresses = resolve_public(host, port)?;
+                let count = addresses.len().min(4);
+                addresses
+                    .into_iter()
+                    .take(4)
+                    .cycle()
+                    .take(count * 2)
+                    .map(Some)
+                    .collect()
+            }
+        };
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             break;
         }
         let mut last_error =
             "Page details could not be read. Retry the lookup or enter them manually.".to_string();
-        // An address that refused or timed out is not tried again: retrying the
-        // same unreachable host only doubled the wait before a page could fail.
-        let mut unreachable = Vec::new();
-        for address in addresses
-            .iter()
-            .take(4)
-            .cycle()
-            .take(addresses.len().min(4) * 2)
-        {
+        // A refused or lost connection is retried once (a dropped SYN is common
+        // on lossy links), but a server that accepted and then stalled is not.
+        let mut stalled = Vec::new();
+        for route in routes {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 break;
             }
-            if unreachable.contains(address) {
+            if stalled.contains(&route) {
                 continue;
             }
-            let client = client_for(host, *address)?;
+            let client = match (route, proxy) {
+                (Some(address), _) => client_for(host, address)?,
+                (None, Some(proxy)) => proxied_client(proxy)?,
+                (None, None) => unreachable!("a direct route always has an address"),
+            };
+            let address = route
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "system proxy".into());
             let request = client
                 .get(url.clone())
                 .header("Accept", accept)
@@ -320,8 +503,8 @@ fn fetch_with_policy(
                     if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
                         eprintln!("Preview transport for {host} at {address}: {error:?}");
                     }
-                    if error.is_connect() || error.is_timeout() {
-                        unreachable.push(*address);
+                    if error.is_timeout() && !error.is_connect() {
+                        stalled.push(route);
                     }
                     continue;
                 }
@@ -405,7 +588,9 @@ fn fetch_with_policy(
                 }
                 .into());
             }
-            remember_endpoint(host, url.port_or_known_default().unwrap(), *address);
+            if let Some(address) = route {
+                remember_endpoint(host, port, address);
+            }
             return Ok(WebResponse {
                 url,
                 content_type,

@@ -39,93 +39,11 @@ pub fn renderer_statistics() -> serde_json::Value {
         json!({"created":0,"reused":0})
     }
 }
-// Only the OS user's enabled configuration may nominate an upstream proxy.
-// Page URLs cannot choose it. All actual destinations remain public and pinned.
-fn proxy_address(value: &str) -> Option<std::net::SocketAddr> {
-    let value = value
-        .split(';')
-        .find_map(|entry| entry.strip_prefix("https="))
-        .or_else(|| {
-            value
-                .split(';')
-                .find_map(|entry| entry.strip_prefix("http="))
-        })
-        .unwrap_or(value)
-        .trim();
-    let url = url::Url::parse(&format!(
-        "http://{}",
-        value.strip_prefix("http://").unwrap_or(value)
-    ))
-    .ok()?;
-    if url.username() != ""
-        || url.password().is_some()
-        || url.path() != "/"
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return None;
-    }
-    let host = url.host_str()?.trim_matches(['[', ']']);
-    let ip = if host == "localhost" {
-        "127.0.0.1".parse().ok()?
-    } else {
-        host.parse::<std::net::IpAddr>().ok()?
-    };
-    let port = value.rsplit_once(':')?.1.parse::<u16>().ok()?;
-    (port > 0).then_some(std::net::SocketAddr::new(ip, port))
-}
-fn system_proxy() -> Option<std::net::SocketAddr> {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::System::Registry::{
-            RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
-        };
-        let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
-        let key = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings");
-        let mut enabled = 0u32;
-        let mut bytes = 4u32;
-        if unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                key.as_ptr(),
-                wide("ProxyEnable").as_ptr(),
-                RRF_RT_REG_DWORD,
-                std::ptr::null_mut(),
-                (&mut enabled as *mut u32).cast(),
-                &mut bytes,
-            )
-        } != 0
-            || enabled != 1
-        {
-            return None;
-        }
-        let mut buffer = [0u16; 2048];
-        let mut bytes = (buffer.len() * 2) as u32;
-        if unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                key.as_ptr(),
-                wide("ProxyServer").as_ptr(),
-                RRF_RT_REG_SZ,
-                std::ptr::null_mut(),
-                buffer.as_mut_ptr().cast(),
-                &mut bytes,
-            )
-        } != 0
-        {
-            return None;
-        }
-        let length = buffer.iter().position(|v| *v == 0)?;
-        proxy_address(&String::from_utf16(&buffer[..length]).ok()?)
-    }
-    #[cfg(not(windows))]
-    {
-        None
-    }
-}
+/// Tunnel through the user's system proxy by host name, so the proxy applies
+/// its own routing rules and name resolution (for example for blocked sites).
 fn connect_upstream(
     proxy: std::net::SocketAddr,
-    target: std::net::SocketAddr,
+    target: &str,
     timeout: Duration,
 ) -> Result<TcpStream, String> {
     let until = Instant::now() + timeout;
@@ -245,30 +163,40 @@ fn proxy_connection(
     let method = first.next().ok_or("Missing method.")?;
     let target = first.next().ok_or("Missing target.")?;
     let (host, port, url) = proxy_target(method, target)?;
-    // Connect to these exact addresses, never resolve again in connect().
-    let addresses = crate::public_web::resolve_public(&host, port)?;
-    if stop.load(Ordering::Relaxed) || Instant::now() >= deadline {
-        return Err("Capture ended.".into());
-    }
-    let (mut upstream, connected) = addresses
-        .iter()
-        .take(8)
-        .find_map(|address| {
-            let timeout = deadline
-                .saturating_duration_since(Instant::now())
-                .min(Duration::from_secs(2));
-            if stop.load(Ordering::Relaxed) || timeout.is_zero() {
-                return None;
-            }
-            let connected = if let Some(proxy) = system_upstream {
-                connect_upstream(proxy, *address, timeout).ok()
-            } else {
-                TcpStream::connect_timeout(address, timeout).ok()
-            };
-            connected.map(|stream| (stream, *address))
-        })
-        .ok_or("Website unavailable.")?;
-    crate::public_web::remember_endpoint(&host, port, connected);
+    let mut upstream = if let Some(proxy) = system_upstream {
+        crate::public_web::check_proxied(&host, port)?;
+        if stop.load(Ordering::Relaxed) || Instant::now() >= deadline {
+            return Err("Capture ended.".into());
+        }
+        let timeout = deadline
+            .saturating_duration_since(Instant::now())
+            .min(Duration::from_secs(8));
+        let target = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
+        connect_upstream(proxy, &target, timeout).map_err(|_| "Website unavailable.")?
+    } else {
+        // Connect to these exact addresses, never resolve again in connect().
+        let addresses = crate::public_web::resolve_public(&host, port)?;
+        if stop.load(Ordering::Relaxed) || Instant::now() >= deadline {
+            return Err("Capture ended.".into());
+        }
+        let (stream, connected) = addresses
+            .iter()
+            .take(8)
+            .find_map(|address| {
+                let timeout = deadline
+                    .saturating_duration_since(Instant::now())
+                    .min(Duration::from_secs(2));
+                if stop.load(Ordering::Relaxed) || timeout.is_zero() {
+                    return None;
+                }
+                TcpStream::connect_timeout(address, timeout)
+                    .ok()
+                    .map(|stream| (stream, *address))
+            })
+            .ok_or("Website unavailable.")?;
+        crate::public_web::remember_endpoint(&host, port, connected);
+        stream
+    };
     if let Some(url) = url {
         let mut path = url.path().to_string();
         if let Some(query) = url.query() {
@@ -371,7 +299,7 @@ impl PublicProxy {
             while !done.load(Ordering::Relaxed) && Instant::now() < deadline {
                 if let Ok((stream, _)) = listener.accept() {
                     // VPN/system proxy can change while a sign-in window is open.
-                    let system_upstream = system_proxy();
+                    let system_upstream = crate::public_web::system_proxy();
                     let Ok(work) = task_work.lock().map(|work| work.clone()) else {
                         break;
                     };
@@ -961,11 +889,11 @@ mod tests {
     #[test]
     fn system_proxy_configuration_is_explicit_and_credentials_are_rejected() {
         assert_eq!(
-            proxy_address("http://127.0.0.1:12334").unwrap().port(),
+            crate::public_web::proxy_address("http://127.0.0.1:12334").unwrap().port(),
             12334
         );
         assert_eq!(
-            proxy_address("http=127.0.0.1:80;https=127.0.0.1:443")
+            crate::public_web::proxy_address("http=127.0.0.1:80;https=127.0.0.1:443")
                 .unwrap()
                 .port(),
             443
@@ -977,11 +905,11 @@ mod tests {
             "127.0.0.1:80/path",
             "proxy.example:80",
         ] {
-            assert!(proxy_address(raw).is_none());
+            assert!(crate::public_web::proxy_address(raw).is_none());
         }
     }
     #[test]
-    fn trusted_system_proxy_receives_only_the_pinned_public_destination() {
+    fn trusted_system_proxy_receives_the_checked_destination_by_name() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let task = thread::spawn(move || {
@@ -997,19 +925,17 @@ mod tests {
             }
             assert!(String::from_utf8(bytes)
                 .unwrap()
-                .starts_with("CONNECT 1.1.1.1:443 HTTP/1.1\r\n"));
+                .starts_with("CONNECT www.example.org:443 HTTP/1.1\r\n"));
             stream
                 .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
                 .unwrap();
         });
-        connect_upstream(
-            address,
-            "1.1.1.1:443".parse().unwrap(),
-            Duration::from_secs(2),
-        )
-        .unwrap();
+        connect_upstream(address, "www.example.org:443", Duration::from_secs(2)).unwrap();
         task.join().unwrap();
         assert!(crate::public_web::resolve_public("127.0.0.1", 443).is_err());
+        for host in ["127.0.0.1", "localhost", "intranet", "10.0.0.8", "[::1]"] {
+            assert!(crate::public_web::check_proxied(host, 443).is_err(), "{host}");
+        }
     }
     #[test]
     fn live_public_capture_when_requested() {
