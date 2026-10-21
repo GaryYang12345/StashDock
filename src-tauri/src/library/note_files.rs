@@ -155,10 +155,6 @@ pub(super) fn synchronize(connection: &Connection) -> Result<(), String> {
         }
         connection.execute("UPDATE stash_items SET asset_path=?1,mime_type='text/plain',size_bytes=?2,content=?3,excerpt=?4,origin_json=?5 WHERE id=?6",
             params![crate::library_location::display_path(&path), size as i64, content, text_excerpt(&content), origin.to_string(), id]).map_err(|e| e.to_string())?;
-        connection
-            .execute("DELETE FROM stash_fts WHERE id=?1", [&id])
-            .map_err(|e| e.to_string())?;
-        connection.execute("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,COALESCE(content,'') || ' ' || COALESCE(context_override,'') FROM stash_items WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
     }
     if let Some(tx) = tx {
         tx.commit().map_err(|e| e.to_string())?;

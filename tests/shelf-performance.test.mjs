@@ -21,7 +21,7 @@ test('paged shelf keeps filter/search/tag semantics without reading unrelated co
     for (const row of plain.items) { assert.equal(row.content, undefined); assert.equal(row.assetPath, undefined); assert.equal(row.contextOverride, undefined); }
     assert.ok(library.readIndex().every(row => !row.preview && !row.content && !row.assetPath));
     for (const args of [{ limit: 7, offset: 7 }, { collection: 'files' }, { collection: 'web', tag: 'odd' }, { favoriteOnly: true }, { query: 'Body 3' }, { query: 'New externally saved' }]) {
-      const actual = library.readShelf(args), expected = search(await library.read(), { limit: 30, ...args });
+      const actual = library.readShelf(args), expected = search(await library.read(), { limit: 30, ...args, rankedIds: library.searchIds(args.query) ?? undefined });
       assert.deepEqual(actual.items.map(row => row.id), expected.items.map(row => row.id));
       assert.equal(actual.hasMore, expected.hasMore);
       if (args.query?.startsWith('New')) assert.deepEqual(actual.items.map(row => row.id), [note.id]);

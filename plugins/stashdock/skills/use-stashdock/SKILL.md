@@ -14,9 +14,11 @@ database. File access is limited to originals explicitly selected for the task.
 - For a specific reference, use `search_stashdock`, then read relevant IDs with
   `get_stashdock_items`. For project recommendations, use the task/project context
   the host actually makes available; do not claim access to other projects/chats.
-- Search a few focused topics or synonyms when useful. Search is keyword-based,
-  newest first, not semantic ranking. Follow `hasMore`/`nextOffset` when more
-  coverage matters; a small recent page is not the entire library.
+- Search a few focused topics or synonyms when useful. Every space-separated word
+  must appear in a reference (substring match, so Chinese words need no spaces);
+  results are keyword-ranked, not semantic. Prefer two or three short keywords
+  over a sentence. Follow `hasMore`/`nextOffset` when more coverage matters; a
+  first page is not the entire library.
 - For a named tag/group, call `list_stashdock_tags` if the tag is unclear, then
   `search_stashdock` with `tag`. Existing tags ARE the context groups. Do not
   create a parallel collection system, or invent a tag the user did not select.

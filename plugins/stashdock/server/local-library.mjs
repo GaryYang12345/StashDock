@@ -16,6 +16,7 @@ import { normalizeContextSave } from './ai-context.mjs';
 import { browserCaptureStore } from './browser-capture.mjs';
 import { createShelfReader } from './shelf-read.mjs';
 import { tagRevision } from './library.mjs';
+import { prepareSearchIndex, searchReferenceIds } from './search-index.mjs';
 
 export function dataDirectory(env = process.env, platform = process.platform, home = homedir()) {
   if (env.STASHDOCK_DATA_DIR) return resolve(env.STASHDOCK_DATA_DIR);
@@ -76,17 +77,13 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   db.exec(readFileSync(new URL('../server/schema.sql', import.meta.url), 'utf8'));
   const columns = new Set(db.prepare('PRAGMA table_info(stash_items)').all().map(row => row.name));
   for (const column of ['content', 'origin_json', 'context_override']) if (!columns.has(column)) db.exec(`ALTER TABLE stash_items ADD COLUMN ${column} TEXT`);
-  db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS stash_fts USING fts5(id UNINDEXED, title, source, excerpt, tags, content, tokenize='unicode61', prefix='2 3')");
   function transaction(callback) {
     db.exec('BEGIN IMMEDIATE');
     try { const result = callback(); db.exec('COMMIT'); return result; }
     catch (error) { db.exec('ROLLBACK'); throw error; }
   }
   transaction(() => {
-    if (!db.prepare("SELECT 1 FROM app_meta WHERE key='fts_initialized_v1'").get()) {
-      db.exec("DELETE FROM stash_fts; INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END FROM stash_items");
-      db.prepare('INSERT INTO app_meta(key,value) VALUES (?,?)').run('fts_initialized_v1', '1');
-    }
+    prepareSearchIndex(db);
     // An empty plugin library is a real library, not a request for desktop seeds.
     db.prepare('INSERT OR IGNORE INTO app_meta(key,value) VALUES (?,?)').run('library_initialized_v1', '1');
   });
@@ -147,10 +144,6 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     }
     return items;
   }
-  const index = id => {
-    db.prepare('DELETE FROM stash_fts WHERE id=?').run(id);
-    db.prepare("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END FROM stash_items WHERE id=?").run(id);
-  };
   function insert(raw, managed = {}, knownUrls) {
     if (!raw || !['web', 'repo', 'note', 'file', 'pdf', 'image'].includes(raw.kind) || !text(raw.title, 500)) throw new Error('Each reference needs a title and a supported kind.');
     if (['file', 'pdf', 'image'].includes(raw.kind) && !managed.assetPath) throw new Error('Use the file importer to save a managed file.');
@@ -173,7 +166,6 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
         if (updated) {
           db.prepare('UPDATE stash_items SET preview=COALESCE(?,preview),content=COALESCE(?,content),origin_json=?,updated_at=? WHERE id=?')
             .run(preview, capturedBody, JSON.stringify(origin), new Date().toISOString(), existing.id);
-          if (capturedBody) index(existing.id);
         }
         return { item: get(existing.id), duplicate: true, updated };
       }
@@ -188,7 +180,6 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
         raw.favorite === true ? 1 : 0, raster(raw.preview), managed.assetPath || null, null, managed.mimeType || null,
         managed.sizeBytes ?? null, (managed.assetPath || raw.kind === 'note') && typeof raw.content === 'string' ? raw.content : text(raw.content || (raw.kind === 'note' ? raw.excerpt : ''), 2_000_000) || null,
         JSON.stringify(origin), now);
-    index(id);
     knownUrls?.set(url, { id, url });
     return { item: get(id), duplicate: false };
   }
@@ -232,7 +223,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   const setTags = (ids, values) => transaction(() => {
     if (!Array.isArray(ids) || !ids.length || ids.length > 30) throw new Error('Select 1 to 30 references.');
     const value = tags(values); ids.forEach(get);
-    for (const id of new Set(ids)) { db.prepare('UPDATE stash_items SET tags_json=?,updated_at=? WHERE id=?').run(JSON.stringify(value), new Date().toISOString(), id); index(id); }
+    for (const id of new Set(ids)) { db.prepare('UPDATE stash_items SET tags_json=?,updated_at=? WHERE id=?').run(JSON.stringify(value), new Date().toISOString(), id); }
     return ids.map(get);
   });
   const applyTagChanges = changes => {
@@ -275,7 +266,6 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
           results.push({ id: change.id, status: 'unchanged', tags: current.tags, tagRevision: currentRevision }); continue;
         }
         db.prepare('UPDATE stash_items SET tags_json=?,updated_at=? WHERE id=?').run(JSON.stringify(normalized), new Date().toISOString(), change.id);
-        index(change.id);
         const updated = get(change.id);
         results.push({ id: change.id, status: 'updated', tags: updated.tags, tagRevision: tagRevision(updated) });
       }
@@ -308,7 +298,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
       }
       db.prepare('UPDATE stash_items SET preview=?,origin_json=? WHERE id=?').run(preview, JSON.stringify(origin), id);
     }
-    index(id); return get(id);
+    return get(id);
   });
   const defaultCover = id => {
     const item = get(id);
@@ -321,7 +311,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     get(id);
     if (typeof context !== 'string' || context.length > 200_000) throw new Error('Context must be at most 200,000 characters.');
     db.prepare('UPDATE stash_items SET context_override=?,updated_at=? WHERE id=?').run(context, new Date().toISOString(), id);
-    index(id); return get(id);
+    return get(id);
   });
   const changeTag = (name, replacement) => transaction(() => {
     const normalized = tags([name])[0], next = replacement === null ? null : tags([replacement])[0];
@@ -330,7 +320,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
       const before = JSON.parse(row.tags_json);
       if (!before.some(tag => tag.toLowerCase() === normalized.toLowerCase())) continue;
       const after = tags(before.flatMap(tag => tag.toLowerCase() === normalized.toLowerCase() ? next ? [next] : [] : [tag]));
-      db.prepare('UPDATE stash_items SET tags_json=?,updated_at=? WHERE id=?').run(JSON.stringify(after), new Date().toISOString(), row.id); index(row.id);
+      db.prepare('UPDATE stash_items SET tags_json=?,updated_at=? WHERE id=?').run(JSON.stringify(after), new Date().toISOString(), row.id);
     }
     return { changed: true };
   });
@@ -338,10 +328,9 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     if (!Array.isArray(ids) || !ids.length || ids.length > 10_000 || ids.some(id => typeof id !== 'string' || !id.trim() || id.length > 120)) throw new Error('Select between 1 and 10,000 valid references.');
     return transaction(() => {
     // Keep managed files recoverable. Never delete a user-supplied path.
-    const fts = db.prepare('DELETE FROM stash_fts WHERE id=?');
     const items = db.prepare('DELETE FROM stash_items WHERE id=?');
     let deleted = 0;
-    for (const id of new Set(ids)) { fts.run(id); deleted += items.run(id).changes; }
+    for (const id of new Set(ids)) { deleted += items.run(id).changes; }
     return { deleted };
     });
   };
@@ -379,6 +368,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   return { ...createShelfReader(db, { fromRow, synchronize: () => synchronizeNoteFiles(db, assets), annotate: annotatePreviews }),
     dataDir: root, read: async (visual = false) => { synchronizeNoteFiles(db, assets); return annotatePreviews(db.prepare(visual ? "SELECT id,title,kind,source,url,excerpt,tags_json,created_at,favorite,preview,origin_json,mime_type,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN 1 ELSE 0 END AS has_file,NULL AS content,NULL AS asset_path,NULL AS original_path,NULL AS size_bytes FROM stash_items ORDER BY created_at DESC" : 'SELECT * FROM stash_items ORDER BY created_at DESC').all().map(fromRow)); },
     readItems: ids => [...new Set(ids)].map(get),
+    searchIds: query => { synchronizeNoteFiles(db, assets); return searchReferenceIds(db, query); },
     resolveFile: id => {
       const item = get(id);
       return { id, filename: item.origin?.fileName || item.title, mimeType: item.mimeType,
@@ -390,5 +380,5 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     referenceCount: () => db.prepare('SELECT COUNT(*) AS count FROM stash_items').get().count,
     getCodexPreferences, saveCodexPreferences, integrations, registerInstallation,
     browserOriginAllowed: origin => registeredBrowserOrigin(readMeta, origin), desktopExecutable,
-    ...browserCaptureStore(db, { insert, index }), listCapturePlatforms, saveCapturePlatform, saveContextReference, importItems, importFiles, setFavorite, setTags, applyTagChanges, editMetadata, defaultCover, editContext, changeTag, remove, removeMany, close: () => db.close() };
+    ...browserCaptureStore(db, { insert }), listCapturePlatforms, saveCapturePlatform, saveContextReference, importItems, importFiles, setFavorite, setTags, applyTagChanges, editMetadata, defaultCover, editContext, changeTag, remove, removeMany, close: () => db.close() };
 }

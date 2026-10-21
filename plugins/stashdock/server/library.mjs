@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { buildContext, referenceFileName } from '../../../src/lib/context-format.mjs';
+import { matchesSearchTerms, referenceSearchText, searchTerms } from '../../../src/lib/reference-search.mjs';
 
 export function summary(item) {
   return {
@@ -21,19 +22,21 @@ export function detail(item) {
     originalPath: item.originalPath, mimeType: item.mimeType, sizeBytes: item.sizeBytes };
 }
 
-export function search(items, { query = '', tag = '', favoriteOnly = false, collection = 'all', limit = 10, offset = 0 } = {}) {
-  const words = query.trim().toLocaleLowerCase('en');
+// rankedIds comes from the shared SQLite index (search-index.mjs). Without it
+// (isolated fixtures), the same term contract runs over in-memory text.
+export function search(items, { query = '', tag = '', favoriteOnly = false, collection = 'all', limit = 10, offset = 0, rankedIds } = {}) {
+  const terms = searchTerms(query);
   const tagValue = tag.trim().toLocaleLowerCase('en');
   const now = Date.now();
+  const rank = terms.length && rankedIds ? new Map(rankedIds.map((id, index) => [id, index])) : null;
   const matches = items.filter(item => !favoriteOnly || item.favorite)
     .filter(item => collection === 'recent' ? Date.parse(item.createdAt) >= now - 7 * 24 * 60 * 60 * 1000
       : collection === 'web' ? ['web', 'repo'].includes(item.kind)
       : collection === 'files' ? Boolean(item.assetPath || item.hasFile || ['file', 'pdf', 'image'].includes(item.kind))
       : collection === 'favorites' ? Boolean(item.favorite) : true)
     .filter(item => !tagValue || (item.tags || []).some(value => String(value).toLocaleLowerCase('en') === tagValue))
-    .filter(item => !words || [item.title, item.source, item.url, item.excerpt, item.content, item.contextOverride, ...(item.tags || [])]
-      .filter(Boolean).join(' ').toLocaleLowerCase('en').includes(words))
-    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    .filter(item => !terms.length || (rank ? rank.has(item.id) : matchesSearchTerms(referenceSearchText(item), terms)))
+    .sort((a, b) => rank ? rank.get(a.id) - rank.get(b.id) : String(b.createdAt).localeCompare(String(a.createdAt)));
   return { items: matches.slice(offset, offset + limit), hasMore: offset + limit < matches.length };
 }
 

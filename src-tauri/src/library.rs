@@ -4,6 +4,7 @@ pub mod commands;
 mod context;
 pub mod file_payload;
 mod note_files;
+mod search;
 #[cfg(test)]
 use bridge::json_response;
 pub use bridge::start_extension_server;
@@ -122,43 +123,15 @@ fn initialize_schema(connection: &Connection) -> rusqlite::Result<()> {
         )?;
     }
 
-    connection.execute_batch(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS stash_fts USING fts5(
-           id UNINDEXED,
-           title,
-           source,
-           excerpt,
-           tags,
-           content,
-           tokenize = 'unicode61',
-           prefix = '2 3'
-         );",
-    )?;
-    let indexed = connection
-        .query_row(
-            "SELECT value FROM app_meta WHERE key = 'fts_initialized_v1'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?
-        .is_some();
-    if !indexed {
-        rebuild_fts(connection)?;
-        connection.execute(
-            "INSERT INTO app_meta (key, value) VALUES ('fts_initialized_v1', '1')",
-            [],
-        )?;
-    }
-    Ok(())
+    // One transaction: an interrupted upgrade must not leave the index half-built.
+    let transaction = connection.unchecked_transaction()?;
+    search::prepare_index(&transaction)?;
+    transaction.commit()
 }
 
-fn rebuild_fts(connection: &Connection) -> rusqlite::Result<()> {
-    connection.execute_batch(
-        "DELETE FROM stash_fts;
-         INSERT INTO stash_fts (id, title, source, excerpt, tags, content)
-         SELECT id, title, source, excerpt, tags_json, CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END
-         FROM stash_items;",
-    )
+#[cfg(test)]
+pub(crate) fn install_search_index(connection: &Connection) -> rusqlite::Result<()> {
+    search::prepare_index(connection)
 }
 
 fn backfill_text_content(connection: &Connection) -> Result<(), String> {
@@ -183,7 +156,7 @@ fn backfill_text_content(connection: &Connection) -> Result<(), String> {
             .map_err(|error| error.to_string())?
     };
 
-    let mut changed = false;
+    // The search index follows content updates through its triggers.
     for (id, asset_path, mime_type) in candidates {
         let path = PathBuf::from(asset_path);
         if !path.is_file() {
@@ -196,13 +169,9 @@ fn backfill_text_content(connection: &Connection) -> Result<(), String> {
                     params![content, id],
                 )
                 .map_err(|error| error.to_string())?;
-            changed = true;
         }
     }
 
-    if changed {
-        rebuild_fts(connection).map_err(|error| error.to_string())?;
-    }
     Ok(())
 }
 
@@ -266,17 +235,6 @@ fn upsert_item(connection: &Connection, item: &StashItem) -> Result<(), String> 
                 updated_at,
                 item.context_override,
             ],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute("DELETE FROM stash_fts WHERE id = ?1", [&item.id])
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "INSERT INTO stash_fts (id, title, source, excerpt, tags, content)
-             SELECT id, title, source, excerpt, tags_json, CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END
-             FROM stash_items WHERE id = ?1",
-            [&item.id],
         )
         .map_err(|error| error.to_string())?;
     Ok(())
@@ -637,12 +595,6 @@ fn import_extension_items(
                 params![next_preview, origin_json, imported_at, id, body],
             )
             .map_err(|error| error.to_string())?;
-        if body.is_some() {
-            transaction
-                .execute("DELETE FROM stash_fts WHERE id=?1", [id])
-                .map_err(|error| error.to_string())?;
-            transaction.execute("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END FROM stash_items WHERE id=?1", [id]).map_err(|error| error.to_string())?;
-        }
     }
     transaction.commit().map_err(|error| error.to_string())?;
 
@@ -670,14 +622,10 @@ fn delete_items_by_id(connection: &mut Connection, ids: &[String]) -> Result<usi
         .map_err(|error| error.to_string())?;
     let mut deleted = 0;
     {
-        let mut fts = transaction
-            .prepare("DELETE FROM stash_fts WHERE id = ?1")
-            .map_err(|error| error.to_string())?;
         let mut items = transaction
             .prepare("DELETE FROM stash_items WHERE id = ?1")
             .map_err(|error| error.to_string())?;
         for id in ids.iter().collect::<HashSet<_>>() {
-            fts.execute([id]).map_err(|error| error.to_string())?;
             deleted += items.execute([id]).map_err(|error| error.to_string())?;
         }
     }
@@ -685,53 +633,24 @@ fn delete_items_by_id(connection: &mut Connection, ids: &[String]) -> Result<usi
     Ok(deleted)
 }
 
-fn fts_query(query: &str) -> String {
-    query
-        .split_whitespace()
-        .filter_map(|part| {
-            let token = part
-                .chars()
-                .filter(|character| character.is_alphanumeric() || *character == '_')
-                .collect::<String>();
-            (!token.is_empty()).then(|| format!("\"{token}\"*"))
-        })
-        .collect::<Vec<_>>()
-        .join(" AND ")
-}
-
-pub fn search_items(query: String, state: &LibraryState) -> Result<Vec<StashItem>, String> {
-    let normalized = fts_query(&query);
+/// Ordered IDs matching every query term; see `library/search.rs`.
+pub fn search_items(query: String, state: &LibraryState) -> Result<Vec<String>, String> {
     let connection = state
         .connection
         .lock()
         .map_err(|_| "The local library is busy.".to_string())?;
-
     note_files::synchronize(&connection)?;
-    if normalized.is_empty() {
-        return read_items(&connection);
+    match search::search_ids(&connection, &query)? {
+        Some(ids) => Ok(ids),
+        None => connection
+            .prepare("SELECT id FROM stash_items ORDER BY created_at DESC")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(|error| error.to_string()),
     }
-
-    let mut statement = connection
-        .prepare(
-            "SELECT s.id, s.title, s.kind, s.source, s.url, s.excerpt,
-                    s.tags_json, s.created_at, s.favorite, s.preview,
-                    s.asset_path, s.original_path, s.mime_type, s.size_bytes,
-                    s.content, s.origin_json, s.context_override
-             FROM stash_fts f
-             JOIN stash_items s ON s.id = f.id
-             WHERE stash_fts MATCH ?1
-             ORDER BY bm25(stash_fts, 0.0, 8.0, 3.0, 2.0, 2.0, 1.0),
-                      s.created_at DESC",
-        )
-        .map_err(|error| error.to_string())?;
-    let rows = statement
-        .query_map([normalized], row_to_item)
-        .map_err(|error| error.to_string())?;
-    let mut items = rows
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
-    crate::web_preview::annotate(&connection, &mut items).map_err(|error| error.to_string())?;
-    Ok(items)
 }
 
 pub fn initialize_library(items: Vec<StashItem>, state: &LibraryState) -> Result<(), String> {
@@ -875,10 +794,6 @@ fn edit_metadata(
     if changed == 0 {
         return Err("This reference no longer exists.".into());
     }
-    connection
-        .execute("DELETE FROM stash_fts WHERE id=?1", [id])
-        .map_err(|e| e.to_string())?;
-    connection.execute("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END FROM stash_items WHERE id=?1", [id]).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -986,10 +901,6 @@ fn edit_content(connection: &Connection, id: &str, content: &str) -> Result<(), 
     if changed == 0 {
         return Err("This reference no longer exists.".into());
     }
-    connection
-        .execute("DELETE FROM stash_fts WHERE id=?1", [id])
-        .map_err(|e| e.to_string())?;
-    connection.execute("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END FROM stash_items WHERE id=?1", [id]).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1354,8 +1265,8 @@ pub fn import_files(
 mod tests {
     use super::{
         backfill_text_content, canonicalize_web_url, copy_file_to_library, delete_item_by_id,
-        file_kind, format_size, fts_query, import_extension_items, initialize_schema,
-        json_response, prepare_file_imports, read_items, row_to_item, update_favorite, upsert_item,
+        file_kind, format_size, import_extension_items, search, initialize_schema,
+        json_response, prepare_file_imports, read_items, update_favorite, upsert_item,
         StashItem,
     };
     use rusqlite::{params, Connection};
@@ -2238,12 +2149,14 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_search_queries_for_prefix_matching() {
+    fn search_terms_are_lowercased_unique_and_bounded() {
         assert_eq!(
-            fts_query("Rust C++ 搜索"),
-            "\"Rust\"* AND \"C\"* AND \"搜索\"*"
+            search::search_terms("Rust  C++ 搜索 rust"),
+            vec!["rust", "c++", "搜索"]
         );
-        assert_eq!(fts_query(" --- "), "");
+        assert!(search::search_terms(" \t ").is_empty());
+        let many = (0..15).map(|i| format!("t{i}")).collect::<Vec<_>>().join(" ");
+        assert_eq!(search::search_terms(&many).len(), 12);
     }
 
     #[test]
@@ -2272,23 +2185,13 @@ mod tests {
         };
         upsert_item(&connection, &item).expect("save item");
 
-        let mut statement = connection
-            .prepare(
-                "SELECT s.id, s.title, s.kind, s.source, s.url, s.excerpt,
-                        s.tags_json, s.created_at, s.favorite, s.preview,
-                        s.asset_path, s.original_path, s.mime_type, s.size_bytes,
-                        s.content, s.origin_json, s.context_override
-                 FROM stash_fts f JOIN stash_items s ON s.id = f.id
-                 WHERE stash_fts MATCH ?1",
-            )
-            .expect("prepare search");
-        let found = statement
-            .query_map([fts_query("retriev")], row_to_item)
-            .expect("run search")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("collect results");
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].id, item.id);
+        for query in ["retriev", "PIPELINE local", "liable"] {
+            assert_eq!(
+                search::search_ids(&connection, query).unwrap().unwrap(),
+                vec![item.id.clone()],
+                "query {query:?}"
+            );
+        }
     }
 
     #[test]

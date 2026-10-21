@@ -280,7 +280,7 @@ mod tests {
             let db = rusqlite::Connection::open(&database).unwrap();
             db.execute_batch(include_str!("../../plugins/stashdock/server/schema.sql"))
                 .unwrap();
-            db.execute_batch("CREATE VIRTUAL TABLE stash_fts USING fts5(id UNINDEXED,title,source,excerpt,tags,content)").unwrap();
+            crate::library::install_search_index(&db).unwrap();
             Self { root, database }
         }
         fn add(

@@ -1,0 +1,32 @@
+{
+  "items": [
+    { "id": "zh-title", "title": "深度学习入门教程", "kind": "web", "source": "Example", "url": "https://example.org/dl", "excerpt": "", "tags": [], "content": "神经网络基础" },
+    { "id": "mixed", "title": "如何使用React构建应用", "kind": "web", "source": "Example", "url": "https://example.org/react", "excerpt": "", "tags": [], "content": "useState hooks and state management" },
+    { "id": "tagged", "title": "Design tokens", "kind": "web", "source": "Example", "url": "https://example.org/tokens", "excerpt": "", "tags": ["设计", "UI"], "content": "spacing scale" },
+    { "id": "file", "title": "Spec.txt", "kind": "file", "source": "Local file", "excerpt": "", "tags": [], "content": "original alpha text", "contextOverride": "annotation beta", "assetPath": "managed/spec.txt" },
+    { "id": "edited", "title": "Edited page", "kind": "web", "source": "Example", "url": "https://example.org/edited", "excerpt": "", "tags": [], "content": "captured raw", "contextOverride": "final wording" },
+    { "id": "repo", "title": "Weekly notes", "kind": "repo", "source": "GitHub", "url": "https://github.com/acme/weekly", "excerpt": "Release checklist", "tags": [], "content": "" }
+  ],
+  "cases": [
+    { "query": "学习", "ids": ["zh-title"] },
+    { "query": "教程 深度", "ids": ["zh-title"] },
+    { "query": "神经", "ids": ["zh-title"] },
+    { "query": "react", "ids": ["mixed"] },
+    { "query": "React state", "ids": ["mixed"] },
+    { "query": "hooks react", "ids": ["mixed"] },
+    { "query": "构建", "ids": ["mixed"] },
+    { "query": "设计", "ids": ["tagged"] },
+    { "query": "ui", "ids": ["tagged"] },
+    { "query": "alpha", "ids": ["file"] },
+    { "query": "beta", "ids": ["file"] },
+    { "query": "captured", "ids": [] },
+    { "query": "final", "ids": ["edited"] },
+    { "query": "github.com/acme", "ids": ["repo"] },
+    { "query": "checklist weekly", "ids": ["repo"] },
+    { "query": "react 设计", "ids": [] },
+    { "query": "%", "ids": [] },
+    { "query": "_", "ids": [] },
+    { "query": "\"", "ids": [] },
+    { "query": "example.org", "ids": ["edited", "mixed", "tagged", "zh-title"] }
+  ]
+}

@@ -1,4 +1,5 @@
 import { canonicalizeUrl } from "../../lib/bookmarks";
+import { matchesSearchTerms, referenceSearchText, searchTerms } from "../../lib/reference-search.mjs";
 import type { CollectionFilter, StashItem } from "../../types";
 
 export function matchesCollection(item: StashItem, filter: CollectionFilter, now = Date.now()) {
@@ -12,16 +13,18 @@ export function matchesCollection(item: StashItem, filter: CollectionFilter, now
 }
 
 export function buildSearchIndex(items: StashItem[]) {
-  return new Map(items.map(item => [item.id, [item.title, item.source, item.excerpt, item.assetPath || item.hasFile ? item.content : item.contextOverride ?? item.content, item.contextOverride, ...item.tags].filter(Boolean).join(" ").toLocaleLowerCase()]));
+  return new Map(items.map(item => [item.id, referenceSearchText(item)]));
 }
 
 export function filterItems(items: StashItem[], index: Map<string, string>, query: string, filter: CollectionFilter, tag: string | null = null, resultIds: Set<string> | null = null) {
-  const normalized = query.trim().toLocaleLowerCase();
+  // Same term contract as the Desktop/MCP index, so the immediate local result matches the indexed one.
+  const terms = searchTerms(query);
+  const searching = terms.length > 0;
   const now = Date.now();
-  const byId = normalized && resultIds ? new Map(items.map(item => [item.id, item])) : null;
+  const byId = searching && resultIds ? new Map(items.map(item => [item.id, item])) : null;
   const candidates = byId && resultIds ? Array.from(resultIds).flatMap(id => { const item = byId.get(id); return item ? [item] : []; }) : items;
   const normalizedTag = tag?.trim().toLocaleLowerCase('en');
-  return candidates.filter(item => (!normalized || resultIds !== null || index.get(item.id)?.includes(normalized)) && matchesCollection(item, filter, now) && (!normalizedTag || item.tags.some(value => value.toLocaleLowerCase('en') === normalizedTag)));
+  return candidates.filter(item => (!searching || resultIds !== null || matchesSearchTerms(index.get(item.id) ?? '', terms)) && matchesCollection(item, filter, now) && (!normalizedTag || item.tags.some(value => value.toLocaleLowerCase('en') === normalizedTag)));
 }
 
 export function summarizeItems(items: StashItem[]) {

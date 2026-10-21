@@ -40,7 +40,7 @@ mockIPC(async (command, raw) => {
     case 'restart_desktop': document.documentElement.dataset.fixtureRestarted = 'true'; return;
     case 'list_items': return items;
     case 'open_reference_file': document.documentElement.dataset.openedReference = String(args.id); return;
-    case 'search_items': return items.filter(item => item.title.toLowerCase().includes(String(args.query).toLowerCase()));
+    case 'search_items': return items.filter(item => item.title.toLowerCase().includes(String(args.query).toLowerCase())).map(item => item.id);
     case 'list_pinned_tags': case 'list_browser_sources': return [];
     case 'preview_link': return { title: 'Example page', content: 'Example page content' };
     default: return undefined;

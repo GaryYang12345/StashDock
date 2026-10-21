@@ -5,10 +5,6 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveManagedFile } from './open-file.mjs';
 
-const index = (db, id) => {
-  db.prepare('DELETE FROM stash_fts WHERE id=?').run(id);
-  db.prepare("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN COALESCE(content,'') || ' ' || COALESCE(context_override,'') ELSE COALESCE(context_override,content,'') END FROM stash_items WHERE id=?").run(id);
-};
 const MAX_TEXT_BYTES = 5_000_000;
 function projection(path, assets) {
   let descriptor;
@@ -60,7 +56,6 @@ export function synchronizeNoteFiles(db, assets, id) {
       if (path === row.asset_path && content === row.content && file.sizeBytes === row.size_bytes) continue;
       db.prepare("UPDATE stash_items SET asset_path=?,mime_type='text/plain',size_bytes=?,content=?,excerpt=?,origin_json=? WHERE id=?")
         .run(path, file.sizeBytes, content, Array.from(content.replace(/\s+/g, ' ')).slice(0, 180).join(''), JSON.stringify(origin), row.id);
-      index(db, row.id);
     }
     if (ownsTransaction) db.exec('COMMIT');
   } catch (error) {

@@ -48,9 +48,15 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
   const close = server.close.bind(server);
   server.close = async () => { storageService.close?.(); bridge?.close(); await Promise.all([previewService.close(), previews?.close()]); await close(); library.close?.(); };
   let resourceDomains = [];
-  server.registerTool('search_stashdock', { description: 'Find saved context for a task, or browse a tag as a reusable context group. Keyword matching, newest first; use hasMore/nextOffset to page. Read promising candidates with get_stashdock_items.',
+  // Matching uses the shared SQLite index; only compact rows are read for filtering.
+  const searchLibrary = async args => {
+    if (!library.searchIds) return search(await (library.readIndex?.(Boolean(args.query?.trim())) ?? library.read()), args);
+    const rankedIds = library.searchIds(args.query) ?? undefined;
+    return search(await (library.readIndex?.() ?? library.read(true)), { ...args, rankedIds });
+  };
+  server.registerTool('search_stashdock', { description: 'Find saved context for a task, or browse a tag as a reusable context group. Every space-separated word must appear (substring match, any language); most relevant first, then newest. Use a few short keywords rather than a sentence; use hasMore/nextOffset to page. Read promising candidates with get_stashdock_items.',
     inputSchema: searchSchema, annotations: readOnly }, guarded(async args => {
-    const result = search(await (library.readIndex?.(Boolean(args.query?.trim())) ?? library.read()), args), matches = result.items.map(summary);
+    const result = await searchLibrary(args), matches = result.items.map(summary);
     return valueResult({ count: matches.length, items: matches, hasMore: result.hasMore,
       nextOffset: result.hasMore ? (args.offset || 0) + matches.length : null });
   }));
@@ -132,7 +138,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
     inputSchema: { query: searchSchema.query, tag: searchSchema.tag, collection: z.enum(['all', 'recent', 'web', 'files', 'favorites']).optional() },
     annotations: readOnly, _meta: { ui: { visibility: ['app'] } },
   }, guarded(async args => {
-    const ids = search(await (library.readIndex?.(Boolean(args.query?.trim())) ?? library.read()), { ...args, limit: Number.MAX_SAFE_INTEGER }).items.map(item => item.id);
+    const ids = (await searchLibrary({ ...args, limit: Number.MAX_SAFE_INTEGER })).items.map(item => item.id);
     return { ...valueResult({ count: ids.length }), _meta: { ids } };
   }));
   server.registerTool('prepare_stashdock_attachment', {

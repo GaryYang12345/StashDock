@@ -1,6 +1,7 @@
 // One read snapshot, compact search rows, only the visible page's cover blobs.
 // Background refresh must not deserialize every original and image in a library.
 import { search } from './library.mjs';
+import { searchReferenceIds } from './search-index.mjs';
 
 export function createShelfReader(db, { fromRow, synchronize, annotate }) {
   const fields = `id,title,kind,source,url,excerpt,tags_json,created_at,favorite,origin_json,mime_type,
@@ -12,13 +13,13 @@ export function createShelfReader(db, { fromRow, synchronize, annotate }) {
   return {
     readIndex,
     readShelf: (args = {}) => {
-      // File projections may write. Finish them before the read snapshot.
-      const withContent = Boolean(args.query?.trim());
-      if (withContent) synchronize();
+      // Searching reads note projections; they may write, so finish them before the snapshot.
+      if (args.query?.trim()) synchronize();
       db.exec('BEGIN');
       try {
-        const rows = db.prepare(`SELECT ${fields},${withContent ? 'content,context_override' : 'NULL AS content,NULL AS context_override'} FROM stash_items ORDER BY created_at DESC`).all().map(fromRow);
-        const result = search(rows, { ...args, limit: args.limit ?? 30 });
+        const rows = db.prepare(`SELECT ${fields},NULL AS content,NULL AS context_override FROM stash_items ORDER BY created_at DESC`).all().map(fromRow);
+        const rankedIds = searchReferenceIds(db, args.query) ?? undefined;
+        const result = search(rows, { ...args, limit: args.limit ?? 30, rankedIds });
         const image = db.prepare('SELECT preview FROM stash_items WHERE id=?');
         result.items = annotate(result.items.map(row => ({ ...row, preview: image.get(row.id)?.preview || undefined })));
         const counts = new Map();

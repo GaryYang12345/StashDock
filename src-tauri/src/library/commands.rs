@@ -23,7 +23,7 @@ pub async fn list_items(app: AppHandle) -> Result<Vec<StashItem>, String> {
     run(app, super::list_items).await
 }
 #[tauri::command]
-pub async fn search_items(app: AppHandle, query: String) -> Result<Vec<StashItem>, String> {
+pub async fn search_items(app: AppHandle, query: String) -> Result<Vec<String>, String> {
     run(app, move |s| super::search_items(query, s)).await
 }
 #[tauri::command]

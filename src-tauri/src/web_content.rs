@@ -126,10 +126,6 @@ fn finish(
           WHERE id=?2 AND url=?3 AND context_override IS NULL AND COALESCE(json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.contentSettled'),0)!=1 AND json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.pendingTitle')=title
           AND json_extract(origin_json,'$.importMethod') IN ('manual_url','browser_bookmarks')",params![title,job.id,job.url])?>0 || changed;
     }
-    if changed {
-        tx.execute("DELETE FROM stash_fts WHERE id=?1", [&job.id])?;
-        tx.execute("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,COALESCE(context_override,content,'') FROM stash_items WHERE id=?1",[&job.id])?;
-    }
     let remaining=tx.query_row("SELECT EXISTS(SELECT 1 FROM stash_items WHERE id=?1 AND url=?2 AND context_override IS NULL
       AND COALESCE(json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
       AND json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.importMethod') IN ('manual_url','browser_bookmarks')
@@ -220,7 +216,7 @@ mod tests {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch(include_str!("../../plugins/stashdock/server/schema.sql"))
             .unwrap();
-        db.execute_batch("CREATE VIRTUAL TABLE stash_fts USING fts5(id UNINDEXED,title,source,excerpt,tags,content);").unwrap();
+        crate::library::install_search_index(&db).unwrap();
         schema(&db).unwrap();
         db.execute(
             "INSERT INTO app_meta VALUES('web_content_worker_owner','test')",

@@ -4,7 +4,7 @@ import { canonicalReferenceUrl } from '../../../src/lib/reference-url.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const receiptPrefix = 'browser_capture_receipt_v1:';
-export function browserCaptureStore(db, { insert, index }) {
+export function browserCaptureStore(db, { insert }) {
   function find(url) {
     url = canonicalReferenceUrl(url);
     const direct = db.prepare('SELECT id FROM stash_items WHERE url=? LIMIT 1').get(url);
@@ -63,7 +63,6 @@ export function browserCaptureStore(db, { insert, index }) {
         delete previous.previewSource;
         db.prepare('UPDATE stash_items SET title=?,source=?,url=?,excerpt=?,tags_json=?,content=?,preview=?,origin_json=?,updated_at=? WHERE id=?')
           .run(item.title, String(item.source || new URL(url).hostname).slice(0,300), url, String(item.excerpt || '').slice(0,2000), JSON.stringify(item.tags.map(tag=>tag.trim()).filter((tag,i,all)=>tag&&all.findIndex(value=>value.toLowerCase()===tag.toLowerCase())===i)), item.content, item.preview || null, JSON.stringify({ ...previous, ...origin }), origin.importedAt, id);
-        index(id);
       } else id = insert(item, {}, new Map()).item.id;
       const result = { saved: true, id, replaced: Boolean(existing) };
       db.prepare('INSERT INTO app_meta(key,value) VALUES (?,?)').run(key, JSON.stringify({ digest, result }));

@@ -49,9 +49,8 @@ export function useLibraryController(active: boolean, allowImport = true, editin
           if (current) setSearch({ query, items, results });
         })
         .catch(() => {
-          if (!current) return;
-          setSearch({ query, items, results: [] });
-          setNotice("Search could not read the local index.", 3200);
+          // Keep the immediate in-memory result rather than emptying the shelf.
+          if (current) setNotice("Search could not read the local index.", 3200);
         });
     }, 140);
 
@@ -63,7 +62,7 @@ export function useLibraryController(active: boolean, allowImport = true, editin
 
   const { counts, tags } = useMemo(() => summarizeItems(items), [items]);
   const searchIndex = useMemo(() => buildSearchIndex(items), [items]);
-  const resultIds = useMemo(() => search?.query === query && search.items === items ? new Set(search.results.map(item => item.id)) : null, [search, query, items]);
+  const resultIds = useMemo(() => search?.query === query && search.items === items ? new Set(search.results) : null, [search, query, items]);
   const visibleItems = useMemo(() => filterItems(items, searchIndex, query, filter, activeTag, resultIds), [items, searchIndex, query, filter, activeTag, resultIds]);
   const selectedItems = useMemo(() => selectItems(items, selectedIds), [items, selectedIds]);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);

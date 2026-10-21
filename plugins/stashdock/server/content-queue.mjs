@@ -69,10 +69,6 @@ export function createContentQueue(dataDir, owner, { now = () => Math.floor(Date
         if (title) changed = db.prepare(`UPDATE stash_items SET title=?,origin_json=json_remove(origin_json,'$.pendingTitle'),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
           WHERE id=? AND url=? AND context_override IS NULL AND COALESCE(json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.contentSettled'),0)!=1 AND json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.pendingTitle')=title
           AND json_extract(origin_json,'$.importMethod') IN ('manual_url','browser_bookmarks')`).run(title,job.id,job.url).changes > 0 || changed;
-          if (changed) {
-            db.prepare('DELETE FROM stash_fts WHERE id=?').run(job.id);
-            db.prepare("INSERT INTO stash_fts SELECT id,title,source,excerpt,tags_json,COALESCE(context_override,content,'') FROM stash_items WHERE id=?").run(job.id);
-          }
         const remaining=db.prepare(`SELECT 1 FROM stash_items WHERE id=? AND url=? AND context_override IS NULL
           AND COALESCE(json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
           AND json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.importMethod') IN ('manual_url','browser_bookmarks')
