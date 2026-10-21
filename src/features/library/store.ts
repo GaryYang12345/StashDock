@@ -5,6 +5,8 @@ import { editReferenceCover, type ReferenceCoverEdit } from '../../lib/reference
 
 export type LibraryRepository = {
   load: () => Promise<StashItem[]>;
+  /** The listed references that still exist; ones it leaves out were deleted. */
+  loadSome?: (ids: string[]) => Promise<StashItem[]>;
   add: (items: StashItem[], next: StashItem[]) => Promise<void | StashItem[]>;
   remove: (id: string, next: StashItem[]) => Promise<void>;
   removeMany?: (ids: string[], next: StashItem[]) => Promise<void>;
@@ -61,6 +63,20 @@ export function createLibraryStore(repository: LibraryRepository) {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     refresh,
     invalidate: () => { invalidated = true; return refresh(); },
+    /** Re-read only these references (for example after a background cover update). */
+    patch: (ids: string[]) => {
+      const wanted = [...new Set(ids)];
+      if (!repository.loadSome || !wanted.length) { invalidated = true; return refresh(); }
+      return enqueue(async () => {
+        if (!snapshot.ready) return;
+        const fresh = new Map((await repository.loadSome!(wanted)).map(item => [item.id, item]));
+        const known = new Set(snapshot.items.map(item => item.id));
+        // A reference this shelf has not loaded yet needs the full, ordered list.
+        if ([...fresh.keys()].some(id => !known.has(id))) { invalidated = true; void refresh(); return; }
+        const gone = new Set(wanted.filter(id => !fresh.has(id)));
+        publish(snapshot.items.flatMap(item => gone.has(item.id) ? [] : [fresh.get(item.id) ?? item]));
+      }).catch(() => { invalidated = true; return refresh(); });
+    },
     announceImport: ({ imported, updated, skipped }: ImportSummary) => {
       const message = imported
         ? "Page saved from browser."

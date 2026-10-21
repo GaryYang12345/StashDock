@@ -25,6 +25,17 @@ pub async fn list_items(app: AppHandle) -> Result<Vec<StashItem>, String> {
         .await
         .map(preview_protocol::for_webview)
 }
+/// Shelf metadata for a few references (`full` adds bodies and edited context).
+#[tauri::command]
+pub async fn get_items(
+    app: AppHandle,
+    ids: Vec<String>,
+    full: bool,
+) -> Result<Vec<StashItem>, String> {
+    run(app, move |s| super::get_items(ids, full, s))
+        .await
+        .map(preview_protocol::for_webview)
+}
 #[tauri::command]
 pub async fn search_items(app: AppHandle, query: String) -> Result<Vec<String>, String> {
     run(app, move |s| super::search_items(query, s)).await

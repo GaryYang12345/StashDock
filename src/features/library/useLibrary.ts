@@ -1,11 +1,12 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { deleteItem, loadItems, saveItems, setItemFavorite } from "../../lib/storage";
+import { deleteItem, getItems, loadItems, saveItems, setItemFavorite } from "../../lib/storage";
 import { createLibraryStore, type ImportSummary } from "./store";
 
 export const libraryStore = createLibraryStore({
   load: loadItems,
+  ...(isTauri() ? { loadSome: (ids: string[]) => getItems(ids) } : {}),
   add: async (items, next) => {
     await saveItems(isTauri() ? items : next);
     return isTauri() ? loadItems() : next;
@@ -36,11 +37,21 @@ function connect() {
     const stops: UnlistenFn[] = [];
     const refresh = () => { if (!document.hidden) void libraryStore.invalidate(); };
     if (isTauri()) {
+      // Background cover/icon work names the references it changed. Coalesce a
+      // burst into one small read instead of reloading the whole library.
+      let changed = new Set<string>(), flush: number | undefined;
+      const patch = (ids: string[]) => {
+        ids.forEach(id => changed.add(id));
+        flush ??= window.setTimeout(() => { const ids = [...changed]; changed = new Set(); flush = undefined; if (!cancelled) void libraryStore.patch(ids); }, 120);
+      };
+      stops.push(() => { if (flush !== undefined) window.clearTimeout(flush); });
       for (const name of ["extension-imported", "extension-deleted", "reference-preview-updated"]) {
-        void listen<ImportSummary>(name, event => {
+        void listen<unknown>(name, event => {
           if (cancelled) return;
-          void libraryStore.invalidate();
-          if (name === "extension-imported") libraryStore.announceImport(event.payload);
+          const ids = (event.payload as { ids?: unknown } | null)?.ids;
+          if (name === "reference-preview-updated" && Array.isArray(ids) && ids.every(id => typeof id === "string")) patch(ids);
+          else void libraryStore.invalidate();
+          if (name === "extension-imported") libraryStore.announceImport(event.payload as ImportSummary);
         }).then(stop => {
           if (cancelled) stop(); else stops.push(stop);
         }).catch(console.warn);

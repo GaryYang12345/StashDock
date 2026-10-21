@@ -92,7 +92,11 @@ export function previewQueue(dataDir, { now = () => Math.floor(Date.now()/1000),
     finish: (job, result) => publish(job, result, true),
     close: () => {
       if (closed) return; closed = true;
-      try { transaction(() => { if (meta('web_preview_worker_owner') === owner) db.prepare("DELETE FROM app_meta WHERE key IN ('web_preview_worker_until','web_preview_worker_owner')").run(); }); }
+      // Like Desktop's web_preview::release: an interrupted screenshot is handed
+      // back without spending an attempt, and the lease is freed for the next owner.
+      try { transaction(() => { if (meta('web_preview_worker_owner') === owner) {
+        db.prepare("UPDATE web_preview_jobs SET status='queued',attempts=MAX(attempts-1,0),retry_at=0 WHERE status='working' AND retry_at>?").run(now());
+        db.prepare("DELETE FROM app_meta WHERE key IN ('web_preview_worker_until','web_preview_worker_owner')").run(); } }); }
       catch { /* Another writer may be busy at shutdown; the lease will expire. */ }
       finally { db.close(); }
     },

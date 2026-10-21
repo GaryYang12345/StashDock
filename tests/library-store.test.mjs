@@ -35,6 +35,22 @@ test('bulk deletion commits once, deduplicates IDs and publishes only after succ
   assert.equal(calls, 1); assert.equal(notifications, 1);
   assert.deepEqual(store.getSnapshot().items.map(item => item.id), ['c']);
 });
+test('a cover update re-reads only the named references, keeps order, drops deleted ones and leaves the rest untouched', async () => {
+  let loads = 0; const reads = [];
+  const store = createLibraryStore({ load: async () => { loads++; return [item('a'), item('b'), item('c')]; }, add: async () => {}, remove: async () => {}, favorite: async () => {},
+    loadSome: async ids => { reads.push(ids); return ids.filter(id => id !== 'c').map(id => item(id, { preview: `stashdock-preview://${id}` })); } });
+  await store.refresh(); const before = store.getSnapshot().items;
+  await store.patch(['b', 'b', 'c']);
+  assert.deepEqual(reads, [['b', 'c']]); assert.equal(loads, 1, 'no whole-library reload');
+  const after = store.getSnapshot().items;
+  assert.deepEqual(after.map(row => row.id), ['a', 'b']);
+  assert.equal(after[0], before[0], 'unchanged references keep their identity');
+  assert.equal(after[1].preview, 'stashdock-preview://b');
+  // An ID the shelf has not loaded yet falls back to one ordered full reload.
+  const unknown = createLibraryStore({ load: async () => { loads++; return [item('a')]; }, add: async () => {}, remove: async () => {}, favorite: async () => {}, loadSome: async () => [item('new')] });
+  await unknown.refresh(); loads = 0; await unknown.patch(['new']); await new Promise(resolve => setTimeout(resolve, 0)); await unknown.refresh();
+  assert.ok(loads >= 1);
+});
 test('failed bulk deletion preserves the snapshot and allows retry', async () => {
   let fail = true;
   const store = createLibraryStore({ load: async () => [item('a'), item('b')], add: async () => {}, remove: async () => {}, favorite: async () => {},

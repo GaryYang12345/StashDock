@@ -8,6 +8,8 @@ import { prepareReferenceCover } from '../../lib/referenceCover';
 import { ContentEditor } from '../../components/ContentEditor';
 import { TagEditor, type TagOperation } from '../../components/TagEditor';
 import { libraryStore } from './useLibrary';
+import { getItems } from '../../lib/storage';
+import { isTauri } from '@tauri-apps/api/core';
 import { handleTitlebarDrag, handleTitlebarDoubleClick } from '../../lib/desktopWindows';
 import { Alert } from "../../components/arc/alert/alert";
 import { ScrollArea } from "../../components/arc/scroll-area/scroll-area";
@@ -50,12 +52,16 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     returnFocus.current = tagFocus.current?.getClientRects().length ? tagFocus.current : document.querySelector<HTMLElement>('aside button[aria-expanded]');
     setTagOperation({ name, action });
   }, []);
-  const editContent = useCallback((item: StashItem) => {
-    returnFocus.current = document.querySelector<HTMLElement>(`article[data-reference-id="${CSS.escape(item.id)}"] button[aria-haspopup="menu"]`);
-    setContentEditing(item);
-  }, []);
   useEffect(() => { if (!active) { setEditing(null); setContentEditing(null); setTagOperation(null); } }, [active]);
   const { storageReady, error, refresh, refreshing, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
+  const editContent = useCallback((item: StashItem) => {
+    returnFocus.current = document.querySelector<HTMLElement>(`article[data-reference-id="${CSS.escape(item.id)}"] button[aria-haspopup="menu"]`);
+    // Desktop shelf rows carry no bodies: read this reference in full first.
+    if (!isTauri()) { setContentEditing(item); return; }
+    void getItems([item.id], true).then(([full]) => {
+      if (full) setContentEditing(full); else setNotice(t('This reference no longer exists.'), 5000);
+    }).catch(error => setNotice(t(error instanceof Error ? error.message : String(error)), 5000));
+  }, [setNotice, t]);
   const pinnedError = useCallback((message: string) => setNotice(message, 5000), [setNotice]);
   const { pinnedTags, pinTag, reconcileTag } = usePinnedTags(pinnedError);
   return (

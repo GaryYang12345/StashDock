@@ -272,27 +272,94 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<StashItem> {
     })
 }
 
-fn read_items(connection: &Connection) -> Result<Vec<StashItem>, String> {
+const ITEM_COLUMNS: &str = "id, title, kind, source, url, excerpt, tags_json,
+    created_at, favorite, preview, asset_path, original_path,
+    mime_type, size_bytes, content, origin_json, context_override";
+// The shelf shows titles, covers and tags. Bodies and edited context are read
+// by ID when the user opens, copies or edits a reference.
+const SHELF_COLUMNS: &str = "id, title, kind, source, url, excerpt, tags_json,
+    created_at, favorite, preview, asset_path, original_path,
+    mime_type, size_bytes, NULL, origin_json, NULL";
+
+fn read_all(connection: &Connection, columns: &str) -> Result<Vec<StashItem>, String> {
     note_files::synchronize(connection)?;
     let mut statement = connection
-        .prepare(
-            "SELECT id, title, kind, source, url, excerpt, tags_json,
-                    created_at, favorite, preview, asset_path, original_path,
-                    mime_type, size_bytes, content, origin_json, context_override
-             FROM stash_items
-             ORDER BY created_at DESC",
-        )
+        .prepare(&format!(
+            "SELECT {columns} FROM stash_items ORDER BY created_at DESC"
+        ))
         .map_err(|error| error.to_string())?;
-
-    let rows = statement
+    let mut items = statement
         .query_map([], row_to_item)
-        .map_err(|error| error.to_string())?;
-
-    let mut items = rows
+        .map_err(|error| error.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
     crate::web_preview::annotate(connection, &mut items).map_err(|error| error.to_string())?;
     Ok(items)
+}
+
+/// Every field, including bodies. Internal use and tests.
+fn read_items(connection: &Connection) -> Result<Vec<StashItem>, String> {
+    read_all(connection, ITEM_COLUMNS)
+}
+
+/// The library as the shelf shows it: no bodies or edited context.
+fn read_shelf(connection: &Connection) -> Result<Vec<StashItem>, String> {
+    read_all(connection, SHELF_COLUMNS)
+}
+
+/// The listed references that still exist, in the given order. `full` adds
+/// bodies and edited context after refreshing changed original files.
+fn read_by_id(
+    connection: &Connection,
+    assets: &Path,
+    ids: &[String],
+    full: bool,
+) -> Result<Vec<StashItem>, String> {
+    if ids.len() > 500 {
+        return Err("Read at most 500 references at a time.".into());
+    }
+    if full {
+        note_files::synchronize(connection)?;
+    }
+    let columns = if full { ITEM_COLUMNS } else { SHELF_COLUMNS };
+    let mut query = connection
+        .prepare(&format!("SELECT {columns} FROM stash_items WHERE id = ?1"))
+        .map_err(|e| e.to_string())?;
+    let mut items = Vec::new();
+    for id in ids {
+        if full {
+            // A changed original refreshes its backup and derived text first.
+            let has_original: bool = connection
+                .query_row("SELECT original_path IS NOT NULL AND asset_path IS NOT NULL FROM stash_items WHERE id=?1", [id], |row| row.get(0))
+                .optional()
+                .map_err(|e| e.to_string())?
+                .unwrap_or(false);
+            if has_original {
+                let _ = originals::synchronize(connection, assets, id);
+            }
+        }
+        if let Some(item) = query
+            .query_row([id], row_to_item)
+            .optional()
+            .map_err(|e| e.to_string())?
+        {
+            items.push(item);
+        }
+    }
+    crate::web_preview::annotate(connection, &mut items).map_err(|error| error.to_string())?;
+    Ok(items)
+}
+
+pub fn get_items(
+    ids: Vec<String>,
+    full: bool,
+    state: &LibraryState,
+) -> Result<Vec<StashItem>, String> {
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|_| "The local library is busy.".to_string())?;
+    read_by_id(&connection, &state.assets_dir, &ids, full)
 }
 
 #[cfg(test)]
@@ -764,7 +831,7 @@ pub fn list_items(state: &LibraryState) -> Result<Vec<StashItem>, String> {
         .connection
         .lock()
         .map_err(|_| "The local library is busy.".to_string())?;
-    read_items(&connection)
+    read_shelf(&connection)
 }
 
 fn update_favorite(connection: &Connection, id: &str, favorite: bool) -> Result<(), String> {
@@ -872,7 +939,7 @@ pub fn edit_item(
         edit_cover(&transaction, &state.assets_dir, &id, cover)?;
     }
     transaction.commit().map_err(|e| e.to_string())?;
-    read_items(&connection)
+    read_shelf(&connection)
 }
 
 #[derive(serde::Deserialize)]
@@ -974,7 +1041,7 @@ pub fn edit_item_content(
         .map_err(|e| e.to_string())?;
     edit_content(&transaction, &id, &content)?;
     transaction.commit().map_err(|e| e.to_string())?;
-    read_items(&connection)
+    read_shelf(&connection)
 }
 
 fn change_tag(
@@ -996,7 +1063,7 @@ fn change_tag(
     let transaction = connection
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
-    for item in read_items(&transaction)? {
+    for item in read_shelf(&transaction)? {
         if !item
             .tags
             .iter()
@@ -1074,7 +1141,7 @@ fn pin_tag(connection: &mut Connection, name: &str, pinned: bool) -> Result<Vec<
     let transaction = connection
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
-    let canonical = read_items(&transaction)?
+    let canonical = read_shelf(&transaction)?
         .into_iter()
         .flat_map(|item| item.tags)
         .find(|tag| tag.to_lowercase() == name.to_lowercase());
@@ -1121,7 +1188,7 @@ pub fn change_library_tag(
         .lock()
         .map_err(|_| "The local library is busy.".to_string())?;
     change_tag(&mut connection, &name, replacement.as_deref())?;
-    read_items(&connection)
+    read_shelf(&connection)
 }
 
 fn file_kind(path: &Path) -> (&'static str, &'static str) {
@@ -1324,7 +1391,8 @@ mod tests {
     use super::{
         backfill_text_content, canonicalize_web_url, copy_file_to_library, delete_item_by_id,
         file_kind, format_size, import_extension_items, initialize_schema, json_response,
-        prepare_file_imports, read_items, search, update_favorite, upsert_item, StashItem,
+        prepare_file_imports, read_by_id, read_items, read_shelf, search, update_favorite,
+        upsert_item, StashItem,
     };
     use rusqlite::{params, Connection};
     use std::{fs, path::Path};
@@ -1339,6 +1407,53 @@ mod tests {
         .expect("reference fixture")
     }
 
+    #[test]
+    fn the_shelf_omits_bodies_and_reads_them_by_id_on_demand() {
+        let root = std::env::temp_dir().join(format!("stashdock-shelf-{}", Uuid::new_v4()));
+        let assets = root.join("assets");
+        fs::create_dir_all(&assets).unwrap();
+        let connection = Connection::open_in_memory().unwrap();
+        initialize_schema(&connection).unwrap();
+        for (id, created) in [("a", "2026-01-02T00:00:00Z"), ("b", "2026-01-01T00:00:00Z")] {
+            connection.execute("INSERT INTO stash_items(id,title,kind,source,excerpt,tags_json,created_at,content,context_override,updated_at) VALUES(?1,?1,'web','example.org','Short','[\"Tag\"]',?2,'Long body','My context','now')", params![id, created]).unwrap();
+        }
+        let shelf = read_shelf(&connection).unwrap();
+        assert_eq!(
+            shelf
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+        assert!(shelf
+            .iter()
+            .all(|item| item.content.is_none() && item.context_override.is_none()));
+        assert_eq!(
+            (shelf[0].excerpt.as_str(), shelf[0].tags.clone()),
+            ("Short", vec!["Tag".to_string()])
+        );
+        let ids = vec!["b".to_string(), "missing".to_string(), "a".to_string()];
+        let compact = read_by_id(&connection, &assets, &ids, false).unwrap();
+        assert_eq!(
+            compact
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["b", "a"],
+            "missing references are left out, order kept"
+        );
+        assert!(compact[0].content.is_none());
+        let full = read_by_id(&connection, &assets, &ids, true).unwrap();
+        assert_eq!(
+            (
+                full[0].content.as_deref(),
+                full[0].context_override.as_deref()
+            ),
+            (Some("Long body"), Some("My context"))
+        );
+        assert!(read_by_id(&connection, &assets, &vec!["a".to_string(); 501], false).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn file_import_tags_validate_before_copy_and_survive_storage() {
         let root = std::env::temp_dir().join(format!("stashdock-file-tags-{}", Uuid::new_v4()));

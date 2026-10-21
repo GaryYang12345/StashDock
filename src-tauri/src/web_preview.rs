@@ -15,6 +15,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub struct WebPreviewWorker {
     stop: Arc<AtomicBool>,
+    database_path: PathBuf,
+    owner: String,
 }
 impl Drop for WebPreviewWorker {
     fn drop(&mut self) {
@@ -25,6 +27,41 @@ pub fn stop(app: &AppHandle) {
     if let Some(worker) = app.try_state::<WebPreviewWorker>() {
         worker.stop.store(true, Ordering::Relaxed);
     }
+}
+/// On app exit: stop, hand unfinished screenshots back to the queue without
+/// spending an attempt, and release the lease so another StashDock entry point
+/// (such as the AI plugin) can continue at once instead of after it expires.
+pub fn shutdown(app: &AppHandle) {
+    stop(app);
+    if let Some(worker) = app.try_state::<WebPreviewWorker>() {
+        if let Ok(db) = Connection::open(&worker.database_path) {
+            let _ = db.busy_timeout(Duration::from_millis(500));
+            let _ = release(&db, &worker.owner);
+        }
+    }
+}
+/// Return this owner's in-flight jobs to the queue (an interrupted attempt is
+/// not a failed one) and drop its lease. Jobs whose deadline already passed
+/// belong to crash recovery in `next_job`.
+fn release(db: &Connection, owner: &str) -> rusqlite::Result<()> {
+    let tx = rusqlite::Transaction::new_unchecked(db, rusqlite::TransactionBehavior::Immediate)?;
+    let owned = tx
+        .query_row(
+            "SELECT 1 FROM app_meta WHERE key='web_preview_worker_owner' AND value=?1",
+            [owner],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if owned {
+        tx.execute("UPDATE web_preview_jobs SET status='queued',attempts=MAX(attempts-1,0),retry_at=0 WHERE status='working' AND retry_at>?1", [timestamp()])?;
+        tx.execute("DELETE FROM app_meta WHERE key IN ('web_preview_worker_until','web_preview_worker_owner')", [])?;
+    }
+    tx.commit()
+}
+/// Which references changed, so the shelf re-reads only those.
+fn changed(app: &AppHandle, id: &str) {
+    let _ = app.emit("reference-preview-updated", json!({ "ids": [id] }));
 }
 fn timestamp() -> i64 {
     SystemTime::now()
@@ -332,8 +369,12 @@ fn enrich(db: &mut Connection, job: &Job, stop: &AtomicBool, changed: &impl Fn()
 }
 pub fn start(app: AppHandle, database_path: PathBuf) {
     let stop = Arc::new(AtomicBool::new(false));
-    app.manage(WebPreviewWorker { stop: stop.clone() });
     let owner = format!("desktop:{}:{}", std::process::id(), uuid::Uuid::new_v4());
+    app.manage(WebPreviewWorker {
+        stop: stop.clone(),
+        database_path: database_path.clone(),
+        owner: owner.clone(),
+    });
     let content_app = app.clone();
     crate::web_content::start(
         database_path.clone(),
@@ -382,13 +423,11 @@ pub fn start(app: AppHandle, database_path: PathBuf) {
                     version.is_none() || version != empty_version || Instant::now() >= next_scan;
                 match if scan { next_job(&db) } else { Ok(None) } {
                     Ok(Some(job)) if claim(&db, &job).is_ok() => {
-                        let _ = app.emit("reference-preview-updated", ());
-                        let success = enrich(&mut db, &job, &stop, &|| {
-                            let _ = app.emit("reference-preview-updated", ());
-                        });
+                        changed(&app, &job.id);
+                        let success = enrich(&mut db, &job, &stop, &|| changed(&app, &job.id));
                         if !stop.load(Ordering::Relaxed) {
                             let _ = finish(&db, &job, success);
-                            let _ = app.emit("reference-preview-updated", ());
+                            changed(&app, &job.id);
                         }
                     }
                     _ => {
@@ -405,7 +444,7 @@ pub fn start(app: AppHandle, database_path: PathBuf) {
                     }
                 }
             }
-            let _ = db.execute("DELETE FROM app_meta WHERE key IN ('web_preview_worker_until','web_preview_worker_owner') AND EXISTS (SELECT 1 FROM app_meta WHERE key='web_preview_worker_owner' AND value=?1)", [&owner]);
+            let _ = release(&db, &owner);
         });
     }
 }
@@ -444,6 +483,46 @@ mod tests {
         schema(&db).unwrap();
         db.execute("INSERT INTO stash_items(id,title,kind,source,url,excerpt,created_at,updated_at,tags_json,favorite,content,context_override,origin_json) VALUES('one','User title','web','example.org','https://example.org/','Kept', '2026-10-11','original','[\"My tag\"]',1,'Original content','My AI context','{\"platform\":\"Chrome\",\"faviconUrl\":\"https://example.org/icon.png\"}')", []).unwrap();
         db
+    }
+    #[test]
+    fn quitting_returns_unfinished_work_without_spending_an_attempt() {
+        let db = database();
+        assert!(heartbeat(&db, "me").unwrap());
+        let job = next_job(&db).unwrap().unwrap();
+        claim(&db, &job).unwrap();
+        db.execute("UPDATE web_preview_jobs SET attempts=2 WHERE id='one'", [])
+            .unwrap();
+        // Another owner's release changes nothing.
+        release(&db, "someone else").unwrap();
+        assert_eq!(
+            db.query_row("SELECT status FROM web_preview_jobs", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "working"
+        );
+        release(&db, "me").unwrap();
+        let (status, attempts): (String, i64) = db
+            .query_row("SELECT status,attempts FROM web_preview_jobs", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((status.as_str(), attempts), ("queued", 1));
+        assert!(
+            db.query_row(
+                "SELECT 1 FROM app_meta WHERE key='web_preview_worker_owner'",
+                [],
+                |_| Ok(())
+            )
+            .optional()
+            .unwrap()
+            .is_none(),
+            "the lease is free for another entry point"
+        );
+        assert_eq!(
+            next_job(&db).unwrap().unwrap().id,
+            "one",
+            "the screenshot is retried on next start"
+        );
     }
     #[test]
     fn external_observer_coalesces_writes_and_detects_expiry_without_writer_locks() {

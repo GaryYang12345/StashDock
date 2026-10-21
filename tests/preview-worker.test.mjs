@@ -42,6 +42,21 @@ test('expired tasks leave loading and stale first-attempt results cannot overwri
   } finally { queue.close();db.close();library.close();rmSync(dir,{recursive:true,force:true}); }
 });
 
+test('closing hands an unfinished screenshot back without spending an attempt (same rule as Desktop)', async () => {
+  const dir=mkdtempSync(join(tmpdir(),'stashdock-quit-'));
+  const library=createLocalLibrary({dataDir:dir}); const time=100;
+  const queue=previewQueue(dir,{owner:'quitting',now:()=>time}), db=new DatabaseSync(join(dir,'stashdock.sqlite3'));
+  try {
+    library.importItems([{title:'Interrupted',kind:'web',url:'https://example.org/',source:'S',tags:[]}]);
+    queue.renew(); const job=queue.claim(); assert.equal(job.attempts,1);
+    queue.close();
+    assert.deepEqual({...db.prepare('SELECT status,attempts FROM web_preview_jobs').get()},{status:'queued',attempts:0});
+    assert.equal(db.prepare("SELECT count(*) AS n FROM app_meta WHERE key='web_preview_worker_owner'").get().n,0);
+    const next=previewQueue(dir,{owner:'next',now:()=>time});
+    try { next.renew(); assert.equal(next.claim().attempts,1,'the next owner retries it as a first attempt'); } finally { next.close(); }
+  } finally { db.close();library.close();rmSync(dir,{recursive:true,force:true}); }
+});
+
 test('existing screenshots still receive favicon enrichment without rendering again', async t => {
   const dir=mkdtempSync(join(tmpdir(),'stashdock-icon-'));
   const library=createLocalLibrary({dataDir:dir});

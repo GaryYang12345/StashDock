@@ -153,7 +153,7 @@ export const zh = {
   'Remove “{title}” from StashDock.': '从 StashDock 中删除“{title}”。', 'Delete failed': '删除失败', 'Keep reference': '保留收藏', 'Delete reference': '删除收藏',
   'Minimize to folder': '收起为悬浮窗', 'Maximize window': '最大化', 'Restore window': '还原窗口', 'Hide StashDock': '隐藏 StashDock',
   'Close dialog': '关闭弹窗',
-  'Edit card': '编辑卡片', 'Edit content': '编辑内容', 'Rename tag': '重命名标签', 'Remove tag': '移除标签',
+  'Edit card': '编辑卡片', 'Edit content': '编辑内容', 'This reference no longer exists.': '这条收藏已不存在。', 'Rename tag': '重命名标签', 'Remove tag': '移除标签',
   'Pin tag': '置顶标签', 'Unpin tag': '取消置顶', 'Actions for tag {name}': '标签“{name}”的操作',
   'Copy for AI': '复制给 AI', 'Copy': '复制', 'Copied': '已复制', 'Select all': '全选',
   'Select all matching references': '选择所有匹配的收藏', 'Selected references': '已选收藏', '{count} selected': '已选 {count} 项',

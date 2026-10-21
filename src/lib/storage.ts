@@ -50,6 +50,11 @@ export async function saveItems(items: StashItem[]) {
   await invoke("save_items", { items });
 }
 
+/** Desktop shelf rows omit bodies; read a few references by ID (with bodies when `full`). */
+export function getItems(ids: string[], full = false): Promise<StashItem[]> {
+  return invoke<StashItem[]>('get_items', { ids, full });
+}
+
 export async function deleteItem(id: string) {
   if (!isTauri()) return;
   await invoke("delete_item", { id });

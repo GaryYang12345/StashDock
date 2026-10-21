@@ -120,6 +120,7 @@ pub fn run() {
             library::commands::initialize_library,
             library::commands::save_items,
             library::commands::list_items,
+            library::commands::get_items,
             library::commands::set_item_favorite,
             library::commands::edit_item,
             library::commands::edit_item_content,
@@ -201,7 +202,7 @@ pub fn run() {
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 desktop_windows::persist_now(app);
-                web_preview::stop(app);
+                web_preview::shutdown(app);
             }
         });
 }
