@@ -21,10 +21,11 @@ const probes = {
   })()`,
 };
 import { existsSync, readFileSync } from 'node:fs';
-const probeFile = join(outputDirectory, 'probe.txt');
-const probe = option('probe') ?? (existsSync(probeFile) ? readFileSync(probeFile, 'utf8').trim() : undefined);
+
 const outputDirectory = resolve(option('out', 'output/claude-review'));
 await mkdir(outputDirectory, { recursive: true });
+const probeFile = join(outputDirectory, 'probe.txt');
+const probe = option('probe') ?? (existsSync(probeFile) ? readFileSync(probeFile, 'utf8').trim() : undefined);
 
 async function status(url) {
   try { const response = await fetch(url, { signal: AbortSignal.timeout(3000) }); return response.status; }
