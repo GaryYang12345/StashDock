@@ -47,7 +47,11 @@ for (const [index, page] of pages.entries()) {
   await new Promise(done => setTimeout(done, seconds * 1000));
   const state = await devtools.send('Runtime.evaluate', { returnByValue: true, expression: `({ href: location.href, readyState: document.readyState, title: document.title,
     rootChildren: document.querySelector('#root')?.children.length ?? null, size: [innerWidth, innerHeight], visibility: document.visibilityState,
-    text: (document.body?.innerText || '').slice(0, 400) })` });
+    text: (document.body?.innerText || '').slice(0, 400),
+    navigation: (({ startTime, domInteractive, domContentLoadedEventEnd, loadEventEnd }) => ({ domInteractive, domContentLoadedEventEnd, loadEventEnd }))(performance.getEntriesByType('navigation')[0] || {}),
+    resources: performance.getEntriesByType('resource').length,
+    lastResourceEnd: Math.round(Math.max(0, ...performance.getEntriesByType('resource').map(entry => entry.responseEnd))),
+    slowest: performance.getEntriesByType('resource').sort((a, b) => b.duration - a.duration).slice(0, 8).map(entry => [Math.round(entry.startTime), Math.round(entry.duration), entry.name.replace(location.origin, '').slice(0, 90)]) })` });
   console.log(`\n# Page ${index}: ${page.title} ${page.url}`);
   console.log(JSON.stringify(state.result?.result?.value ?? state, null, 1));
   for (const event of devtools.events) {
