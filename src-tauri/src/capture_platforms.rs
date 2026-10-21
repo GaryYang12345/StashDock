@@ -1,7 +1,7 @@
 use crate::library::LibraryState;
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::AppHandle;
 
 const KEY: &str = "capture_platforms_v1";
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,24 +54,23 @@ fn read(connection: &rusqlite::Connection) -> Result<Vec<CapturePlatform>, Strin
         .map(|v| serde_json::from_str(&v).map_err(|_| "Saved platforms could not be read.".into()))
         .unwrap_or(Ok(vec![]))
 }
+// Window commands only schedule work: the shared connection may be held by an
+// import, so locking it on the UI thread would freeze the window.
 #[tauri::command]
-pub fn list_capture_platforms(state: State<LibraryState>) -> Result<Vec<CapturePlatform>, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|_| "The library is busy.")?;
-    read(&connection)
+pub async fn list_capture_platforms(app: AppHandle) -> Result<Vec<CapturePlatform>, String> {
+    crate::library::commands::run(app, |state| {
+        let connection = state.connection.lock().map_err(|_| "The library is busy.")?;
+        read(&connection)
+    })
+    .await
 }
 #[tauri::command]
-pub fn save_capture_platform(
-    state: State<LibraryState>,
-    url: String,
-) -> Result<Vec<CapturePlatform>, String> {
+pub async fn save_capture_platform(app: AppHandle, url: String) -> Result<Vec<CapturePlatform>, String> {
     let platform = normalize(&url)?;
-    let mut connection = state
-        .connection
-        .lock()
-        .map_err(|_| "The library is busy.")?;
+    crate::library::commands::run(app, move |state| save(state, platform)).await
+}
+fn save(state: &LibraryState, platform: CapturePlatform) -> Result<Vec<CapturePlatform>, String> {
+    let mut connection = state.connection.lock().map_err(|_| "The library is busy.")?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;

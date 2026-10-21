@@ -3,6 +3,7 @@ mod browser_capture;
 pub mod commands;
 mod context;
 pub mod file_payload;
+mod legacy;
 mod note_files;
 mod search;
 #[cfg(test)]
@@ -76,6 +77,8 @@ impl LibraryState {
         let database_path = root.join("stashdock.sqlite3");
         let connection = Connection::open(&database_path)?;
         initialize_schema(&connection)?;
+        legacy::remove_untouched_demo_references(&connection, &assets_dir)
+            .map_err(std::io::Error::other)?;
         backfill_text_content(&connection).map_err(std::io::Error::other)?;
         note_files::synchronize(&connection).map_err(std::io::Error::other)?;
         let executable = std::env::current_exe()?;

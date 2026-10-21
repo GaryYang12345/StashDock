@@ -2,7 +2,7 @@
 //! The reservation bounds blocking workers and retained command payloads.
 use super::*;
 static WORK: crate::blocking_work::WorkLimit = crate::blocking_work::WorkLimit::new(4);
-async fn run<T: Send + 'static>(
+pub(crate) async fn run<T: Send + 'static>(
     app: AppHandle,
     task: impl FnOnce(&LibraryState) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
