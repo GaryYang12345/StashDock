@@ -104,7 +104,8 @@ export function packagedPreviewService(htmlUrl, dataDir) {
   const root = resolve(fileURLToPath(new URL('..', htmlUrl)));
   const helper = join(root, 'bin', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'stashdock-preview.exe' : 'stashdock-preview');
   const captures = createPreviewSessionPool(helper, 2);
-  const readers = createPreviewSessionPool(helper, 4);
+  // Matches IMPORT_READERS in src/lib/linkImport.ts; each reader is a short-lived text-only helper.
+  const readers = createPreviewSessionPool(helper, 8);
   const cache = createPreviewCache(async (url, signal) => {
     if (!existsSync(helper)) throw Error('The document renderer is unavailable. Repair the StashDock plugin.');
     const result = await runPreviewHelper(helper, { url, lookup: true, dataDir: dataDir ? resolveLibraryDirectory(dataDir) : dataDir }, signal, { timeout: 95_000 });

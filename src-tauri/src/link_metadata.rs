@@ -273,8 +273,11 @@ pub fn fetch_content(value: &str) -> Result<LinkPreview, String> {
     if url.path().to_ascii_lowercase().ends_with(".pdf") {
         return Ok(pdf_link(&url));
     }
+    // Link context is a supplement the receiving AI can extend from the URL, so
+    // a slow site must not hold an import: measured imports lost one success in
+    // sixty at ten seconds while the slowest reads took the full old 18 seconds.
     let response =
-        crate::public_web::fetch_context_document(value, Instant::now() + Duration::from_secs(18))?;
+        crate::public_web::fetch_context_document(value, Instant::now() + Duration::from_secs(10))?;
     if response.content_type.contains("application/pdf") || response.bytes.starts_with(b"%PDF-") {
         return Ok(pdf_link(&response.url));
     }

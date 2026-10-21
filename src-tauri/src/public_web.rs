@@ -178,7 +178,7 @@ pub fn resolve_public(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> 
         // resolver threads if the system resolver itself stalls.
         if RESOLVING
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
-                (count < 4).then_some(count + 1)
+                (count < 16).then_some(count + 1)
             })
             .is_err()
         {

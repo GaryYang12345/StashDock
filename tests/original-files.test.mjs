@@ -10,16 +10,15 @@ import { fingerprint, synchronizeOriginal } from '../plugins/stashdock/server/or
 // Same scenarios as src-tauri/src/library/originals.rs.
 function fixture(t, text = 'alpha', fingerprinted = true) {
   const root = mkdtempSync(join(tmpdir(), 'stashdock-originals-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
   const library = createLocalLibrary({ dataDir: root });
-  t.after(() => library.close());
   const assets = join(root, 'assets');
   mkdirSync(join(assets, 'item'), { recursive: true });
   const original = join(root, 'Notes.md'), managed = join(assets, 'item', 'Notes.md');
   writeFileSync(original, text); writeFileSync(managed, text);
   utimesSync(original, 1000, 1000); utimesSync(managed, 1000, 1000);
   const db = new DatabaseSync(join(root, 'stashdock.sqlite3'));
-  t.after(() => db.close());
+  // Windows cannot remove a folder while SQLite holds files in it: close first.
+  t.after(() => { db.close(); library.close(); rmSync(root, { recursive: true, force: true }); });
   db.prepare(`INSERT INTO stash_items(id,title,kind,source,excerpt,tags_json,created_at,asset_path,original_path,mime_type,size_bytes,content,origin_json,updated_at)
     VALUES('item','Notes.md','file','Local file','','[]','now',?,?,'text/markdown',?,?,?,'now')`)
     .run(managed, original, text.length, text, JSON.stringify(fingerprinted ? { originalFingerprint: fingerprint(original) } : {}));
@@ -95,7 +94,6 @@ test('MCP system-dialog imports reference the original, keep only tokens in the 
   const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
   const { createServer } = await import('../plugins/stashdock/server/create-server.mjs');
   const root = mkdtempSync(join(tmpdir(), 'stashdock-chosen-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
   const plan = join(root, 'Plan.md'), paper = join(root, 'Paper.pdf');
   writeFileSync(plan, '# Plan\nShip it'); writeFileSync(paper, '%PDF-1.7 bytes');
   const server = createServer({ dataDir: join(root, 'library'), htmlUrl: new URL('../plugins/stashdock/web/shelf.html', import.meta.url),
@@ -103,7 +101,7 @@ test('MCP system-dialog imports reference the original, keep only tokens in the 
   const client = new Client({ name: 'chosen files test', version: '1' });
   const [left, right] = InMemoryTransport.createLinkedPair();
   await server.connect(left); await client.connect(right);
-  t.after(() => client.close());
+  t.after(async () => { await client.close(); await server.close(); rmSync(root, { recursive: true, force: true }); });
   const chosen = (await client.callTool({ name: 'choose_stashdock_files', arguments: {} }))._meta.files;
   assert.deepEqual(chosen.map(file => [file.name, file.content, file.mimeType]), [['Plan.md', '# Plan\nShip it', 'text/markdown'], ['Paper.pdf', '', 'application/pdf']]);
   assert.ok(chosen.every(file => !JSON.stringify(file).includes(root)), 'the App never receives a path');
@@ -123,13 +121,11 @@ test('MCP system-dialog imports reference the original, keep only tokens in the 
 
 test('notes record their file fingerprint so unchanged notes are not read again, and edits are still seen', t => {
   const root = mkdtempSync(join(tmpdir(), 'stashdock-note-fingerprint-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
   const library = createLocalLibrary({ dataDir: root });
-  t.after(() => library.close());
   const note = library.saveContextReference({ title: 'Rules', content: 'First body', tags: [] }).item;
   library.readItems([note.id]);
   const db = new DatabaseSync(join(root, 'stashdock.sqlite3'));
-  t.after(() => db.close());
+  t.after(() => { db.close(); library.close(); rmSync(root, { recursive: true, force: true }); });
   const origin = () => JSON.parse(db.prepare('SELECT origin_json FROM stash_items WHERE id=?').get(note.id).origin_json);
   assert.deepEqual(origin().fileFingerprint, fingerprint(note.assetPath));
   // A passive read with an unchanged fingerprint needs no writer: it succeeds while another connection holds one.

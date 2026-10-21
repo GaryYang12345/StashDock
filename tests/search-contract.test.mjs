@@ -88,7 +88,8 @@ test('Desktop shows the same immediate in-memory result as its index, so results
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
   const { build } = createRequire(require.resolve('vite/package.json'))('esbuild');
-  const root = new URL('..', import.meta.url).pathname;
+  const { fileURLToPath } = await import('node:url');
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const result = await build({ stdin: { contents: "export * from './src/features/library/selectors';", resolveDir: root, loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'neutral', logLevel: 'silent' });
   const module = { exports: {} };
   new Function('module', 'exports', result.outputFiles[0].text)(module, module.exports);

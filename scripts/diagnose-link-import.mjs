@@ -16,7 +16,7 @@ import { createPreviewSession, createPreviewSessionPool } from '../plugins/stash
 const option = (name, fallback) => { const index = process.argv.indexOf(`--${name}`); return index > 0 ? process.argv[index + 1] : fallback; };
 const helper = resolve(option('helper', ['plugins/stashdock/bin/win32-x64/stashdock-preview.exe', 'src-tauri/target/release/stashdock-preview.exe'].find(existsSync) || ''));
 if (!existsSync(helper)) throw Error('Build the helper first: npm run preview:helper');
-const limit = Number(option('limit', 40)), screenshotLimit = Number(option('screenshots', 12)), readerCount = Number(option('readers', 4));
+const limit = Number(option('limit', 40)), screenshotLimit = Number(option('screenshots', 12)), readerCount = Number(option('readers', 8));
 const outputDirectory = resolve(option('out', 'output/diagnose-link-import'));
 await mkdir(outputDirectory, { recursive: true });
 
@@ -65,7 +65,7 @@ try {
   report.bookmarksRead = bookmarks.length;
   console.log(`Testing ${urls.length} bookmarks from ${chosen}…`);
 
-  // Text lane: concurrent readers, four by default as Desktop and MCP imports use.
+  // Text lane: concurrent readers, eight by default as Desktop and MCP imports use.
   const readers = createPreviewSessionPool(helper, readerCount);
   const text = [];
   let next = 0;

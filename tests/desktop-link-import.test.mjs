@@ -98,12 +98,19 @@ test('import preparation is bounded, ordered, monotonic and settles unavailable 
   const items=makeBrowserLinks(Array.from({length:6},(_,i)=>({title:`Saved ${i}`,url:`https://example.org/${i}`,folderPath:[]})),source);
   let active=0,peak=0;const progress=[];
   const result=await prepareImportedLinks(items,async url=>{active++;peak=Math.max(peak,active);try{await new Promise(r=>setTimeout(r,url.endsWith('/0')?15:1));if(url.endsWith('/2'))throw Error('Unavailable');return {title:'Detected title',content:`Body ${url}`};}finally{active--;}},value=>progress.push(value));
-  assert.equal(peak,4);assert.deepEqual(progress,[0,1,2,3,4,5,6]);
+  assert.equal(peak,2,'one website gets at most two readers');assert.deepEqual(progress,[0,1,2,3,4,5,6]);
   assert.deepEqual(result.map(item=>item.id),items.map(item=>item.id));
   assert.equal(result[0].title,'Saved 0');assert.match(result[0].content,/Body/);
   assert.equal(result[2].content,undefined);
   for(const item of result){assert.equal(item.origin.contentSettled,true);assert.equal(item.preview,undefined);assert.deepEqual(item.tags,['Chrome']);}
   assert.equal(items[0].origin.contentSettled,undefined,'Preparation must not mutate the selection');
+});
+
+test('different websites read eight at a time while one website keeps two',async()=>{
+  const items=makeBrowserLinks(Array.from({length:20},(_,i)=>({title:`Saved ${i}`,url:i<6?`https://same.example/${i}`:`https://site${i}.example/`,folderPath:[]})),source);
+  let active=0,peak=0;const perHost=new Map();let hostPeak=0;
+  const result=await prepareImportedLinks(items,async url=>{const host=new URL(url).hostname;active++;perHost.set(host,(perHost.get(host)||0)+1);peak=Math.max(peak,active);hostPeak=Math.max(hostPeak,perHost.get(host));try{await new Promise(r=>setTimeout(r,5));return {title:'T',content:'Body'};}finally{active--;perHost.set(host,perHost.get(host)-1);}},()=>{});
+  assert.equal(peak,8);assert.equal(hostPeak,2);assert.deepEqual(result.map(item=>item.id),items.map(item=>item.id));
 });
 
 test('leaving an import stops scheduling reads and never returns a partial batch for saving',async()=>{

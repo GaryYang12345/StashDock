@@ -26,10 +26,9 @@ if ($Steps -contains 'test') {
 if ($Steps -contains 'diagnose') {
   $installed = 'plugins\stashdock\bin\win32-x64\stashdock-preview.exe'
   $built = 'src-tauri\target\release\stashdock-preview.exe'
-  if (Test-Path $installed) { Run-Step 'diagnose-before' "node scripts/diagnose-link-import.mjs --helper $installed --source $Source --limit $Limit --screenshots $Screenshots --out `"$out\diag-before`"" }
+  if (Test-Path $installed) { Run-Step 'diagnose-before' "node scripts/diagnose-link-import.mjs --helper $installed --readers 4 --source $Source --limit $Limit --screenshots $Screenshots --out `"$out\diag-before`"" }
   Run-Step 'build-helper' 'npm run preview:helper'
   Run-Step 'diagnose-after' "node scripts/diagnose-link-import.mjs --helper $built --source $Source --limit $Limit --screenshots $Screenshots --out `"$out\diag-after`""
-  Run-Step 'diagnose-after-8' "node scripts/diagnose-link-import.mjs --helper $built --source $Source --limit $Limit --screenshots 0 --readers 8 --out `"$out\diag-after-8`""
 }
 $summary.finished = (Get-Date).ToString('o')
 $summary | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $out 'summary.json')
