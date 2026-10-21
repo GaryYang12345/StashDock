@@ -193,8 +193,11 @@ test('portable plugin stdio server starts independently from its shipped bundle'
     // The override seeds a new user anchor; it cannot fork an existing user's
     // library. Isolate the profile registration as well as the database.
     env: { ...process.env, STASHDOCK_DATA_DIR: dataDir, APPDATA: join(dataDir, 'profile'), XDG_DATA_HOME: join(dataDir, 'profile') }, stderr: 'pipe' });
+  let stderr = '';
+  transport.stderr?.on('data', chunk => { stderr += chunk; });
   try {
-    await client.connect(transport);
+    try { await client.connect(transport); }
+    catch (error) { await new Promise(resolve => setTimeout(resolve, 200)); throw Error(`${error.message}\nserver stderr:\n${stderr.slice(-2000)}`); }
     assert.ok((await client.listTools()).tools.some(tool => tool.name === 'open_stashdock'));
     const tools = (await client.listTools()).tools;
     assert.ok(!tools.some(tool => tool.name === 'get_stashdock_dock_url'));
