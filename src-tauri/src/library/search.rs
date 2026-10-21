@@ -45,11 +45,6 @@ pub(super) fn prepare_index(connection: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Re-derive every index row from `stash_items`.
-pub(super) fn rebuild_index(connection: &Connection) -> rusqlite::Result<()> {
-    connection.execute_batch(index_sql().1)
-}
-
 pub(super) fn search_terms(query: &str) -> Vec<String> {
     let mut terms: Vec<String> = Vec::new();
     for raw in query.to_lowercase().split_whitespace() {
