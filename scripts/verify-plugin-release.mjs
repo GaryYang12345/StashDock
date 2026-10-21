@@ -51,6 +51,8 @@ try {
   const shelf = await client.callTool({ name: 'list_stashdock_shelf', arguments: {} });
   assert.equal(shelf.isError, undefined);
   assert.equal(shelf.structuredContent.count, 0);
+  const found = await client.callTool({ name: 'search_stashdock', arguments: { query: '学习 ab' } });
+  assert.equal(found.isError, undefined, 'Packaged search index is unavailable');
   const page = await client.callTool({ name: 'preview_stashdock_link', arguments: { url: 'https://example.org/' } }, undefined, { timeout: 120_000 });
   assert.equal(page.isError, undefined, JSON.stringify(page.content));
   assert.ok(page._meta?.preview?.title, 'Packaged native lookup did not return a title');
