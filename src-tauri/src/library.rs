@@ -632,16 +632,55 @@ fn delete_items_by_id(connection: &mut Connection, ids: &[String]) -> Result<usi
         .transaction()
         .map_err(|error| error.to_string())?;
     let mut deleted = 0;
+    let mut backups = Vec::new();
     {
+        let mut asset = transaction
+            .prepare("SELECT asset_path FROM stash_items WHERE id = ?1 AND COALESCE(asset_path,'') != ''")
+            .map_err(|error| error.to_string())?;
         let mut items = transaction
             .prepare("DELETE FROM stash_items WHERE id = ?1")
             .map_err(|error| error.to_string())?;
         for id in ids.iter().collect::<HashSet<_>>() {
+            if let Some(path) = asset
+                .query_row([id], |row| row.get::<_, String>(0))
+                .optional()
+                .map_err(|error| error.to_string())?
+            {
+                backups.push(path);
+            }
             deleted += items.execute([id]).map_err(|error| error.to_string())?;
         }
+        // Another reference may share a backup (for example an old duplicate).
+        let mut shared = transaction
+            .prepare("SELECT 1 FROM stash_items WHERE asset_path = ?1 LIMIT 1")
+            .map_err(|error| error.to_string())?;
+        backups.retain(|path| !shared.exists([path]).unwrap_or(true));
     }
     transaction.commit().map_err(|error| error.to_string())?;
+    remove_backups(connection, &backups);
     Ok(deleted)
+}
+
+/// Deleting a reference removes StashDock's managed copy, never the user's
+/// original file. Only paths inside the library's assets folder are touched.
+fn remove_backups(connection: &Connection, paths: &[String]) {
+    let Some(assets) = connection
+        .path()
+        .filter(|path| !path.is_empty() && *path != ":memory:")
+        .and_then(|path| Path::new(path).parent().map(|root| root.join("assets")))
+    else {
+        return;
+    };
+    let Ok(root) = assets.canonicalize() else { return };
+    for raw in paths {
+        let Ok(path) = file_payload::managed_asset_path(&assets, raw) else { continue };
+        if fs::remove_file(&path).is_ok() {
+            // Desktop imports keep each backup in its own folder; drop it when empty.
+            if let Some(parent) = path.parent().filter(|parent| *parent != root.as_path()) {
+                let _ = fs::remove_dir(parent);
+            }
+        }
+    }
 }
 
 /// Ordered IDs matching every query term; see `library/search.rs`.
@@ -2159,6 +2198,40 @@ mod tests {
         assert_eq!(item.content.as_deref(), Some("# Local context"));
 
         fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn deleting_references_removes_only_their_library_backups() {
+        let root = std::env::temp_dir().join(format!("stashdock-delete-{}", Uuid::new_v4()));
+        let assets = root.join("assets");
+        fs::create_dir_all(assets.join("one")).unwrap();
+        let original = root.join("original.txt");
+        let backup = assets.join("one").join("original.txt");
+        let shared = assets.join("shared.txt");
+        let outside = root.join("outside.txt");
+        for path in [&original, &backup, &shared, &outside] {
+            fs::write(path, "x").unwrap();
+        }
+        let mut connection = Connection::open(root.join("stashdock.sqlite3")).unwrap();
+        initialize_schema(&connection).unwrap();
+        for (id, asset, original_path) in [
+            ("a", backup.to_string_lossy().into_owned(), Some(original.to_string_lossy().into_owned())),
+            ("b", shared.to_string_lossy().into_owned(), None),
+            ("c", shared.to_string_lossy().into_owned(), None),
+            ("d", outside.to_string_lossy().into_owned(), None),
+        ] {
+            connection.execute(
+                "INSERT INTO stash_items(id,title,kind,source,excerpt,tags_json,created_at,asset_path,original_path,updated_at) VALUES(?1,?1,'file','Local file','','[]','now',?2,?3,'now')",
+                params![id, asset, original_path],
+            ).unwrap();
+        }
+        assert_eq!(super::delete_items_by_id(&mut connection, &["a".into(), "b".into(), "d".into()]).unwrap(), 3);
+        assert!(!backup.exists() && !assets.join("one").exists(), "backup and its folder are removed");
+        assert!(original.exists(), "the user's original is never touched");
+        assert!(shared.exists(), "a backup still used by another reference stays");
+        assert!(outside.exists(), "paths outside the library are never deleted");
+        drop(connection);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

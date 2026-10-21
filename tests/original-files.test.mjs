@@ -75,3 +75,17 @@ test('an original of another type is ignored and a backup outside the library is
   f.db.prepare('UPDATE stash_items SET asset_path=?').run(join(f.root, 'elsewhere.md'));
   assert.throws(() => synchronizeOriginal(f.db, f.assets, 'item'));
 });
+
+test('deleting references removes only their library backups', t => {
+  const f = fixture(t);
+  const shared = join(f.assets, 'shared.txt'), outside = join(f.root, 'outside.txt');
+  writeFileSync(shared, 'x'); writeFileSync(outside, 'x');
+  const insert = f.db.prepare(`INSERT INTO stash_items(id,title,kind,source,excerpt,tags_json,created_at,asset_path,updated_at) VALUES(?,?,'file','Local file','','[]','now',?,'now')`);
+  insert.run('b', 'b', shared); insert.run('c', 'c', shared); insert.run('d', 'd', outside);
+  assert.deepEqual(f.library.removeMany(['item', 'b', 'd']), { deleted: 3 });
+  assert.throws(() => readFileSync(f.managed), /ENOENT/);
+  assert.throws(() => readFileSync(join(f.assets, 'item')), /ENOENT/, 'the empty backup folder is removed');
+  assert.equal(readFileSync(f.original, 'utf8'), 'alpha', "the user's original is never touched");
+  assert.equal(readFileSync(shared, 'utf8'), 'x', 'a backup still used by another reference stays');
+  assert.equal(readFileSync(outside, 'utf8'), 'x', 'paths outside the library are never deleted');
+});

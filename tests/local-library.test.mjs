@@ -43,7 +43,7 @@ test('SQLite core works with no desktop, preserves concurrent changes, and updat
     a.remove(item.id); assert.equal((await b.read()).length, 0);
   } finally { b.close(); a.close(); }
 });
-test('bulk deletion is atomic, idempotent and retains managed files', async t => {
+test('bulk deletion is atomic, idempotent and removes the deleted references\' library copies', async t => {
   const dataDir = temporary(t), library = createLocalLibrary({ dataDir });
   const db = new DatabaseSync(join(dataDir, 'stashdock.sqlite3'));
   try {
@@ -53,6 +53,7 @@ test('bulk deletion is atomic, idempotent and retains managed files', async t =>
     assert.throws(() => library.removeMany([a.id, b.id]), /test failure/);
     assert.equal((await library.read()).length, 2);
     assert.equal(db.prepare('SELECT count(*) AS n FROM stash_fts').get().n, 2);
+    assert.equal(readFileSync(a.assetPath, 'utf8'), 'original bytes', 'a rolled-back delete keeps the file');
     db.exec('DROP TRIGGER reject_bulk_delete');
     assert.throws(() => library.removeMany([a.id, '']), /valid references/);
     assert.equal((await library.read()).length, 2);
@@ -60,7 +61,7 @@ test('bulk deletion is atomic, idempotent and retains managed files', async t =>
     assert.deepEqual(library.removeMany([a.id, b.id]), { deleted: 0 });
     assert.equal((await library.read()).length, 0);
     assert.equal(db.prepare('SELECT count(*) AS n FROM stash_fts').get().n, 0);
-    assert.equal(readFileSync(a.assetPath, 'utf8'), 'original bytes');
+    assert.throws(() => readFileSync(a.assetPath), /ENOENT/);
   } finally { db.close(); library.close(); }
 });
 
@@ -91,7 +92,7 @@ test('imports are atomic, canonical duplicates are skipped, user paths are never
     assert.equal((await library.read()).length, 1);
   } finally { library.close(); }
 });
-test('file imports keep actual bytes and text, sanitize paths, and leave originals untouched', async t => {
+test('file imports keep actual bytes and text, sanitize paths, and deleting removes only the library copy', async t => {
   const dataDir = temporary(t), library = createLocalLibrary({ dataDir });
   try {
     const body = '# Full note\nNot just metadata.';
@@ -102,7 +103,7 @@ test('file imports keep actual bytes and text, sanitize paths, and leave origina
     assert.throws(() => library.importFiles([{ name: 'bad', base64: 'invalid!' }]), /invalid/);
     assert.throws(() => library.importFiles([{ name: 'large', base64: Buffer.alloc(5_000_001).toString('base64') }]), /5 MB/);
     assert.equal(readdirSync(join(dataDir, 'assets')).length, 1);
-    library.remove(item.id); assert.equal(readFileSync(item.assetPath, 'utf8'), body);
+    library.remove(item.id); assert.throws(() => readFileSync(item.assetPath), /ENOENT/);
   } finally { library.close(); }
 });
 test('App management tools are app-only writes; model search remains read-only', async t => {

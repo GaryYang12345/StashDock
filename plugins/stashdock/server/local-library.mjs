@@ -1,8 +1,8 @@
 // Shared on-disk library, independent of any desktop window or HTTP service.
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve, basename } from 'node:path';
+import { join, resolve, basename, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { openFilePath, resolveManagedFile } from './open-file.mjs';
 import { synchronizeOriginal } from './original-files.mjs';
@@ -333,13 +333,25 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   });
   const removeMany = ids => {
     if (!Array.isArray(ids) || !ids.length || ids.length > 10_000 || ids.some(id => typeof id !== 'string' || !id.trim() || id.length > 120)) throw new Error('Select between 1 and 10,000 valid references.');
-    return transaction(() => {
-    // Keep managed files recoverable. Never delete a user-supplied path.
-    const items = db.prepare('DELETE FROM stash_items WHERE id=?');
-    let deleted = 0;
-    for (const id of new Set(ids)) { deleted += items.run(id).changes; }
-    return { deleted };
+    const { deleted, backups } = transaction(() => {
+      const asset = db.prepare("SELECT asset_path FROM stash_items WHERE id=? AND COALESCE(asset_path,'')!=''");
+      const items = db.prepare('DELETE FROM stash_items WHERE id=?');
+      let deleted = 0; const backups = [];
+      for (const id of new Set(ids)) { const path = asset.get(id)?.asset_path; if (path) backups.push(path); deleted += items.run(id).changes; }
+      const shared = db.prepare('SELECT 1 FROM stash_items WHERE asset_path=? LIMIT 1');
+      return { deleted, backups: backups.filter(path => !shared.get(path)) };
     });
+    // Deleting a reference removes StashDock's managed copy, never the user's
+    // original file. Only paths inside the library's assets folder are touched.
+    for (const raw of backups) {
+      try {
+        const { path } = resolveManagedFile(raw, assets);
+        unlinkSync(path);
+        const parent = dirname(path);
+        if (parent !== realpathSync(assets)) try { rmdirSync(parent); } catch { /* Not empty. */ }
+      } catch { /* Already gone or outside the library. */ }
+    }
+    return { deleted };
   };
   const remove = id => ({ deleted: removeMany([id]).deleted > 0 });
   const importFiles = (files, selectedTags) => {
