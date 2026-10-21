@@ -16,6 +16,8 @@ export interface FileUploadProps {
   description?: string;
   /** Product composition: omit the redundant trailing label when the whole target is labelled Choose files. */
   showBrowse?: boolean;
+  /** Product composition: browse with a host file chooser (for example the system dialog) instead of the page's file input. Dropped files still use onChange. */
+  onBrowse?: () => void;
   multiple?: boolean;
   maxSize?: number;
   value?: FileUploadItem[];
@@ -114,6 +116,7 @@ export function FileUpload({
   label = "Upload files",
   description = "Drop files here or browse from your device.",
   showBrowse = true,
+  onBrowse,
   multiple = true,
   maxSize,
   value,
@@ -225,11 +228,15 @@ export function FileUpload({
     if (dragDepth.current === 0) setDragging(false);
   }
 
+  function browse() {
+    if (onBrowse) onBrowse(); else inputRef.current?.click();
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (disabled) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      inputRef.current?.click();
+      browse();
     }
   }
 
@@ -243,7 +250,7 @@ export function FileUpload({
       tabIndex={disabled ? -1 : 0}
       aria-disabled={disabled}
       aria-describedby={`${inputId}-description`}
-      onClick={() => !disabled && inputRef.current?.click()}
+      onClick={() => !disabled && browse()}
       onKeyDown={handleKeyDown}
       onDragEnter={handleDragEnter}
       onDragOver={event => event.preventDefault()}

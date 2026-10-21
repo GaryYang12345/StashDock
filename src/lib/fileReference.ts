@@ -1,6 +1,9 @@
 import type { StashItem } from '../types';
 
 export type FileReferencePayload = { name: string; mimeType: string; base64: string; title: string; content: string; preview?: string };
+/** A file chosen in the system dialog: saved as a reference to its original, identified by a short-lived token. */
+export type ChosenFile = { token: string; name: string; size: number; mimeType: string; content: string };
+export type ChosenFileDraft = { token: string; title: string; content: string; preview?: string };
 export const FILE_REFERENCE_LIMIT = 5_000_000;
 export function fileReferenceType(item: Pick<StashItem, 'kind' | 'title' | 'mimeType' | 'origin' | 'assetPath'>) {
   const name = item.origin?.fileName || item.assetPath || item.title;

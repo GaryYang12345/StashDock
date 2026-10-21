@@ -136,6 +136,8 @@ pub fn run() {
             preview_link,
             reference_cover::prepare_cover_image,
             library::commands::search_items,
+            library::commands::choose_reference_files,
+            library::commands::import_chosen_files,
             reference_drag::drag_reference_file,
             reference_clipboard::copy_reference_file,
             desktop_windows::desktop_window_status,

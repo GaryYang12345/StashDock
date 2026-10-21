@@ -1,11 +1,12 @@
 // Shared on-disk library, independent of any desktop window or HTTP service.
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, rmdirSync, rmSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, basename, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { openFilePath, resolveManagedFile } from './open-file.mjs';
 import { synchronizeOriginal } from './original-files.mjs';
+import { createChosenFiles } from './chosen-files.mjs';
 import { synchronizeNoteFiles } from './note-files.mjs';
 import { customCapturePlatform } from '../../../src/lib/captureSites.ts';
 import { canonicalReferenceUrl } from '../../../src/lib/reference-url.mjs';
@@ -184,7 +185,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     db.prepare(`INSERT INTO stash_items(id,title,kind,source,url,excerpt,tags_json,created_at,favorite,preview,asset_path,original_path,mime_type,size_bytes,content,origin_json,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, text(raw.title, 500), raw.kind, text(raw.source, 300) || 'StashDock', url,
         text(raw.excerpt, 2000), JSON.stringify(tags(raw.tags || [])), Number.isFinite(Date.parse(raw.createdAt)) ? raw.createdAt : now,
-        raw.favorite === true ? 1 : 0, raster(raw.preview), managed.assetPath || null, null, managed.mimeType || null,
+        raw.favorite === true ? 1 : 0, raster(raw.preview), managed.assetPath || null, managed.originalPath || null, managed.mimeType || null,
         managed.sizeBytes ?? null, (managed.assetPath || raw.kind === 'note') && typeof raw.content === 'string' ? raw.content : text(raw.content || (raw.kind === 'note' ? raw.excerpt : ''), 2_000_000) || null,
         JSON.stringify(origin), now);
     knownUrls?.set(url, { id, url });
@@ -354,6 +355,17 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     return { deleted };
   };
   const remove = id => ({ deleted: removeMany([id]).deleted > 0 });
+  const chosenFiles = createChosenFiles();
+  const importChosenFiles = (drafts, selectedTags) => {
+    const explicitTags = selectedTags === undefined ? undefined : tags(selectedTags);
+    const rows = chosenFiles.prepare(drafts, assets, raster);
+    try {
+      return transaction(() => rows.map(row => insert({ title: row.title, kind: row.kind, source: 'Local file', excerpt: row.excerpt,
+        tags: explicitTags ?? [row.kind === 'image' ? 'Image' : row.kind === 'pdf' ? 'PDF' : 'File'], content: row.content,
+        preview: row.preview ?? row.image, origin: { ...row.origin, ...(row.preview ? { previewKind: 'cover', previewSource: 'custom' } : {}) } },
+        { assetPath: row.backup, originalPath: row.original, mimeType: row.mimeType, sizeBytes: row.size }).item));
+    } catch (error) { for (const row of rows) rmSync(dirname(row.backup), { recursive: true, force: true }); throw error; }
+  };
   const importFiles = (files, selectedTags) => {
     const explicitTags = selectedTags === undefined ? undefined : tags(selectedTags);
     if (!Array.isArray(files) || !files.length || files.length > 10) throw new Error('Import 1 to 10 files at a time.');
@@ -398,6 +410,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     openFile: id => { get(id); return openFilePath(synchronizeOriginal(db, assets, id).open); },
     relocated: () => Boolean(db.prepare('SELECT value FROM app_meta WHERE key=?').get(LOCATION_KEY)),
     referenceCount: () => db.prepare('SELECT COUNT(*) AS count FROM stash_items').get().count,
+    describeChosenFiles: paths => chosenFiles.describe(paths), importChosenFiles,
     getCodexPreferences, saveCodexPreferences, integrations, registerInstallation,
     browserOriginAllowed: origin => registeredBrowserOrigin(readMeta, origin), desktopExecutable,
     ...browserCaptureStore(db, { insert }), listCapturePlatforms, saveCapturePlatform, saveContextReference, importItems, importFiles, setFavorite, setTags, applyTagChanges, editMetadata, defaultCover, editContext, changeTag, remove, removeMany, close: () => db.close() };

@@ -16,10 +16,10 @@ export function fingerprint(path) {
   catch { return null; }
 }
 const same = (a, b) => Boolean(a && b && a.size === b.size && a.modifiedMs === b.modifiedMs);
-const isTextMime = mime => mime.startsWith('text/') || ['application/json', 'application/xml', 'image/svg+xml'].includes(mime);
+export const isTextMime = mime => mime.startsWith('text/') || ['application/json', 'application/xml', 'image/svg+xml'].includes(mime);
 const inside = (root, path) => { const child = relative(root, path); return Boolean(child) && child !== '..' && !child.startsWith('..' + sep) && !isAbsolute(child); };
 
-function readText(path) {
+export function readText(path) {
   const descriptor = openSync(path, 'r');
   try {
     const buffer = Buffer.alloc(TEXT_BYTES);

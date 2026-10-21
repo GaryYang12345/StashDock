@@ -89,3 +89,34 @@ test('deleting references removes only their library backups', t => {
   assert.equal(readFileSync(shared, 'utf8'), 'x', 'a backup still used by another reference stays');
   assert.equal(readFileSync(outside, 'utf8'), 'x', 'paths outside the library are never deleted');
 });
+
+test('MCP system-dialog imports reference the original, keep only tokens in the App and follow later edits', async t => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+  const { createServer } = await import('../plugins/stashdock/server/create-server.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'stashdock-chosen-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const plan = join(root, 'Plan.md'), paper = join(root, 'Paper.pdf');
+  writeFileSync(plan, '# Plan\nShip it'); writeFileSync(paper, '%PDF-1.7 bytes');
+  const server = createServer({ dataDir: join(root, 'library'), htmlUrl: new URL('../plugins/stashdock/web/shelf.html', import.meta.url),
+    storageServices: { chooseFiles: async () => [plan, paper], close() {} } });
+  const client = new Client({ name: 'chosen files test', version: '1' });
+  const [left, right] = InMemoryTransport.createLinkedPair();
+  await server.connect(left); await client.connect(right);
+  t.after(() => client.close());
+  const chosen = (await client.callTool({ name: 'choose_stashdock_files', arguments: {} }))._meta.files;
+  assert.deepEqual(chosen.map(file => [file.name, file.content, file.mimeType]), [['Plan.md', '# Plan\nShip it', 'text/markdown'], ['Paper.pdf', '', 'application/pdf']]);
+  assert.ok(chosen.every(file => !JSON.stringify(file).includes(root)), 'the App never receives a path');
+  const saved = await client.callTool({ name: 'import_stashdock_chosen_files', arguments: { tags: ['Work'], files: [
+    { token: chosen[0].token, title: 'Plan', content: chosen[0].content }, { token: chosen[1].token, title: 'Paper', content: 'My summary' }] } });
+  assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
+  const [planItem, paperItem] = saved.structuredContent.items;
+  assert.deepEqual([planItem.kind, paperItem.kind, planItem.tags], ['file', 'pdf', ['Work']]);
+  writeFileSync(plan, '# Plan\nShip it on Friday'); utimesSync(plan, Date.now() / 1000 + 5, Date.now() / 1000 + 5);
+  const read = await client.callTool({ name: 'get_stashdock_items', arguments: { ids: [planItem.id, paperItem.id] } });
+  const text = JSON.stringify(read.structuredContent);
+  assert.match(text, /Ship it on Friday/, 'unedited text follows the original');
+  assert.match(text, /My summary/, 'user-written text is kept');
+  const bogus = await client.callTool({ name: 'import_stashdock_chosen_files', arguments: { files: [{ token: 'not-a-token', title: 'x', content: '' }] } });
+  assert.equal(bogus.isError, true);
+});

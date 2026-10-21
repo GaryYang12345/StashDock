@@ -3,10 +3,17 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { seedItems } from "../data/seed";
 import type { StashItem } from "../types";
 import { matchesSearchTerms, referenceSearchText, searchTerms } from "./reference-search.mjs";
-import type { FileReferencePayload } from './fileReference';
+import type { ChosenFile, ChosenFileDraft, FileReferencePayload } from './fileReference';
 
 export async function importReferenceFiles(files: FileReferencePayload[], tags: string[]): Promise<StashItem[]> {
   return invoke<StashItem[]>('import_file_payloads', { files, tags });
+}
+/** System file dialog: chosen files are saved as references to their originals. */
+export function chooseReferenceFiles(): Promise<ChosenFile[]> {
+  return invoke<ChosenFile[]>('choose_reference_files');
+}
+export function importChosenReferenceFiles(files: ChosenFileDraft[], tags: string[]): Promise<StashItem[]> {
+  return invoke<StashItem[]>('import_chosen_files', { files, tags });
 }
 
 const STORAGE_KEY = "stashdock.items.v1";

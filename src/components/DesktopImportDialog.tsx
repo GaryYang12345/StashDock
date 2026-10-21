@@ -18,9 +18,10 @@ import { SiteFavicon } from './SiteIdentity';
 import { faviconCandidates } from '../lib/siteIdentity';
 import { normalizeFavicon } from '../lib/siteIdentity';
 import { cleanReferenceTags } from '../features/library/store';
-import { importReferenceFiles } from '../lib/storage';
+import { chooseReferenceFiles, importChosenReferenceFiles, importReferenceFiles } from '../lib/storage';
+import { isTauri } from '@tauri-apps/api/core';
 import { ReferenceFileImport } from './ReferenceFileImport';
-import type { FileReferencePayload } from '../lib/fileReference';
+import type { ChosenFile, ChosenFileDraft, FileReferencePayload } from '../lib/fileReference';
 import { bookmarkCandidates, desktopLinkImport, makeBrowserLinks, makeLink, normalizeLink, prepareImportedLinks, settleImportedLink, readImportDetails, importCapacityError, type BrowserSource, type LinkImportService, type LinkPreview } from '../lib/linkImport';
 import { ImportProgress } from './ImportProgress';
 import type { StashItem } from '../types';
@@ -40,12 +41,14 @@ type Props = {
     existingItems?: StashItem[];
     services?: LinkImportService;
     onImportFiles?: (files: FileReferencePayload[], tags: string[]) => Promise<StashItem[]>;
+    onChooseFiles?: () => Promise<ChosenFile[]>;
+    onImportChosenFiles?: (files: ChosenFileDraft[], tags: string[]) => Promise<StashItem[]>;
 };
 type Candidate = ReturnType<typeof bookmarkCandidates>[number];
 function BrowserIcon({ browser }: {
     browser: string;
 }) { return <img className={styles.browserIcon} src={({ Chrome: chromeIcon, Edge: edgeIcon, Firefox: firefoxIcon } as Record<string, string>)[browser]} alt="" aria-hidden="true"/>; }
-export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], existingItems = [], services = desktopLinkImport, onImportFiles = importReferenceFiles }: Props) {
+export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], existingItems = [], services = desktopLinkImport, onImportFiles = importReferenceFiles, onChooseFiles = services === desktopLinkImport && isTauri() ? chooseReferenceFiles : undefined, onImportChosenFiles = importChosenReferenceFiles }: Props) {
   const { t } = useI18n();
     const [mode, setMode] = useState('link');
     const [url, setUrl] = useState('');
@@ -351,7 +354,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         </>}
       </TabsContent>}
       {mode === "note" && <TabsContent value="note" forceMount className={styles.importPanel}><form className={`${styles.fields} ${styles.importForm}`} onSubmit={event => { void submit(event); }}><Input label={t("Title")} value={title} onChange={event => setTitle(event.target.value)} maxLength={500} placeholder={t("Note title")} disabled={busy}/><Textarea label={t("Content")} value={content} onChange={event => setContent(event.target.value)} rows={3} maxLength={50000} placeholder={t("Write or paste a note")} disabled={busy}/>{coverField}{tagsField}<div className={styles.actions}><Button type="submit" variant="primary" loading={busy} disabled={!content.trim() || coverReading}>{t("Save note")}</Button></div></form></TabsContent>}
-      {mode === "file" && <TabsContent value="file" forceMount className={styles.importPanel}><ReferenceFileImport availableTags={availableTags} prepareCover={services.prepareCover} disabled={!services.available()} onBusy={setBusy} onSave={onImportFiles} onAdded={async items => { await onAdd(items, true); onClose(); }} /></TabsContent>}
+      {mode === "file" && <TabsContent value="file" forceMount className={styles.importPanel}><ReferenceFileImport availableTags={availableTags} prepareCover={services.prepareCover} disabled={!services.available()} onBusy={setBusy} onSave={onImportFiles} onChoose={onChooseFiles} onSaveChosen={onImportChosenFiles} onAdded={async items => { await onAdd(items, true); onClose(); }} /></TabsContent>}
     </Tabs>
     <Alert className={styles.error} tone="danger" title={t("Import could not be completed")} open={Boolean(error)}>{t(error)}</Alert>
   </FluidDialog>;

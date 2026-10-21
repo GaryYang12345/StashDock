@@ -1,5 +1,6 @@
 mod bridge;
 mod browser_capture;
+mod chosen_files;
 pub mod commands;
 mod context;
 pub mod file_payload;

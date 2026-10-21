@@ -115,7 +115,7 @@ test('App management tools are app-only writes; model search remains read-only',
     await server.connect(left); await client.connect(right);
     const { tools } = await client.listTools();
     const writes = tools.filter(tool => tool.annotations.readOnlyHint === false);
-    assert.equal(writes.length, 20);
+    assert.equal(writes.length, 22);
     assert.ok(writes.some(tool => tool.name === 'open_stashdock_integration'));
     assert.ok(writes.some(tool => tool.name === 'save_stashdock_preferences'));
     assert.ok(writes.some(tool => tool.name === 'save_stashdock_capture_platform'));

@@ -14,6 +14,7 @@ use std::{
 #[serde(tag = "operation", rename_all = "lowercase", deny_unknown_fields)]
 enum Request {
     Choose { title: String },
+    Pickfiles { title: String },
     Move { source: String, target: String },
 }
 fn run(request: Request) -> Result<Value, String> {
@@ -24,6 +25,15 @@ fn run(request: Request) -> Result<Value, String> {
             }
             let path = rfd::FileDialog::new().set_title(title).pick_folder();
             Ok(json!({ "path": path.map(|path| library_location::display_path(&path)) }))
+        }
+        // The plugin's import picker. Paths stay on this computer; the App only
+        // receives short-lived tokens from the MCP server.
+        Request::Pickfiles { title } => {
+            if title.len() > 200 {
+                return Err("The dialog title is too long.".into());
+            }
+            let paths = rfd::FileDialog::new().set_title(title).pick_files().unwrap_or_default();
+            Ok(json!({ "paths": paths.iter().map(|path| path.to_string_lossy()).collect::<Vec<_>>() }))
         }
         Request::Move { source, target } => {
             if source.len() > 32768

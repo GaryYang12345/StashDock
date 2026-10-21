@@ -98,6 +98,21 @@ pub async fn import_file_payloads(
     })
     .await
 }
+/// The system dialog waits for the user, so it never holds a library work slot.
+#[tauri::command]
+pub async fn choose_reference_files(app: AppHandle) -> Result<Vec<chosen_files::ChosenFile>, String> {
+    tauri::async_runtime::spawn_blocking(move || chosen_files::choose(&app))
+        .await
+        .map_err(|_| "The file dialog could not open.".to_string())?
+}
+#[tauri::command]
+pub async fn import_chosen_files(
+    app: AppHandle,
+    files: Vec<chosen_files::ChosenDraft>,
+    tags: Vec<String>,
+) -> Result<Vec<StashItem>, String> {
+    run(app, move |s| chosen_files::import(files, tags, s)).await
+}
 #[tauri::command]
 pub async fn open_reference_file(app: AppHandle, id: String) -> Result<(), String> {
     let opener = app.clone();

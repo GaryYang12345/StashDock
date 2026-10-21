@@ -51,6 +51,11 @@ export function createStorageService(library, htmlUrl, { run, launch = spawn, no
       chosen = { path: result.path, token: randomUUID(), until: now() + 600_000 };
       return { path: chosen.path, token: chosen.token };
     }),
+    chooseFiles: title => serial(async () => {
+      const result = await execute({ operation: 'pickfiles', title }, 290_000);
+      if (!Array.isArray(result.paths) || result.paths.some(path => typeof path !== 'string' || !path || path.length > 32768)) throw Error('Choose files to import.');
+      return result.paths;
+    }),
     move: token => serial(async () => {
       if (!chosen || token !== chosen.token || chosen.until < now()) throw Error('Choose the storage folder again.');
       const result = await execute({ operation: 'move', source: library.dataDir, target: chosen.path }, 600_000);

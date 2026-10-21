@@ -272,6 +272,23 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
     for (const file of files) prepared.push(file.preview === undefined ? file : { ...file, preview: await normalizeCover(file.preview) });
     return { items: library.importFiles(prepared, tags).map(summary) };
   }, false, false);
+  // System-dialog imports reference the user's original file; the App only sees tokens.
+  server.registerTool('choose_stashdock_files', {
+    description: 'Open the system file dialog from the App import form. Stages chosen files for an explicit Save; does not import anything.',
+    inputSchema: {}, annotations: { ...readOnly, readOnlyHint: false }, _meta: appOnly,
+  }, guarded(async () => {
+    if (!storageService.chooseFiles) throw Error('Update the StashDock plugin to choose files.');
+    const paths = await storageService.chooseFiles('Choose files');
+    return { ...valueResult({ count: paths.length }), _meta: { files: library.describeChosenFiles(paths) } };
+  }));
+  registerWrite('import_stashdock_chosen_files', 'Save files chosen in the system dialog as references to their originals, with the edits made in the App.', {
+    files: z.array(z.object({ token: z.string().min(1).max(100), title: z.string().trim().min(1).max(500), content: z.string().max(50_000), preview: z.string().max(750_000).optional() }).strict()).min(1).max(10),
+    tags: tagList.optional(),
+  }, async ({ files, tags }) => {
+    const prepared = [];
+    for (const file of files) prepared.push(file.preview === undefined ? file : { ...file, preview: await normalizeCover(file.preview) });
+    return { items: library.importChosenFiles(prepared, tags).map(summary) };
+  }, false, false);
   registerWrite('open_stashdock_file', 'Open a saved file or note (.txt) in its default application. Accepts a reference ID, not a path.', { id }, ({ id }) => library.openFile(id), false);
   registerWrite('set_stashdock_favorite', 'Set a reference favorite from its App button.', { id, favorite: z.boolean() }, args => ({ item: summary(library.setFavorite(args.id, args.favorite)) }));
   registerWrite('set_stashdock_tags', 'Replace tags on references selected by the user in the App.', { ids: z.array(id).min(1).max(30), tags: tagList }, args => ({ items: library.setTags(args.ids, args.tags).map(summary) }));

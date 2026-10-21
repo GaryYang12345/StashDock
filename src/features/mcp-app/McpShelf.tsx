@@ -30,7 +30,7 @@ import type { StashItem } from '../../types';
 import { addAttachmentToDraft, parseAttachment, supportsDraft } from './draft';
 import card from '../../components/StashCard.module.css';
 import listStyles from '../../components/ReferenceList.module.css';
-import type { FileReferencePayload } from '../../lib/fileReference';
+import type { ChosenFile, ChosenFileDraft, FileReferencePayload } from '../../lib/fileReference';
 import header from '../../components/DockHeader.module.css';
 import context from '../../components/ContextBar.module.css';
 import action from '../../components/CopyForAI.module.css';
@@ -274,6 +274,20 @@ export function McpShelf() {
     const result = await mutate('import_stashdock_files', { files, tags });
     return readRows(result.structuredContent?.items);
   }
+  // The system dialog runs on this computer; the App only receives tokens.
+  async function chooseFiles(): Promise<ChosenFile[]> {
+    const app = appRef.current;
+    if (!app || !connected) throw new Error('The MCP App is not connected. Retry the connection.');
+    const result = await app.callServerTool({ name: 'choose_stashdock_files', arguments: {} }, { timeout: 300_000 });
+    if (result.isError) throw new Error(result.content.find(block => block.type === 'text')?.text || 'The files could not be read. Choose them again.');
+    const files = result._meta?.files;
+    if (!Array.isArray(files) || files.some(file => !file || typeof file.token !== 'string' || typeof file.name !== 'string' || typeof file.content !== 'string' || !Number.isFinite(file.size))) throw new Error('The chosen files are invalid. Choose them again.');
+    return files.map(file => ({ token: file.token, name: file.name, size: file.size, mimeType: typeof file.mimeType === 'string' ? file.mimeType : '', content: file.content }));
+  }
+  async function importChosenFiles(files: ChosenFileDraft[], tags: string[]) {
+    const result = await mutate('import_stashdock_chosen_files', { files, tags });
+    return readRows(result.structuredContent?.items);
+  }
   const toggle = (id: string) => {
     setSelectedAll(false);
     setSelected(previous => previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]);
@@ -378,7 +392,7 @@ export function McpShelf() {
     </motion.footer>}</AnimatePresence>
     <ReferenceEditor item={editing} prepareCover={importServices.prepareCover} availableTags={tags.map(tag => tag.name)} returnFocus={editorFocus} onClose={() => setEditing(null)} onSave={async (id, title, values, cover) => { await mutate('edit_stashdock_reference', { id, title, tags: values, ...(cover ? { cover } : {}) }); refresh(); }} />
     <ContentEditor item={contentEditing} returnFocus={editorFocus} onClose={() => setContentEditing(null)} onSave={async (id, context) => { await mutate('edit_stashdock_context', { id, context }); refresh(); }} />
-    <ReferenceImportDialog ref={importDialog} services={importServices} availableTags={tags.map(tag => tag.name)} existingItems={items} onImportFiles={importFiles} onAdd={async (items, persisted) => {
+    <ReferenceImportDialog ref={importDialog} services={importServices} availableTags={tags.map(tag => tag.name)} existingItems={items} onImportFiles={importFiles} onChooseFiles={chooseFiles} onImportChosenFiles={importChosenFiles} onAdd={async (items, persisted) => {
       if (!persisted) {
         // Browser collections can exceed one tool request. Keep batches bounded.
         for (let offset = 0; offset < items.length; offset += 200) await mutate('import_stashdock_references', { items: items.slice(offset, offset + 200) });
