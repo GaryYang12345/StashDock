@@ -2,7 +2,7 @@
 // helper exactly as imports do, reads one browser's bookmarks, and measures the
 // text lane and the screenshot lane separately. Never opens or writes a library.
 //
-//   node scripts/diagnose-link-import.mjs [--helper path] [--source id | --urls file.txt] [--limit 40] [--screenshots 12]
+//   node scripts/diagnose-link-import.mjs [--helper path] [--source id | --urls file.txt] [--limit 40] [--screenshots 12] [--readers 4] [--out dir]
 //
 // Output: output/diagnose-link-import/report.json and screenshots beside it.
 import { execFileSync } from 'node:child_process';
@@ -16,8 +16,8 @@ import { createPreviewSession, createPreviewSessionPool } from '../plugins/stash
 const option = (name, fallback) => { const index = process.argv.indexOf(`--${name}`); return index > 0 ? process.argv[index + 1] : fallback; };
 const helper = resolve(option('helper', ['plugins/stashdock/bin/win32-x64/stashdock-preview.exe', 'src-tauri/target/release/stashdock-preview.exe'].find(existsSync) || ''));
 if (!existsSync(helper)) throw Error('Build the helper first: npm run preview:helper');
-const limit = Number(option('limit', 40)), screenshotLimit = Number(option('screenshots', 12));
-const outputDirectory = resolve('output/diagnose-link-import');
+const limit = Number(option('limit', 40)), screenshotLimit = Number(option('screenshots', 12)), readerCount = Number(option('readers', 4));
+const outputDirectory = resolve(option('out', 'output/diagnose-link-import'));
 await mkdir(outputDirectory, { recursive: true });
 
 function systemProxy() {
@@ -44,7 +44,7 @@ const summarize = rows => {
 // The helper reports failures as {error}; surface them as rejections.
 const call = async (session, request, timeout) => { const value = await session.run(request, undefined, { timeout }); if (value?.error) throw Error(value.error); return value; };
 
-const report = { startedAt: new Date().toISOString(), platform: `${process.platform}-${process.arch}`, helper, proxy: systemProxy(), dns: await dnsSample() };
+const report = { startedAt: new Date().toISOString(), readers: readerCount, platform: `${process.platform}-${process.arch}`, helper, proxy: systemProxy(), dns: await dnsSample() };
 const control = createPreviewSession(helper);
 try {
   let chosen = option('source'), bookmarks = [];
@@ -65,13 +65,13 @@ try {
   report.bookmarksRead = bookmarks.length;
   console.log(`Testing ${urls.length} bookmarks from ${chosen}…`);
 
-  // Text lane: four concurrent readers, as Desktop and MCP imports use.
-  const readers = createPreviewSessionPool(helper, 4);
+  // Text lane: concurrent readers, four by default as Desktop and MCP imports use.
+  const readers = createPreviewSessionPool(helper, readerCount);
   const text = [];
   let next = 0;
   const textStarted = performance.now();
   try {
-    await Promise.all(Array.from({ length: 4 }, async () => {
+    await Promise.all(Array.from({ length: readerCount }, async () => {
       while (next < urls.length) {
         const url = urls[next++], started = performance.now();
         try {

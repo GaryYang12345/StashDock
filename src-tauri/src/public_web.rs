@@ -285,6 +285,9 @@ fn fetch_with_policy(
         }
         let mut last_error =
             "Page details could not be read. Retry the lookup or enter them manually.".to_string();
+        // An address that refused or timed out is not tried again: retrying the
+        // same unreachable host only doubled the wait before a page could fail.
+        let mut unreachable = Vec::new();
         for address in addresses
             .iter()
             .take(4)
@@ -294,6 +297,9 @@ fn fetch_with_policy(
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 break;
+            }
+            if unreachable.contains(address) {
+                continue;
             }
             let client = client_for(host, *address)?;
             let request = client
@@ -313,6 +319,9 @@ fn fetch_with_policy(
                 Err(error) => {
                     if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
                         eprintln!("Preview transport for {host} at {address}: {error:?}");
+                    }
+                    if error.is_connect() || error.is_timeout() {
+                        unreachable.push(*address);
                     }
                     continue;
                 }
