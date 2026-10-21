@@ -249,8 +249,9 @@ mod tests {
             .unwrap();
         (
             Fixture { root, connection },
-            original.canonicalize().unwrap(),
-            managed.canonicalize().unwrap(),
+            // Resolved paths are handed out in ordinary (non-verbatim) form.
+            plain(original.canonicalize().unwrap()),
+            plain(managed.canonicalize().unwrap()),
         )
     }
 

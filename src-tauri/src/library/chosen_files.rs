@@ -276,7 +276,11 @@ mod tests {
         let items = prepare(drafts, vec!["Work".into()], &assets).unwrap();
         assert_eq!(
             items[0].original_path.as_deref(),
-            Some(note.canonicalize().unwrap().to_string_lossy().as_ref())
+            Some(
+                originals::plain(note.canonicalize().unwrap())
+                    .to_string_lossy()
+                    .as_ref()
+            )
         );
         assert!(items[0]
             .asset_path
