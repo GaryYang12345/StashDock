@@ -312,7 +312,9 @@ fn read_all(connection: &Connection, columns: &str) -> Result<Vec<StashItem>, St
     Ok(items)
 }
 
-/// Every field, including bodies. Internal use and tests.
+/// Every field, including bodies, for tests. Production reads use the shelf
+/// list or `read_by_id`.
+#[cfg(test)]
 fn read_items(connection: &Connection) -> Result<Vec<StashItem>, String> {
     read_all(connection, ITEM_COLUMNS)
 }
