@@ -554,30 +554,77 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
     }
 }
 
+/// Requests are served by a few threads so one slow request (for example a
+/// large save) does not hold up the extension's other requests. If the port is
+/// taken (the AI plugin's bridge may hold it), keep retrying like that bridge
+/// does instead of giving up for the whole session.
 pub fn start_extension_server(app: AppHandle, database_path: PathBuf) {
     thread::spawn(move || {
-        let Ok(server) = Server::http(EXTENSION_SERVER_ADDRESS) else {
-            return;
-        };
-        for request in server.incoming_requests() {
-            let location = database_path
-                .parent()
-                .ok_or_else(|| "The library location is unavailable.".to_string())
-                .and_then(crate::library_location::resolve);
-            match location {
-                Ok(root) => {
-                    handle_extension_request(request, &root.join("stashdock.sqlite3"), &app)
-                }
-                Err(error) => {
-                    let origin =
-                        request_origin(&request).filter(|value| extension_origin_allowed(value));
-                    let _ = request.respond(json_response(
-                        serde_json::json!({ "error": error }).to_string(),
-                        503,
-                        origin.as_deref(),
-                    ));
-                }
+        let server = loop {
+            match Server::http(EXTENSION_SERVER_ADDRESS) {
+                Ok(server) => break std::sync::Arc::new(server),
+                Err(_) => thread::sleep(std::time::Duration::from_secs(5)),
             }
+        };
+        for _ in 0..BRIDGE_WORKERS {
+            let (server, app, database_path) = (server.clone(), app.clone(), database_path.clone());
+            thread::spawn(move || {
+                for request in server.incoming_requests() {
+                    serve(request, &database_path, &app);
+                }
+            });
         }
     });
+}
+const BRIDGE_WORKERS: usize = 4;
+
+/// Only requests addressed to this loopback server are served, which blocks
+/// DNS-rebinding pages (same check as the plugin's capture bridge).
+fn host_allowed(host: Option<&str>) -> bool {
+    let port = EXTENSION_SERVER_ADDRESS
+        .rsplit(':')
+        .next()
+        .unwrap_or_default();
+    host.is_some_and(|host| {
+        host == format!("127.0.0.1:{port}") || host == format!("localhost:{port}")
+    })
+}
+
+fn serve(request: Request, database_path: &Path, app: &AppHandle) {
+    if !host_allowed(request_header(&request, "Host").as_deref()) {
+        let _ = request.respond(json_response(r#"{"error":"Forbidden host."}"#, 403, None));
+        return;
+    }
+    let location = database_path
+        .parent()
+        .ok_or_else(|| "The library location is unavailable.".to_string())
+        .and_then(crate::library_location::resolve);
+    match location {
+        Ok(root) => handle_extension_request(request, &root.join("stashdock.sqlite3"), app),
+        Err(error) => {
+            let origin = request_origin(&request).filter(|value| extension_origin_allowed(value));
+            let _ = request.respond(json_response(
+                serde_json::json!({ "error": error }).to_string(),
+                503,
+                origin.as_deref(),
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn only_requests_addressed_to_the_loopback_bridge_are_served() {
+        assert!(super::host_allowed(Some("127.0.0.1:17863")));
+        assert!(super::host_allowed(Some("localhost:17863")));
+        for host in [
+            None,
+            Some("evil.example:17863"),
+            Some("127.0.0.1"),
+            Some("localhost:5173"),
+        ] {
+            assert!(!super::host_allowed(host), "{host:?}");
+        }
+    }
 }

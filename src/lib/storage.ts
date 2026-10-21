@@ -1,5 +1,4 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { seedItems } from "../data/seed";
 import type { StashItem } from "../types";
 import { matchesSearchTerms, referenceSearchText, searchTerms } from "./reference-search.mjs";
@@ -72,27 +71,3 @@ export async function searchItems(query: string, items: StashItem[]): Promise<st
   return invoke<string[]>("search_items", { query });
 }
 
-export async function chooseAndImportFiles(tags?: string[]): Promise<StashItem[]> {
-  if (!isTauri()) return [];
-
-  const selected = await open({
-    multiple: true,
-    directory: false,
-    title: "Add files to StashDock",
-    filters: [
-      {
-        name: "Context files",
-        extensions: [
-          "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "md", "mdx", "txt", "json", "csv", "log",
-          "toml", "yaml", "yml", "xml", "html", "css", "js", "jsx", "ts", "tsx", "rs", "py", "go", "java",
-          "c", "h", "cpp", "hpp", "sql", "sh", "ps1",
-        ],
-      },
-      { name: "All files", extensions: ["*"] },
-    ],
-  });
-
-  if (!selected) return [];
-  const paths = Array.isArray(selected) ? selected : [selected];
-  return invoke<StashItem[]>("import_files", { paths, tags });
-}

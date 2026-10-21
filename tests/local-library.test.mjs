@@ -222,3 +222,12 @@ test('an active MCP conversation takes over the browser bridge after its previou
     assert.equal(response.status, 200);
   } finally { await new Promise(resolve => successor.close(resolve)); owner.close(); library.close(); }
 });
+
+test('tag length counts UTF-16 units, the same rule as Desktop (library.rs tag_too_long)', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stashdock-tag-length-'));
+  const library = createLocalLibrary({ dataDir: root });
+  t.after(() => { library.close(); rmSync(root, { recursive: true, force: true }); });
+  const saved = library.saveContextReference({ title: 'Emoji', content: 'x', tags: ['😀'.repeat(24)] }).item;
+  assert.deepEqual(saved.tags, ['😀'.repeat(24)]);
+  assert.throws(() => library.saveContextReference({ title: 'Too long', content: 'x', tags: ['😀'.repeat(25)] }), /48 characters/);
+});

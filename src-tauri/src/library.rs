@@ -30,8 +30,23 @@ use uuid::Uuid;
 const INITIALIZED_KEY: &str = "library_initialized_v1";
 const EXTENSION_IMPORT_LIMIT: usize = 500;
 
+/// The shared library connection. A panic while it is held must not leave
+/// every later command reporting "busy": SQLite stays usable (an open
+/// transaction rolls back when it drops), so the lock is recovered.
+pub(crate) struct LibraryConnection(Mutex<Connection>);
+impl LibraryConnection {
+    pub(crate) fn lock(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Connection>, std::convert::Infallible> {
+        Ok(self.0.lock().unwrap_or_else(|poisoned| {
+            self.0.clear_poison();
+            poisoned.into_inner()
+        }))
+    }
+}
+
 pub struct LibraryState {
-    pub(crate) connection: Mutex<Connection>,
+    pub(crate) connection: LibraryConnection,
     assets_dir: PathBuf,
     database_path: PathBuf,
 }
@@ -96,7 +111,7 @@ impl LibraryState {
             .map_err(std::io::Error::other)?;
 
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: LibraryConnection(Mutex::new(connection)),
             assets_dir,
             database_path,
         })
@@ -446,6 +461,24 @@ fn truncate_text(value: &str, limit: usize) -> String {
     value.trim().chars().take(limit).collect()
 }
 
+/// Tag length is counted in UTF-16 code units, as the shared JavaScript
+/// validators, input `maxLength` and MCP schemas count it, so a tag with emoji
+/// is accepted or refused the same way in every host.
+pub(crate) const TAG_LIMIT: usize = 48;
+pub(crate) fn tag_too_long(tag: &str) -> bool {
+    tag.encode_utf16().count() > TAG_LIMIT
+}
+fn truncate_tag(tag: &str) -> String {
+    let mut units = 0;
+    tag.trim()
+        .chars()
+        .take_while(|character| {
+            units += character.len_utf16();
+            units <= TAG_LIMIT
+        })
+        .collect()
+}
+
 fn canonicalize_web_url(raw_url: &str) -> Option<String> {
     let mut parsed = Url::parse(raw_url).ok()?;
     if !matches!(parsed.scheme(), "http" | "https")
@@ -606,8 +639,8 @@ fn import_extension_items(
         item.tags = item
             .tags
             .into_iter()
-            .map(|tag| truncate_text(&tag, 48))
-            .filter(|tag| !tag.is_empty() && known_tags.insert(tag.to_ascii_lowercase()))
+            .map(|tag| truncate_tag(&tag))
+            .filter(|tag| !tag.is_empty() && known_tags.insert(tag.to_lowercase()))
             .take(12)
             .collect();
         item.content = item.content.map(|content| truncate_text(&content, 20_000));
@@ -882,8 +915,8 @@ fn clean_tags(tags: Vec<String>) -> Result<Vec<String>, String> {
     let mut result = Vec::new();
     for tag in tags {
         let tag = tag.trim();
-        if tag.chars().count() > 48 {
-            return Err("Tags must be at most 48 characters.".into());
+        if tag_too_long(tag) {
+            return Err("Use at most 12 tags, each up to 48 characters.".into());
         }
         if !tag.is_empty() && seen.insert(tag.to_lowercase()) {
             result.push(tag.to_string());
@@ -1288,111 +1321,12 @@ fn format_size(size: u64) -> String {
     }
 }
 
-fn copy_file_to_library(source_path: &Path, assets_dir: &Path) -> Result<StashItem, String> {
-    if !source_path.is_file() {
-        return Err(format!("File not found: {}", source_path.display()));
-    }
-
-    let file_name = source_path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or_else(|| format!("Unsupported file name: {}", source_path.display()))?
-        .to_string();
-    let id = Uuid::new_v4().to_string();
-    let destination_dir = assets_dir.join(&id);
-    fs::create_dir_all(&destination_dir).map_err(|error| error.to_string())?;
-    let destination = destination_dir.join(&file_name);
-    fs::copy(source_path, &destination).map_err(|error| error.to_string())?;
-
-    let metadata = fs::metadata(&destination).map_err(|error| error.to_string())?;
-    let (kind, mime_type) = file_kind(source_path);
-    let content = extract_text(&destination, mime_type)?;
-    let tag = match kind {
-        "image" => "Image",
-        "pdf" => "PDF",
-        _ => "File",
-    };
-    let imported_at = now()?;
-
-    Ok(StashItem {
-        id,
-        title: file_name.clone(),
-        kind: kind.to_string(),
-        source: "Managed file".to_string(),
-        url: None,
-        excerpt: content
-            .as_deref()
-            .map(text_excerpt)
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| format!("{mime_type} · {}", format_size(metadata.len()))),
-        tags: vec![tag.to_string()],
-        created_at: imported_at.clone(),
-        favorite: false,
-        preview: None,
-        preview_status: None,
-        asset_path: Some(destination.to_string_lossy().into_owned()),
-        original_path: Some(source_path.to_string_lossy().into_owned()),
-        mime_type: Some(mime_type.to_string()),
-        size_bytes: Some(metadata.len()),
-        content,
-        context_override: None,
-        origin: Some(serde_json::json!({
-            "platform": "Local file",
-            "importMethod": "local_file",
-            "importedAt": imported_at,
-            "fileName": file_name,
-            "originalFingerprint": originals::fingerprint(source_path).map(originals::fingerprint_json),
-        })),
-    })
-}
-
-fn prepare_file_imports(
-    paths: Vec<String>,
-    tags: Option<Vec<String>>,
-    assets_dir: &Path,
-) -> Result<Vec<StashItem>, String> {
-    let explicit_tags = tags.is_some();
-    let tags = clean_tags(tags.unwrap_or_default())?;
-    let mut imported = Vec::new();
-    for raw_path in paths {
-        let source_path = PathBuf::from(&raw_path);
-        let mut item = copy_file_to_library(&source_path, assets_dir)?;
-        if explicit_tags {
-            item.tags = tags.clone();
-        }
-        imported.push(item);
-    }
-    Ok(imported)
-}
-
-pub fn import_files(
-    paths: Vec<String>,
-    tags: Option<Vec<String>>,
-    state: &LibraryState,
-) -> Result<Vec<StashItem>, String> {
-    let imported = prepare_file_imports(paths, tags, &state.assets_dir)?;
-    let mut connection = state
-        .connection
-        .lock()
-        .map_err(|_| "The local library is busy.".to_string())?;
-    let transaction = connection
-        .transaction()
-        .map_err(|error| error.to_string())?;
-    for item in &imported {
-        upsert_item(&transaction, item)?;
-    }
-    transaction.commit().map_err(|error| error.to_string())?;
-
-    Ok(imported)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        backfill_text_content, canonicalize_web_url, copy_file_to_library, delete_item_by_id,
-        file_kind, format_size, import_extension_items, initialize_schema, json_response,
-        prepare_file_imports, read_by_id, read_items, read_shelf, search, update_favorite,
-        upsert_item, StashItem,
+        backfill_text_content, canonicalize_web_url, clean_tags, delete_item_by_id, file_kind,
+        format_size, import_extension_items, initialize_schema, json_response, read_by_id,
+        read_items, read_shelf, search, truncate_tag, update_favorite, upsert_item, StashItem,
     };
     use rusqlite::{params, Connection};
     use std::{fs, path::Path};
@@ -1407,6 +1341,37 @@ mod tests {
         .expect("reference fixture")
     }
 
+    #[test]
+    fn a_panic_while_holding_the_library_does_not_block_later_commands() {
+        let shared = std::sync::Arc::new(super::LibraryConnection(std::sync::Mutex::new(
+            Connection::open_in_memory().unwrap(),
+        )));
+        let held = shared.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = held.lock().unwrap();
+            panic!("simulated failure while holding the library");
+        })
+        .join();
+        let connection = shared.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+    #[test]
+    fn tag_length_counts_utf16_units_like_every_javascript_host() {
+        let fits = "😀".repeat(24); // 48 UTF-16 units, 24 characters
+        assert_eq!(clean_tags(vec![fits.clone()]).unwrap(), vec![fits.clone()]);
+        assert!(clean_tags(vec!["😀".repeat(25)]).is_err());
+        assert!(clean_tags(vec!["a".repeat(49)]).is_err());
+        assert_eq!(
+            truncate_tag(&"😀".repeat(30)),
+            fits,
+            "never splits a character"
+        );
+    }
     #[test]
     fn the_shelf_omits_bodies_and_reads_them_by_id_on_demand() {
         let root = std::env::temp_dir().join(format!("stashdock-shelf-{}", Uuid::new_v4()));
@@ -1454,48 +1419,6 @@ mod tests {
         assert!(read_by_id(&connection, &assets, &vec!["a".to_string(); 501], false).is_err());
         fs::remove_dir_all(root).unwrap();
     }
-    #[test]
-    fn file_import_tags_validate_before_copy_and_survive_storage() {
-        let root = std::env::temp_dir().join(format!("stashdock-file-tags-{}", Uuid::new_v4()));
-        fs::create_dir_all(&root).unwrap();
-        let source = root.join("context.txt");
-        fs::write(&source, "Complete file context").unwrap();
-        let assets = root.join("assets");
-        let paths = vec![source.to_string_lossy().into_owned()];
-        assert!(prepare_file_imports(paths.clone(), Some(vec!["x".repeat(49)]), &assets).is_err());
-        assert!(!assets.exists());
-        let imported = prepare_file_imports(
-            paths.clone(),
-            Some(vec![" UI ".into(), "ui".into(), "Research".into()]),
-            &assets,
-        )
-        .unwrap();
-        let mut connection = Connection::open_in_memory().unwrap();
-        initialize_schema(&connection).unwrap();
-        let transaction = connection.transaction().unwrap();
-        for item in &imported {
-            upsert_item(&transaction, item).unwrap();
-        }
-        transaction.commit().unwrap();
-        let saved = read_items(&connection).unwrap();
-        assert_eq!(saved[0].tags, vec!["UI", "Research"]);
-        assert_eq!(saved[0].content.as_deref(), Some("Complete file context"));
-        assert_eq!(
-            fs::read_to_string(&source).unwrap(),
-            "Complete file context"
-        );
-        assert!(
-            prepare_file_imports(paths.clone(), Some(vec![]), &assets).unwrap()[0]
-                .tags
-                .is_empty()
-        );
-        assert_eq!(
-            prepare_file_imports(paths, None, &assets).unwrap()[0].tags,
-            vec!["File"]
-        );
-        fs::remove_dir_all(root).unwrap();
-    }
-
     #[test]
     fn favorite_updates_do_not_rewrite_content_preview_or_search_index() {
         let connection = Connection::open_in_memory().unwrap();
@@ -2296,28 +2219,6 @@ mod tests {
                 .unwrap(),
             1
         );
-    }
-
-    #[test]
-    fn copies_a_file_into_the_managed_library() {
-        let root = std::env::temp_dir().join(format!("stashdock-test-{}", Uuid::new_v4()));
-        let source_dir = root.join("source");
-        let assets_dir = root.join("assets");
-        fs::create_dir_all(&source_dir).expect("create source directory");
-        let source = source_dir.join("context.md");
-        fs::write(&source, "# Local context").expect("write source file");
-
-        let item = copy_file_to_library(&source, &assets_dir).expect("import file");
-        let managed_path = item.asset_path.expect("managed path");
-        assert_ne!(Path::new(&managed_path), source);
-        assert_eq!(
-            fs::read_to_string(managed_path).expect("read managed file"),
-            "# Local context"
-        );
-        assert_eq!(item.mime_type.as_deref(), Some("text/markdown"));
-        assert_eq!(item.content.as_deref(), Some("# Local context"));
-
-        fs::remove_dir_all(root).expect("remove test directory");
     }
 
     #[test]

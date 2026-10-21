@@ -67,18 +67,16 @@ test('browser discovery never swaps the import trigger label or changes its iden
   assert.match(desktop, /aria-busy=\{sourceLoading \|\| undefined\}/);
 });
 
-test('file tags are validated and persisted in the native import transaction', async () => {
+test('file tags are validated before import and no page can import a file by path', async () => {
   const desktop = await readFile('src/components/DesktopImportDialog.tsx', 'utf8');
   const storage = await readFile('src/lib/storage.ts', 'utf8');
-  const native = await readFile('src-tauri/src/library.rs', 'utf8');
+  const commands = await readFile('src-tauri/src/library/commands.rs', 'utf8');
   assert.match(desktop, /<ReferenceFileImport/);
   assert.match(await readFile('src/components/ReferenceFileImport.tsx', 'utf8'), /cleanReferenceTags/);
   assert.match(storage, /import_file_payloads/);
-  assert.match(storage, /"import_files", \{ paths, tags \}/);
-  assert.match(native, /let tags = clean_tags\(tags.unwrap_or_default\(\)\)\?;/);
-  assert.match(native, /item.tags = tags.clone\(\);/);
-  assert.ok(native.indexOf('let tags = clean_tags(tags.unwrap_or_default())?;', native.indexOf('fn prepare_file_imports')) < native.indexOf('for raw_path in paths', native.indexOf('fn prepare_file_imports')));
-  assert.match(native, /if explicit_tags \{\s*item.tags = tags.clone\(\);/);
+  // Files come from dropped bytes or system-dialog tokens, never a page-supplied path.
+  assert.doesNotMatch(storage, /"import_files"/);
+  assert.doesNotMatch(commands, /fn import_files\b/);
 });
 test('desktop and MCP share the same three-mode import without bookmark exports', async () => {
   const desktop = await readFile('src/components/DesktopImportDialog.tsx', 'utf8');

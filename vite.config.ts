@@ -15,7 +15,7 @@ export default defineConfig({
   server: {
     strictPort: true,
     proxy: {
-      "/v1": "http://127.0.0.1:17863",
+      "/v1": { target: "http://127.0.0.1:17863", changeOrigin: true },
     },
     watch: {
       ignored: ["**/src-tauri/**", "**/output/**"],

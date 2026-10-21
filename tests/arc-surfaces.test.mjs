@@ -10,11 +10,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = path => readFile(resolve(root, path), 'utf8');
 
 test('remaining business UI uses Arc tokens and scale, without legacy overrides', async () => {
-  for (const path of ['src/components/ContextBar.tsx','src/components/AddDialog.tsx','src/components/EmptyState.tsx','src/components/FluidDialog.tsx','src/features/library/LibraryView.tsx']) {
+  for (const path of ['src/components/ContextBar.tsx','src/components/DesktopImportDialog.tsx','src/components/EmptyState.tsx','src/components/FluidDialog.tsx','src/features/library/LibraryView.tsx']) {
     const source = await read(path);
     assert.doesNotMatch(source, /text-zinc|bg-zinc|border-zinc|font-semibold|text-\[\d+px\]|—/);
   }
-  for (const path of ['src/components/ContextBar.module.css','src/components/AddDialog.module.css','src/components/FluidDialog.module.css','extension/sidepanel.css']) {
+  for (const path of ['src/components/ContextBar.module.css','src/components/DesktopImportDialog.module.css','src/components/FluidDialog.module.css','extension/sidepanel.css']) {
     assert.doesNotMatch(await read(path), /#[\da-f]{3,8}\b|(?:rgb|hsl)\(|font-weight:\s*(?:600|700|800|bold)|text-transform:\s*uppercase|outline:|100vw/);
   }
   assert.doesNotMatch(await read('src/index.css'), /\.fluid-ui button|\.field\s*\{|image-reveal/);
@@ -54,15 +54,6 @@ test('panel adapter delegates semantics to Radix and guards the opening press', 
   assert.match(source,/onCloseAutoFocus/);
   assert.match(source,/originalEvent.timeStamp < mountedAt.current/);
   assert.doesNotMatch(source,/querySelectorAll|event.key === "Tab"/);
-});
-
-test('import modes use official tab panels and form primitives with real pending state', async () => {
-  const source = await read('src/components/AddDialog.tsx');
-  for (const name of ['Tabs','TabsList','TabsTrigger','TabsContent','Input','Textarea','Alert','Button']) assert.ok(source.includes(`<${name}`));
-  assert.match(source,/busy=\{importing\}/);
-  assert.match(source,/loading=\{importing\}/);
-  assert.match(source,/await onAdd\(items, persisted\)/);
-  assert.doesNotMatch(source,/className="field"|LayoutGroup|—/);
 });
 
 test('browser sidebar reuses Arc fields and has no shelf or bookmark import', async () => {

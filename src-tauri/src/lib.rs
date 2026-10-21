@@ -129,7 +129,6 @@ pub fn run() {
             library::commands::set_tag_pinned,
             library::commands::delete_item,
             library::commands::delete_items,
-            library::commands::import_files,
             library::commands::import_file_payloads,
             library::commands::open_reference_file,
             link_import::list_browser_sources,

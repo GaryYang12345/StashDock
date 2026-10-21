@@ -99,16 +99,6 @@ pub async fn change_library_tag(
     .map(preview_protocol::for_webview)
 }
 #[tauri::command]
-pub async fn import_files(
-    app: AppHandle,
-    paths: Vec<String>,
-    tags: Option<Vec<String>>,
-) -> Result<Vec<StashItem>, String> {
-    run(app, move |s| super::import_files(paths, tags, s))
-        .await
-        .map(preview_protocol::for_webview)
-}
-#[tauri::command]
 pub async fn import_file_payloads(
     app: AppHandle,
     files: Vec<file_payload::FilePayload>,

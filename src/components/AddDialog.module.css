@@ -1,8 +1,0 @@
-.fields { display: grid; gap: var(--space-4); min-width: 0; }
-.description { margin: 0; font-size: var(--text-sm); line-height: var(--leading-body); color: var(--text-secondary); overflow-wrap: anywhere; }
-.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
-.fileField { display: grid; gap: var(--space-2); min-width: 0; font-size: var(--text-sm); }
-.fileField label { font-weight: 500; }
-.fileField input { width: 100%; min-width: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-control); padding: var(--space-3); color: var(--text-secondary); }
-.fileField input::file-selector-button { min-height: var(--control-height-sm); margin-right: var(--space-2); border: 1px solid var(--border); border-radius: calc(var(--radius-control) - var(--space-2)); background: var(--surface-muted); color: var(--foreground); padding-inline: var(--space-3); font: inherit; cursor: pointer; }
-.error { margin-top: var(--space-4); }

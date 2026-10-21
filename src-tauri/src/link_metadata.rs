@@ -13,6 +13,7 @@ pub struct LinkPreview {
     pub content: String,
     pub favicon_url: Option<String>,
     #[serde(skip)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub cover_url: Option<String>,
     pub preview: Option<String>,
     pub preview_kind: Option<String>,
@@ -20,6 +21,7 @@ pub struct LinkPreview {
 
 // Full image lookup remains available to the native helper; import forms use
 // fetch_content instead so screenshots never hold their completion open.
+#[allow(dead_code)]
 pub(crate) fn fetch_preview_inline(url: &str) -> Result<LinkPreview, String> {
     let mut preview = fetch_preview(url)?;
     preview.favicon_url = preview.favicon_url.and_then(|value| {
@@ -263,6 +265,9 @@ mod extraction_tests {
     }
 }
 
+// The desktop library uses only fetch_content; the stashdock-preview helper
+// (bin/preview-helper.rs) includes this module and uses the full lookup.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn fetch_preview(value: &str) -> Result<LinkPreview, String> {
     fetch_preview_with_images(value, true)
 }
@@ -309,6 +314,7 @@ fn pdf_link(url: &Url) -> LinkPreview {
     }
 }
 
+#[allow(dead_code)]
 pub fn fetch_preview_with_images(value: &str, images: bool) -> Result<LinkPreview, String> {
     let url = crate::public_web::web_url(value)?;
     let pdf_path =

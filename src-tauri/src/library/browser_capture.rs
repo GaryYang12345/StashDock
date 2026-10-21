@@ -104,7 +104,7 @@ pub(super) fn save(connection: &mut Connection, body: &str) -> Result<Value, Str
             .as_ref()
             .is_none_or(|v| v.encode_utf16().count() > 20000)
         || item.tags.len() > 12
-        || item.tags.iter().any(|v| v.encode_utf16().count() > 48)
+        || item.tags.iter().any(|v| super::tag_too_long(v))
         || item.asset_path.is_some()
         || item.original_path.is_some()
         || item.context_override.is_some()
