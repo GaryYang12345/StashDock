@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
 import { createContentQueue } from '../plugins/stashdock/server/content-queue.mjs';
-const row = (url, extra={}) => ({title:'Bookmark title',kind:'web',source:'Chrome',url,excerpt:'',tags:['Chrome'],createdAt:'2026-10-20T00:00:00Z',origin:{platform:'Chrome',importMethod:'browser_bookmarks',importedAt:'2026-10-20'},...extra});
+// Covered references: ones without a cover get their text from the screenshot job's render.
+const row = (url, extra={}) => ({title:'Bookmark title',kind:'web',source:'Chrome',url,excerpt:'',tags:['Chrome'],createdAt:'2026-10-20T00:00:00Z',preview:'data:image/png;base64,YQ==',origin:{platform:'Chrome',importMethod:'browser_bookmarks',importedAt:'2026-10-20'},...extra});
 function fixture(t) {
   const root=mkdtempSync(join(tmpdir(),'stashdock-content-test-'));
   const library=createLocalLibrary({dataDir:root}), db=new DatabaseSync(join(root,'stashdock.sqlite3'));
@@ -16,6 +17,11 @@ function fixture(t) {
   t.after(()=>{queue.close();db.close();library.close();assert.ok(root.startsWith(join(tmpdir(),'stashdock-content-test-')));rmSync(root,{recursive:true,force:true});});
   return {library,db,queue};
 }
+test('references without a cover are left to the render (same rule as web_content.rs)',t=>{
+  const {library,queue}=fixture(t);
+  library.importItems([row('https://example.org/uncovered',{preview:undefined})]);
+  assert.equal(queue.claim(),null);
+});
 test('bookmark content enrichment preserves metadata and commits the full-text index together',async t=>{
   const {library,db,queue}=fixture(t);
   const [item]=library.importItems([row('https://example.org')]).items;

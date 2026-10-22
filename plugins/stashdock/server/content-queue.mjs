@@ -30,6 +30,8 @@ export function createContentQueue(dataDir, owner, { now = () => Math.floor(Date
     if (version === emptyVersion && now() < emptyUntil) return null;
     const row = db.prepare(`SELECT s.id,s.url FROM stash_items s LEFT JOIN web_content_jobs j ON j.id=s.id AND j.url=s.url
     WHERE s.kind IN ('web','repo') AND s.url IS NOT NULL AND s.context_override IS NULL
+    -- References still without a cover get their text from the screenshot job's render.
+    AND COALESCE(s.preview,'')!=''
     AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
     AND ((COALESCE(trim(s.content),'')='' AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentEdited'),0)!=1)
       OR json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.pendingTitle')=s.title)

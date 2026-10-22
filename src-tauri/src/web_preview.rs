@@ -230,6 +230,8 @@ struct Job {
     id: String,
     url: String,
     needs_preview: bool,
+    /// Imported without text: the render's text (or a direct read) may fill it.
+    needs_text: bool,
     favicon: Option<String>,
     attempts: i64,
 }
@@ -244,7 +246,12 @@ fn next_job(db: &Connection) -> rusqlite::Result<Option<Job>> {
     if expired {
         db.execute("UPDATE web_preview_jobs SET status=CASE WHEN attempts<2 THEN 'queued' ELSE 'failed' END,retry_at=0 WHERE status='working' AND retry_at<=?1", [timestamp()])?;
     }
-    db.query_row("SELECT s.id, s.url, s.preview, s.origin_json, COALESCE(j.attempts,0) FROM stash_items s
+    db.query_row("SELECT s.id, s.url, s.preview, s.origin_json, COALESCE(j.attempts,0),
+          COALESCE(s.context_override IS NULL AND length(COALESCE(trim(s.content),'')) < 500
+          AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
+          AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentEdited'),0)!=1
+          AND json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.importMethod') IN ('manual_url','browser_bookmarks'), 0)
+        FROM stash_items s
         LEFT JOIN web_preview_jobs j ON j.id=s.id AND j.url=s.url
         WHERE s.kind IN ('web','repo') AND s.url IS NOT NULL
           AND (s.preview IS NULL OR s.preview='' OR COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END, '$.faviconUrl'),'') NOT LIKE 'data:image/%')
@@ -253,7 +260,7 @@ fn next_job(db: &Connection) -> rusqlite::Result<Option<Job>> {
             let origin: Option<String> = row.get(3)?;
             let favicon = origin.and_then(|value| serde_json::from_str::<Value>(&value).ok()).and_then(|origin| origin["faviconUrl"].as_str().map(str::to_string));
             let preview: Option<String> = row.get(2)?;
-            Ok(Job { id: row.get(0)?, url: row.get(1)?, needs_preview: preview.as_ref().is_none_or(|value| value.is_empty()), favicon, attempts: row.get::<_, i64>(4)? + 1 })
+            Ok(Job { id: row.get(0)?, url: row.get(1)?, needs_preview: preview.as_ref().is_none_or(|value| value.is_empty()), needs_text: row.get(5)?, favicon, attempts: row.get::<_, i64>(4)? + 1 })
         }).optional()
 }
 fn claim(db: &Connection, job: &Job) -> rusqlite::Result<()> {
@@ -372,6 +379,7 @@ fn enrich(db: &mut Connection, job: &Job, stop: &AtomicBool, changed: &impl Fn()
     let images = crate::preview_enrichment::enrich(
         &job.url,
         job.needs_preview,
+        job.needs_text,
         job.favicon.as_deref(),
         stop,
         |images| {

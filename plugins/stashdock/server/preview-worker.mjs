@@ -66,7 +66,12 @@ export function previewQueue(dataDir, { now = () => Math.floor(Date.now()/1000),
     }
     const version = db.prepare('PRAGMA data_version').get().data_version;
     if (version === emptyVersion && now() < emptyUntil) return null;
-    const row = db.prepare(`SELECT s.id,s.url,CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END AS preview,s.origin_json FROM stash_items s LEFT JOIN web_preview_jobs j ON j.id=s.id AND j.url=s.url
+    const row = db.prepare(`SELECT s.id,s.url,CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END AS preview,s.origin_json,
+    (s.context_override IS NULL AND length(COALESCE(trim(s.content),'')) < 500
+      AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
+      AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentEdited'),0)!=1
+      AND json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.importMethod') IN ('manual_url','browser_bookmarks')) AS needs_text
+    FROM stash_items s LEFT JOIN web_preview_jobs j ON j.id=s.id AND j.url=s.url
     WHERE s.kind IN ('web','repo') AND s.url IS NOT NULL AND (s.preview IS NULL OR s.preview='' OR COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.faviconUrl'),'') NOT LIKE 'data:image/%')
     AND (j.id IS NULL OR (j.status!='done' AND j.attempts<2 AND (j.status!='working' OR j.retry_at<=?))) ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END,CASE WHEN j.status='queued' THEN 0 WHEN j.id IS NULL THEN 1 ELSE 2 END,s.created_at DESC,s.rowid LIMIT 1`).get(now());
     if (!row) { emptyVersion = version; emptyUntil = now() + 15; }
@@ -107,7 +112,7 @@ export function previewQueue(dataDir, { now = () => Math.floor(Date.now()/1000),
       db.prepare(`INSERT INTO web_preview_jobs VALUES(?,?,1,?,'working') ON CONFLICT(id) DO UPDATE SET url=excluded.url,attempts=CASE WHEN web_preview_jobs.url=excluded.url THEN web_preview_jobs.attempts+1 ELSE 1 END,retry_at=excluded.retry_at,status='working'`).run(row.id, row.url, now()+60);
       let origin; try { origin = JSON.parse(row.origin_json || '{}'); } catch { origin = {}; }
       const attempts = db.prepare('SELECT attempts FROM web_preview_jobs WHERE id=?').get(row.id).attempts;
-      return { id: row.id, url: row.url, attempts, faviconUrl: origin?.faviconUrl, needsPreview: !row.preview };
+      return { id: row.id, url: row.url, attempts, faviconUrl: origin?.faviconUrl, needsPreview: !row.preview, needsText: Boolean(row.needs_text) };
       });
     },
     publish: (job, result) => publish(job, result, false),
@@ -173,7 +178,7 @@ export function packagedPreviewService(htmlUrl, dataDir) {
       try { const data = await prior; return { preview: data.preview, previewKind: data.previewKind, faviconUrl: data.faviconUrl }; } catch { /* Background retry is independent of a failed draft lookup. */ }
       if (cache.signal.aborted || signal?.aborted) throw Error('Screenshot cancelled');
     }
-    return captures.run({ url: job.url, needPreview: job.needsPreview !== false, ...(job.faviconUrl ? { faviconUrl: job.faviconUrl } : {}) }, signal, { timeout: 55_000, onImages });
+    return captures.run({ url: job.url, needPreview: job.needsPreview !== false, needText: Boolean(job.needsText), ...(job.faviconUrl ? { faviconUrl: job.faviconUrl } : {}) }, signal, { timeout: 55_000, onImages });
   } };
 }
 export function startPreviewWorker(dataDir, htmlUrl, service, { hasHelper = existsSync } = {}) {

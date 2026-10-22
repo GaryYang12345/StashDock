@@ -60,6 +60,8 @@ struct Job {
 fn next(db: &Connection) -> rusqlite::Result<Option<Job>> {
     db.query_row("SELECT s.id,s.url FROM stash_items s LEFT JOIN web_content_jobs j ON j.id=s.id AND j.url=s.url
       WHERE s.kind IN ('web','repo') AND s.url IS NOT NULL AND s.context_override IS NULL
+      -- References still without a cover get their text from the screenshot job's render.
+      AND COALESCE(s.preview,'')!=''
       AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
       AND ((COALESCE(trim(s.content),'')='' AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentEdited'),0)!=1)
         OR json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.pendingTitle')=s.title)
@@ -228,8 +230,16 @@ mod tests {
             [(now() + 90).to_string()],
         )
         .unwrap();
-        db.execute("INSERT INTO stash_items(id,title,kind,source,url,excerpt,tags_json,created_at,origin_json,updated_at) VALUES('a','User title','web','Chrome','https://example.org','','[\"Chrome\"]','2026-10-20','{\"importMethod\":\"browser_bookmarks\"}','old')",[]).unwrap();
+        // A covered reference: ones without a cover get text from the screenshot job.
+        db.execute("INSERT INTO stash_items(id,title,kind,source,url,excerpt,tags_json,created_at,origin_json,updated_at,preview) VALUES('a','User title','web','Chrome','https://example.org','','[\"Chrome\"]','2026-10-20','{\"importMethod\":\"browser_bookmarks\"}','old','data:image/png;base64,YQ==')",[]).unwrap();
         db
+    }
+    #[test]
+    fn references_without_a_cover_are_left_to_the_render() {
+        let mut db = fixture();
+        db.execute("UPDATE stash_items SET preview=NULL", [])
+            .unwrap();
+        assert!(claim(&mut db, "test").unwrap().is_none());
     }
     #[test]
     fn content_publishes_with_fts_and_preserves_bookmark_metadata() {

@@ -28,6 +28,9 @@ struct WebRequest {
     url: String,
     #[serde(default = "yes")]
     need_preview: bool,
+    /// The reference has no text yet: fall back to a direct read if needed.
+    #[serde(default)]
+    need_text: bool,
     favicon_url: Option<String>,
     #[serde(default)]
     lookup: bool,
@@ -100,6 +103,7 @@ fn web(
     let images = preview_enrichment::enrich(
         url.as_str(),
         request.need_preview,
+        request.need_text,
         request.favicon_url.as_deref(),
         &AtomicBool::new(false),
         progress,

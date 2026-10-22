@@ -30,7 +30,12 @@ trait Source {
     fn metadata(&self, url: &str) -> Metadata;
     fn icon(&self, url: &str, deadline: Instant) -> Option<String>;
     fn pdf(&self, bytes: &[u8], stop: &AtomicBool) -> Option<String>;
+    /// Direct document read: (title, body).
+    fn direct_text(&self, url: &str) -> Option<(String, String)>;
 }
+/// Rendered text shorter than this is checked against a direct read; some
+/// pages are read before late content appears, or the render failed.
+const RENDERED_TEXT_ENOUGH: usize = 500;
 struct PublicSource<F>(F);
 impl<F: Fn(&str, Instant) -> Option<String>> Source for PublicSource<F> {
     fn capture(&self, url: &str, stop: &AtomicBool) -> Option<crate::preview_browser::Rendered> {
@@ -77,10 +82,16 @@ impl<F: Fn(&str, Instant) -> Option<String>> Source for PublicSource<F> {
     fn pdf(&self, bytes: &[u8], stop: &AtomicBool) -> Option<String> {
         crate::preview_browser::render_pdf_cover(bytes, stop).ok()
     }
+    fn direct_text(&self, url: &str) -> Option<(String, String)> {
+        crate::link_metadata::fetch_content(url)
+            .ok()
+            .map(|page| (page.title, page.content))
+    }
 }
 pub fn enrich(
     url: &str,
     needs_preview: bool,
+    needs_text: bool,
     favicon: Option<&str>,
     stop: &AtomicBool,
     changed: impl Fn(&Images),
@@ -89,6 +100,7 @@ pub fn enrich(
     acquire(
         url,
         needs_preview,
+        needs_text,
         favicon,
         stop,
         &PublicSource(download_icon),
@@ -98,6 +110,7 @@ pub fn enrich(
 fn acquire(
     url: &str,
     needs_preview: bool,
+    needs_text: bool,
     favicon: Option<&str>,
     stop: &AtomicBool,
     source: &impl Source,
@@ -125,6 +138,21 @@ fn acquire(
         }
         if images.preview.is_some() {
             images.preview_kind = Some("screenshot".into());
+        }
+        // The same job falls back to a direct read and keeps the longer text.
+        let rendered = images
+            .content
+            .as_deref()
+            .map_or(0, |text| text.chars().count());
+        if needs_text && rendered < RENDERED_TEXT_ENOUGH && !stop.load(Ordering::Relaxed) {
+            if let Some((title, content)) = source.direct_text(url) {
+                if content.trim().chars().count() > rendered {
+                    images.content = Some(content);
+                }
+                if images.title.is_none() && !title.trim().is_empty() {
+                    images.title = Some(title);
+                }
+            }
         }
         if images.preview.is_some() || images.content.is_some() {
             changed(&images); // Do not hold the visible screenshot behind icon work.
@@ -218,6 +246,10 @@ mod tests {
             self.events.borrow_mut().push("icon");
             Some("image".into())
         }
+        fn direct_text(&self, _: &str) -> Option<(String, String)> {
+            self.events.borrow_mut().push("direct");
+            Some(("Direct title".into(), "Direct body".into()))
+        }
         fn pdf(&self, _: &[u8], _: &AtomicBool) -> Option<String> {
             self.events.borrow_mut().push("pdf");
             Some("image".into())
@@ -232,6 +264,7 @@ mod tests {
         let result = acquire(
             "https://example.org",
             true,
+            false,
             Some("data:image/png;base64,YQ=="),
             &AtomicBool::new(false),
             &source,
@@ -243,6 +276,7 @@ mod tests {
         acquire(
             "https://example.org",
             true,
+            false,
             None,
             &AtomicBool::new(false),
             &source,
@@ -259,6 +293,7 @@ mod tests {
         let result = acquire(
             "https://example.org",
             true,
+            false,
             None,
             &AtomicBool::new(false),
             &source,
@@ -270,6 +305,7 @@ mod tests {
         acquire(
             "https://example.org",
             false,
+            false,
             None,
             &AtomicBool::new(false),
             &source,
@@ -280,6 +316,7 @@ mod tests {
         acquire(
             "https://example.org",
             true,
+            false,
             None,
             &AtomicBool::new(true),
             &source,
@@ -288,15 +325,64 @@ mod tests {
         assert!(source.events.borrow().is_empty());
     }
     #[test]
+    fn a_reference_without_text_falls_back_to_a_direct_read_in_the_same_job() {
+        let source = Fake {
+            events: RefCell::new(vec![]),
+            success: false,
+        };
+        let images = acquire(
+            "https://example.org",
+            true,
+            true,
+            None,
+            &AtomicBool::new(false),
+            &source,
+            |_| {},
+        );
+        assert_eq!(*source.events.borrow(), ["capture", "direct"]);
+        assert_eq!(images.content.as_deref(), Some("Direct body"));
+        let source = Fake {
+            events: RefCell::new(vec![]),
+            success: true,
+        };
+        let images = acquire(
+            "https://example.org",
+            true,
+            true,
+            None,
+            &AtomicBool::new(false),
+            &source,
+            |_| {},
+        );
+        assert_eq!(
+            *source.events.borrow(),
+            ["capture", "direct"],
+            "short rendered text is compared with a direct read"
+        );
+        assert_eq!(
+            images.content.as_deref(),
+            Some("Rendered body"),
+            "the longer text wins"
+        );
+    }
+    #[test]
     fn cancellation_after_publishing_a_screenshot_skips_optional_network_work() {
         let source = Fake {
             events: RefCell::new(vec![]),
             success: true,
         };
         let stop = AtomicBool::new(false);
-        let images = acquire("https://example.org", true, None, &stop, &source, |_| {
-            stop.store(true, Ordering::Relaxed);
-        });
+        let images = acquire(
+            "https://example.org",
+            true,
+            false,
+            None,
+            &stop,
+            &source,
+            |_| {
+                stop.store(true, Ordering::Relaxed);
+            },
+        );
         assert!(images.preview.is_some());
         assert_eq!(*source.events.borrow(), ["capture"]);
     }
