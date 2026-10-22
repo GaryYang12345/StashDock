@@ -135,3 +135,26 @@ test('notes record their file fingerprint so unchanged notes are not read again,
   assert.equal(library.readItems([note.id])[0].content, 'Second body, edited outside');
   assert.deepEqual(origin().fileFingerprint, fingerprint(note.assetPath));
 });
+
+test('a library copied elsewhere finds its backups again (same cases as asset_paths.rs)', async t => {
+  const { tailAfterAssets } = await import('../plugins/stashdock/server/asset-paths.mjs');
+  const contract = JSON.parse(readFileSync(new URL('./fixtures/asset-paths.json', import.meta.url), 'utf8'));
+  for (const { path, tail } of contract.tails) assert.deepEqual(tailAfterAssets(path), tail, path);
+  const root = mkdtempSync(join(tmpdir(), 'stashdock-moved-'));
+  mkdirSync(join(root, 'assets', 'item'), { recursive: true });
+  writeFileSync(join(root, 'assets', 'item', 'Notes.md'), 'x'); writeFileSync(join(root, 'assets', 'flat-Plan.md'), 'x');
+  let library = createLocalLibrary({ dataDir: root }); library.close();
+  const db = new DatabaseSync(join(root, 'stashdock.sqlite3'));
+  const insert = db.prepare("INSERT INTO stash_items(id,title,kind,source,excerpt,tags_json,created_at,asset_path,updated_at) VALUES(?,?,'file','Local file','','[]','now',?,'now')");
+  insert.run('windows', 'w', 'D:\\StashDockData\\assets\\item\\Notes.md');
+  insert.run('desktop', 'd', '/Users/me/Library/Application Support/app.stashdock.desktop/assets/flat-Plan.md');
+  insert.run('gone', 'g', 'D:\\StashDockData\\assets\\other\\Missing.md');
+  db.close();
+  library = createLocalLibrary({ dataDir: root });
+  const check = new DatabaseSync(join(root, 'stashdock.sqlite3'));
+  t.after(() => { check.close(); library.close(); rmSync(root, { recursive: true, force: true }); });
+  const path = id => check.prepare('SELECT asset_path FROM stash_items WHERE id=?').get(id).asset_path;
+  assert.equal(path('windows'), join(root, 'assets', 'item', 'Notes.md'));
+  assert.equal(path('desktop'), join(root, 'assets', 'flat-Plan.md'));
+  assert.equal(path('gone'), 'D:\\StashDockData\\assets\\other\\Missing.md');
+});

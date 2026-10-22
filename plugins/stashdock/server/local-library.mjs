@@ -1,4 +1,5 @@
 // Shared on-disk library, independent of any desktop window or HTTP service.
+import { repairMovedBackups } from './asset-paths.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync, realpathSync, rmdirSync, rmSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -84,6 +85,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     try { const result = callback(); db.exec('COMMIT'); return result; }
     catch (error) { db.exec('ROLLBACK'); throw error; }
   }
+  repairMovedBackups(db, assets);
   transaction(() => {
     prepareSearchIndex(db);
     // An empty plugin library is a real library, not a request for desktop seeds.
@@ -397,7 +399,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   };
   synchronizeNoteFiles(db, assets);
   return { ...createShelfReader(db, { fromRow, synchronize: () => synchronizeNoteFiles(db, assets), annotate: annotatePreviews }),
-    dataDir: root, read: async (visual = false) => { synchronizeNoteFiles(db, assets); return annotatePreviews(db.prepare(visual ? "SELECT id,title,kind,source,url,excerpt,tags_json,created_at,favorite,preview,origin_json,mime_type,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN 1 ELSE 0 END AS has_file,NULL AS content,NULL AS asset_path,NULL AS original_path,NULL AS size_bytes FROM stash_items ORDER BY created_at DESC,rowid" : 'SELECT * FROM stash_items ORDER BY created_at DESC').all().map(fromRow)); },
+    dataDir: root, read: async (visual = false) => { synchronizeNoteFiles(db, assets); return annotatePreviews(db.prepare(visual ? "SELECT id,title,kind,source,url,excerpt,tags_json,created_at,favorite,preview,origin_json,mime_type,CASE WHEN asset_path IS NOT NULL AND asset_path!='' THEN 1 ELSE 0 END AS has_file,NULL AS content,NULL AS asset_path,NULL AS original_path,NULL AS size_bytes FROM stash_items ORDER BY created_at DESC,rowid" : 'SELECT * FROM stash_items ORDER BY created_at DESC,rowid').all().map(fromRow)); },
     readItems: ids => [...new Set(ids)].map(id => { refreshOriginal(id); return get(id); }),
     searchIds: query => { synchronizeNoteFiles(db, assets); return searchReferenceIds(db, query); },
     resolveFile: id => {

@@ -80,7 +80,11 @@ fn build_client(host: &str, address: SocketAddr) -> Result<reqwest::blocking::Cl
         .no_brotli()
         .no_deflate()
         .no_zstd()
-        .user_agent(concat!("StashDock/", env!("CARGO_PKG_VERSION"), " WebPreview"))
+        .user_agent(concat!(
+            "StashDock/",
+            env!("CARGO_PKG_VERSION"),
+            " WebPreview"
+        ))
         .build()
         .map_err(|_| "Web preview is unavailable.".into())
 }
@@ -113,7 +117,11 @@ fn proxied_client(proxy: SocketAddr) -> Result<reqwest::blocking::Client, String
         .no_brotli()
         .no_deflate()
         .no_zstd()
-        .user_agent(concat!("StashDock/", env!("CARGO_PKG_VERSION"), " WebPreview"))
+        .user_agent(concat!(
+            "StashDock/",
+            env!("CARGO_PKG_VERSION"),
+            " WebPreview"
+        ))
         .build()
         .map_err(|_| "Web preview is unavailable.".to_string())?;
     *cached = Some((proxy, client.clone()));

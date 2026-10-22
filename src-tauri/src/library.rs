@@ -1,3 +1,4 @@
+mod asset_paths;
 mod bridge;
 mod browser_capture;
 mod chosen_files;
@@ -95,6 +96,8 @@ impl LibraryState {
         let database_path = root.join("stashdock.sqlite3");
         let connection = Connection::open(&database_path)?;
         initialize_schema(&connection)?;
+        asset_paths::repair_moved_backups(&connection, &assets_dir)
+            .map_err(std::io::Error::other)?;
         legacy::remove_untouched_demo_references(&connection, &assets_dir)
             .map_err(std::io::Error::other)?;
         backfill_text_content(&connection).map_err(std::io::Error::other)?;

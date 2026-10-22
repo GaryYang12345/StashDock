@@ -1,0 +1,10 @@
+{
+  "tails": [
+    { "path": "D:\\StashDockData\\assets\\0b1c\\Notes.md", "tail": ["0b1c", "Notes.md"] },
+    { "path": "/Users/me/Library/Application Support/app.stashdock.desktop/assets/0b1c-Notes.md", "tail": ["0b1c-Notes.md"] },
+    { "path": "C:\\Users\\me\\Assets\\assets\\x\\a.png", "tail": ["x", "a.png"] },
+    { "path": "D:\\StashDockData\\assets\\..\\secret.txt", "tail": null },
+    { "path": "D:\\StashDockData\\assets\\", "tail": null },
+    { "path": "D:\\Elsewhere\\file.txt", "tail": null }
+  ]
+}
