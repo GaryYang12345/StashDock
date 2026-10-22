@@ -8,7 +8,8 @@ use tauri_plugin_dialog::DialogExt;
 const TOKEN_LIFETIME: Duration = Duration::from_secs(60 * 60);
 const MAX_TOKENS: usize = 200;
 const MAX_FILES: usize = 10;
-const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
+/// Chosen files must be reasonable to hand to an AI conversation.
+const MAX_FILE_BYTES: u64 = 30 * 1024 * 1024;
 const STAGED_CHARACTERS: usize = 50_000;
 
 static CHOSEN: Mutex<Vec<(String, PathBuf, Instant)>> = Mutex::new(Vec::new());
@@ -75,7 +76,7 @@ pub(crate) fn describe(paths: Vec<PathBuf>) -> Result<Vec<ChosenFile>, String> {
                 return Err("Choose files, not folders.".to_string());
             }
             if metadata.len() > MAX_FILE_BYTES {
-                return Err("Choose files under 512 MB.".into());
+                return Err("Choose files under 30 MB.".into());
             }
             let name = path
                 .file_name()
@@ -125,7 +126,7 @@ fn prepare(
         .map(|(draft, original, cover)| {
             let fingerprint = originals::fingerprint(&original).ok_or("A chosen file is no longer available. Choose it again.")?;
             if fingerprint.0 > MAX_FILE_BYTES {
-                return Err("Choose files under 512 MB.".to_string());
+                return Err("Choose files under 30 MB.".to_string());
             }
             let name: String = original
                 .file_name()

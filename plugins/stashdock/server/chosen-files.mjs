@@ -8,7 +8,8 @@ import { randomUUID } from 'node:crypto';
 import { fingerprint, isTextMime, readText } from './original-files.mjs';
 
 const TOKEN_LIFETIME = 60 * 60 * 1000, MAX_TOKENS = 200, MAX_FILES = 10;
-const MAX_FILE_BYTES = 512 * 1024 * 1024, STAGED_CHARACTERS = 50_000;
+// Chosen files must be reasonable to hand to an AI conversation (same as chosen_files.rs).
+const MAX_FILE_BYTES = 30 * 1024 * 1024, STAGED_CHARACTERS = 50_000;
 
 // Same table as Rust's file_kind.
 const KINDS = {
@@ -49,7 +50,7 @@ export function createChosenFiles() {
         let path, stat;
         try { path = realpathSync(raw); stat = statSync(path); } catch { throw Error('A chosen file could not be read.'); }
         if (!stat.isFile()) throw Error('Choose files, not folders.');
-        if (stat.size > MAX_FILE_BYTES) throw Error('Choose files under 512 MB.');
+        if (stat.size > MAX_FILE_BYTES) throw Error('Choose files under 30 MB.');
         const [, mimeType] = fileKind(path);
         return { content: staged(path, mimeType), token: remember(path), name: basename(path), size: stat.size, mimeType };
       });
@@ -66,7 +67,7 @@ export function createChosenFiles() {
         return inputs.map(({ draft, original }) => {
           const current = fingerprint(original);
           if (!current) throw Error('A chosen file is no longer available. Choose it again.');
-          if (current.size > MAX_FILE_BYTES) throw Error('Choose files under 512 MB.');
+          if (current.size > MAX_FILE_BYTES) throw Error('Choose files under 30 MB.');
           const name = Array.from(basename(original)).slice(0, 150).join('').replace(/[<>:"/\\|?*\x00-\x1f]/g, '-');
           const folder = join(assets, randomUUID()); mkdirSync(folder, { recursive: true }); written.push(folder);
           const backup = join(folder, name);

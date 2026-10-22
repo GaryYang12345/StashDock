@@ -80,7 +80,7 @@ export const zh = {
   'Cover': '封面', 'Default': '默认', 'Selected cover': '已选封面', 'Current cover': '当前封面', 'Replace image': '更换图片',
   'Restore default cover': '恢复默认封面', 'Preparing cover image': '正在处理封面', 'Cover could not be selected': '无法选择封面',
   'Custom cover selected. Save the reference to keep it.': '已选择封面，保存收藏后生效。',
-  'Add or edit the content for AI': '添加或编辑给 AI 的参考内容', 'Drop files here, up to 5 MB each.': '拖拽文件到这里，每个不超过 5 MB。', 'Up to 512 MB each. Dropped files up to 5 MB.': '每个文件最大 512 MB；拖入的文件最大 5 MB。',
+  'Add or edit the content for AI': '添加或编辑给 AI 的参考内容', 'Drop files here, up to 5 MB each.': '拖拽文件到这里，每个不超过 5 MB。', 'Up to 30 MB each.': '每个文件最大 30 MB。', 'Up to 5 MB each.': '每个文件最大 5 MB。', 'Choose files under 30 MB.': '请选择 30 MB 以内的文件。',
   'Edit file': '编辑文件', 'Replace files': '重新选择文件', 'File could not be saved': '无法保存文件',
   'Content could not be saved': '无法保存内容', 'Import': '导入', 'Import could not be completed': '无法完成导入',
   'Loading preview': '正在加载预览', 'Loading reference': '正在加载收藏', 'No web bookmarks found': '没有找到网页书签',

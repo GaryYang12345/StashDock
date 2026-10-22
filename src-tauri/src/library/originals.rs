@@ -7,7 +7,8 @@
 use super::*;
 use std::time::UNIX_EPOCH;
 
-const MAX_ORIGINAL_BYTES: u64 = 512 * 1024 * 1024;
+/// Same limit as chosen files; a larger original is used in place, not copied.
+const MAX_ORIGINAL_BYTES: u64 = 30 * 1024 * 1024;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Resolved {

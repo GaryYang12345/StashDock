@@ -42,7 +42,7 @@ const service: LinkImportService = {
 const chosenFileProps = new URLSearchParams(location.search).has('chosen') ? {
   onChooseFiles: async () => { await wait(150); return [
     { token: 'token-plan', name: 'Plan.md', size: 2048, mimeType: 'text/markdown', content: '# Plan\nShip the import fix.' },
-    { token: 'token-paper', name: 'Large paper.pdf', size: 48 * 1024 * 1024, mimeType: 'application/pdf', content: '' }]; },
+    { token: 'token-paper', name: 'Large paper.pdf', size: 24 * 1024 * 1024, mimeType: 'application/pdf', content: '' }]; },
   onImportChosenFiles: async (files: { token: string; title: string; content: string }[], tags: string[]) => { await wait(100); return files.map(file => ({ ...saved, id: file.token, kind: file.token === 'token-paper' ? 'pdf' : 'file', title: file.title, url: undefined, source: 'Local file', tags, content: file.content, hasFile: true } as StashItem)); },
 } : {};
 const saved = { id: 'saved', title: 'Already saved', kind: 'web', source: 'example.org', url: 'https://example.org/0', excerpt: '', tags: [], createdAt: '2026-01-01T00:00:00Z' } as StashItem;

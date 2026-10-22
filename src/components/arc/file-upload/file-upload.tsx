@@ -18,6 +18,8 @@ export interface FileUploadProps {
   showBrowse?: boolean;
   /** Product composition: browse with a host file chooser (for example the system dialog) instead of the page's file input. Dropped files still use onChange. */
   onBrowse?: () => void;
+  /** Product composition: false makes this a click-only chooser; drops are absorbed without adding files. */
+  droppable?: boolean;
   multiple?: boolean;
   maxSize?: number;
   value?: FileUploadItem[];
@@ -117,6 +119,7 @@ export function FileUpload({
   description = "Drop files here or browse from your device.",
   showBrowse = true,
   onBrowse,
+  droppable = true,
   multiple = true,
   maxSize,
   value,
@@ -211,12 +214,12 @@ export function FileUpload({
     event.preventDefault();
     dragDepth.current = 0;
     setDragging(false);
-    if (!disabled && event.dataTransfer.files.length) addFiles(event.dataTransfer.files);
+    if (droppable && !disabled && event.dataTransfer.files.length) addFiles(event.dataTransfer.files);
   }
 
   function handleDragEnter(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    if (!disabled) {
+    if (droppable && !disabled) {
       dragDepth.current += 1;
       setDragging(true);
     }

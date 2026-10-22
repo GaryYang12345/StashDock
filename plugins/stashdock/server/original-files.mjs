@@ -8,7 +8,8 @@ import { closeSync, copyFileSync, mkdirSync, openSync, readSync, realpathSync, r
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-const MAX_ORIGINAL_BYTES = 512 * 1024 * 1024;
+// Same limit as chosen files; a larger original is used in place, not copied.
+const MAX_ORIGINAL_BYTES = 30 * 1024 * 1024;
 const TEXT_BYTES = 1024 * 1024, TEXT_CHARACTERS = 200_000;
 
 export function fingerprint(path) {
