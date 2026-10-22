@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
         "title": "StashDock",
         "width": 1180,
         "height": 760,
@@ -33,6 +34,7 @@
       },
       {
         "label": "folder",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
         "url": "index.html?surface=folder",
         "title": "StashDock folder",
         "width": 144,
@@ -51,6 +53,7 @@
       },
       {
         "label": "search",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
         "url": "index.html?surface=search",
         "title": "StashDock search",
         "width": 480,

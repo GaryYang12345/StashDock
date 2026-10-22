@@ -61,6 +61,16 @@ impl PreparedRestore {
         }
         Ok(restore)
     }
+    /// Keep the destination invisible even if it was not minimized, so a
+    /// transition can draw it before it is revealed.
+    pub fn ensure_cloaked(&mut self) -> Result<(), String> {
+        #[cfg(windows)]
+        if !self.cloaked {
+            set_cloaked(&self.window, true)?;
+            self.cloaked = true;
+        }
+        Ok(())
+    }
     pub fn reveal(&mut self) -> Result<(), String> {
         if self.cloaked {
             set_cloaked(&self.window, false)?;
@@ -78,6 +88,29 @@ impl Drop for PreparedRestore {
             if let Err(error) = set_cloaked(&self.window, false) {
                 eprintln!("Could not reset the panel's preparation state: {error}");
             }
+        }
+    }
+}
+/// A window kept invisible (still composed by DWM) until released; dropping
+/// it without releasing also uncloaks, so failures never strand a window.
+pub struct Cloak {
+    window: WebviewWindow,
+    active: bool,
+}
+impl Cloak {
+    pub fn new(window: &WebviewWindow) -> Result<Self, String> {
+        set_cloaked(window, true)?;
+        Ok(Self { window: window.clone(), active: true })
+    }
+    pub fn release(mut self) -> Result<(), String> {
+        self.active = false;
+        set_cloaked(&self.window, false)
+    }
+}
+impl Drop for Cloak {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = set_cloaked(&self.window, false);
         }
     }
 }
