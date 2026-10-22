@@ -86,6 +86,7 @@ fn publish(app: &AppHandle) {
 /// nothing hit-testable) before the folder takes focus.
 pub fn attach(app: &AppHandle) -> Result<(), String> {
     let Some(window) = search_window(app) else { return Ok(()) };
+    suppress_frame(&window)?;
     set_region(&window, &[])?;
     if !window.is_visible().map_err(|e| e.to_string())? {
         crate::window_frame::show_immediately(&window)?;
@@ -93,6 +94,50 @@ pub fn attach(app: &AppHandle) -> Result<(), String> {
     if let Some(state) = search_state(app) {
         state.0.lock().unwrap_or_else(|e| e.into_inner()).attached = true;
     }
+    Ok(())
+}
+
+/// A window region turns off DWM's frame handling, so Windows would paint a
+/// classic caption ("StashDock search") whenever activation changes or the
+/// region is redrawn. This window has no frame at all: keep the activation
+/// state change but never paint the non-client area.
+#[cfg(windows)]
+unsafe extern "system" fn frameless(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    message: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+    _id: usize,
+    _data: usize,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::UI::{
+        Shell::DefSubclassProc,
+        WindowsAndMessaging::{WM_NCACTIVATE, WM_NCPAINT},
+    };
+    match message {
+        // lParam -1: update activation without repainting the non-client area.
+        WM_NCACTIVATE => DefSubclassProc(hwnd, message, wparam, -1),
+        WM_NCPAINT => 0,
+        _ => DefSubclassProc(hwnd, message, wparam, lparam),
+    }
+}
+
+fn suppress_frame(window: &WebviewWindow) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static INSTALLED: AtomicBool = AtomicBool::new(false);
+        if INSTALLED.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as _;
+        // Must run on the window's own (UI) thread, as attach does.
+        if unsafe { windows_sys::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(frameless), 0x5344_5352, 0) } == 0 {
+            return Err("Could not prepare the StashDock search window.".into());
+        }
+        INSTALLED.store(true, Ordering::Release);
+    }
+    let _ = window;
     Ok(())
 }
 
