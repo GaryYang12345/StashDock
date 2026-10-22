@@ -25,6 +25,11 @@ function Stop-Dev {
   } else { 'desktop:dev is not running.' }
   # The app, Vite and preview helpers started by that tree.
   Get-Process stashdock, stashdock-preview -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$root*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+  # A Vite server orphaned by an earlier session still holds the dev port.
+  Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
+    $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $($_.OwningProcess)" -ErrorAction SilentlyContinue
+    if ($owner -and $owner.Name -eq 'node.exe' -and $owner.CommandLine -like "*vite*") { Stop-Process -Id $owner.ProcessId -Force -ErrorAction SilentlyContinue; "Stopped stale Vite (pid $($owner.ProcessId))." }
+  }
 }
 
 $Tasks = [ordered]@{
