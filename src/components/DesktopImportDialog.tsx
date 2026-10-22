@@ -51,6 +51,10 @@ function BrowserIcon({ browser }: {
 export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], existingItems = [], services = desktopLinkImport, onImportFiles = importReferenceFiles, onChooseFiles = services === desktopLinkImport && isTauri() ? chooseReferenceFiles : undefined, onImportChosenFiles = importChosenReferenceFiles }: Props) {
   const { t } = useI18n();
     const [mode, setMode] = useState('link');
+    // The file form keeps its own chosen files and edits; once opened it stays
+    // mounted (hidden) so switching tabs does not discard them.
+    const [fileOpened, setFileOpened] = useState(false);
+    if (mode === 'file' && !fileOpened) setFileOpened(true);
     const [url, setUrl] = useState('');
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
@@ -107,7 +111,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         normalized = normalizeLink(url);
     }
     catch { /* Keep invalid input editable. */ }
-    const reset = () => { setMode('link'); setPlatform(null); setUrl(''); setTitle(''); setContent(''); setTags([]); setCovers({}); setCoverReading(false); setProgress(null); lookupRequest.current = null; currentTags.current = []; setSource(null); setCandidates([]); setSelected(new Set()); setError(''); setUrlError(''); setLookupError(''); setPreview(null); drafts.current = {}; edited.current = { title: false, content: false }; };
+    const reset = () => { setMode('link'); setFileOpened(false); setPlatform(null); setUrl(''); setTitle(''); setContent(''); setTags([]); setCovers({}); setCoverReading(false); setProgress(null); lookupRequest.current = null; currentTags.current = []; setSource(null); setCandidates([]); setSelected(new Set()); setError(''); setUrlError(''); setLookupError(''); setPreview(null); drafts.current = {}; edited.current = { title: false, content: false }; };
     useEffect(() => {
         if (!open || !services.available())
             return;
@@ -305,7 +309,9 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
       <div className={styles.typeBar}><TabsList aria-label={t("Reference type")}><TabsTrigger className={styles.typeTab} value="link" disabled={busy}><span className={styles.tabLabel}><Link size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Link")}</span></TabsTrigger><TabsTrigger className={styles.typeTab} value="note" disabled={busy}><span className={styles.tabLabel}><SquarePen size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Note")}</span></TabsTrigger><TabsTrigger className={styles.typeTab} value="file" disabled={busy}><span className={styles.tabLabel}><FileUp size={16} strokeWidth={1.75} aria-hidden="true"/>{t("File")}</span></TabsTrigger></TabsList>{mode === "link" && !source && !platform && <div inert={busy || sourceLoading} aria-busy={sourceLoading || undefined}><DropdownMenu label={t("Import from")} icon={<Download size={16} strokeWidth={1.75} aria-hidden="true"/>} items={[...browsers.map(item => ({ label: item.browser, icon: <BrowserIcon browser={item.browser}/>, onSelect: () => { void readSource(item); } })), ...(services.openCaptureSite ? [{ label: t('Platforms'), content: <PlatformGroup/>, separatorBefore: browsers.length > 0, onSelect: () => { generation.current++; setPlatform(true); setError(''); } }] : []), ...(!browsers.length && !services.openCaptureSite ? [{ label: t(services.available() ? 'No browser profiles found' : 'Available in the desktop app'), disabled: true }] : [])]}/></div>}</div>
       {/* These forms grow after lookup/file selection. Mount only the selected
           documented forceMount panel so a tab-transition height cannot trap
-          dynamically added fields inside the previous panel's short height. */}
+          dynamically added fields inside the previous panel's short height.
+          Link and Note keep drafts in this component; the file form is kept
+          mounted but hidden (display: none adds no height). */}
       {mode === "link" && <TabsContent value="link" forceMount className={styles.importPanel}>
         {platform && services.openCaptureSite ? <BrowserCapturePanel services={services} onBack={() => setPlatform(null)}/> : source ? <div className={`${styles.fields} ${styles.importForm}`}>
           <div className={styles.previewHeading}><Button variant="ghost" size="sm" aria-label={t("Back to Link")} disabled={busy} onClick={() => { generation.current++; setReading(false); setSource(null); setError(''); }}><ArrowLeft size={16} strokeWidth={1.75} aria-hidden="true"/></Button><BrowserIcon browser={source.browser}/><h3>{source.browser}</h3></div>
@@ -354,7 +360,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         </>}
       </TabsContent>}
       {mode === "note" && <TabsContent value="note" forceMount className={styles.importPanel}><form className={`${styles.fields} ${styles.importForm}`} onSubmit={event => { void submit(event); }}><Input label={t("Title")} value={title} onChange={event => setTitle(event.target.value)} maxLength={500} placeholder={t("Note title")} disabled={busy}/><Textarea label={t("Content")} value={content} onChange={event => setContent(event.target.value)} rows={3} maxLength={50000} placeholder={t("Write or paste a note")} disabled={busy}/>{coverField}{tagsField}<div className={styles.actions}><Button type="submit" variant="primary" loading={busy} disabled={!content.trim() || coverReading}>{t("Save note")}</Button></div></form></TabsContent>}
-      {mode === "file" && <TabsContent value="file" forceMount className={styles.importPanel}><ReferenceFileImport availableTags={availableTags} prepareCover={services.prepareCover} disabled={!services.available()} onBusy={setBusy} onSave={onImportFiles} onChoose={onChooseFiles} onSaveChosen={onImportChosenFiles} onAdded={async items => { await onAdd(items, true); onClose(); }} /></TabsContent>}
+      {fileOpened && <TabsContent value="file" forceMount hidden={mode !== "file"} className={styles.importPanel}><ReferenceFileImport availableTags={availableTags} prepareCover={services.prepareCover} disabled={!services.available()} onBusy={setBusy} onSave={onImportFiles} onChoose={onChooseFiles} onSaveChosen={onImportChosenFiles} onAdded={async items => { await onAdd(items, true); onClose(); }} /></TabsContent>}
     </Tabs>
     <Alert className={styles.error} tone="danger" title={t("Import could not be completed")} open={Boolean(error)}>{t(error)}</Alert>
   </FluidDialog>;

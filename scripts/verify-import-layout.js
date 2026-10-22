@@ -47,6 +47,17 @@ async page => {
   await page.getByRole('dialog').waitFor();
   await page.getByRole('textbox', { name: 'Link', exact: true }).fill('https://example.org');
   await page.keyboard.press('Escape'); await page.getByRole('dialog').waitFor({ state: 'detached' });
+  // Chosen files and their edited text survive switching to another tab and back.
+  await page.goto(`${base}/tests/fixtures/desktop-import.html?chosen`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Open import fixture', exact: true }).click();
+  const fileDialog = page.getByRole('dialog'); await fileDialog.waitFor();
+  await fileDialog.getByRole('tab', { name: 'File', exact: true }).click();
+  await fileDialog.getByRole('button', { name: /Choose files/ }).first().click();
+  await fileDialog.getByRole('textbox', { name: 'Content' }).fill('Edited before switching');
+  await fileDialog.getByRole('tab', { name: 'Note', exact: true }).click();
+  await fileDialog.getByRole('tab', { name: 'File', exact: true }).click();
+  if (await fileDialog.getByRole('textbox', { name: 'Content' }).inputValue() !== 'Edited before switching') throw Error('File edits were lost on tab switch');
+  await page.keyboard.press('Escape'); await fileDialog.waitFor({ state: 'detached' });
   // Development renders under React StrictMode, whose remount resets motion
   // values: the dialog must still fit its content instead of stretching.
   await page.goto(`${base}/tests/fixtures/desktop-import.html?strict`, { waitUntil: 'domcontentloaded' });
