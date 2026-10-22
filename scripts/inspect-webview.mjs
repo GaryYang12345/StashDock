@@ -21,6 +21,25 @@ const probes = {
       runs.push({ ms: Math.round(performance.now() - started), items: items.length, bytes: json.length, contentBytes: items.reduce((sum, item) => sum + (item.content?.length || 0) + (item.contextOverride?.length || 0), 0), previewBytes: items.reduce((sum, item) => sum + (item.preview?.length || 0), 0) }); }
     return { sinceLoadSeconds: Math.round(performance.now() / 1000), ipc: byCommand, listItems: runs };
   })()`,
+  // Types into the shelf search (UI state only) and times each keystroke until the next painted frame.
+  'search-typing': `(async () => {
+    const input = document.querySelector('input[type="search"]');
+    if (!input) return 'no search field';
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    const frame = () => new Promise(done => requestAnimationFrame(() => setTimeout(done, 0)));
+    const longTasks = []; const observer = new PerformanceObserver(list => longTasks.push(...list.getEntries().map(entry => Math.round(entry.duration)))); observer.observe({ type: 'longtask' });
+    const steps = [];
+    for (const value of ['p', 'pr', 'p', '', 'p', '']) {
+      const started = performance.now();
+      setter.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true }));
+      await frame();
+      const typed = Math.round(performance.now() - started);
+      await new Promise(done => setTimeout(done, 700));
+      steps.push({ value, frameMs: typed, cards: document.querySelectorAll('article[data-reference-id]').length });
+    }
+    observer.disconnect();
+    return { steps, longTasks };
+  })()`,
   'import-dialog': `(async () => {
     let dialog = document.querySelector('[data-size="import"]');
     if (!dialog) { [...document.querySelectorAll('button')].find(button => /Import references|导入引用/.test(button.textContent))?.click(); await new Promise(done => setTimeout(done, 1500)); dialog = document.querySelector('[data-size="import"]'); }
