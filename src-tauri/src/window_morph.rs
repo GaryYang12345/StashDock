@@ -8,7 +8,9 @@
 //! authority runs it synchronously between preparing and revealing the real
 //! windows, so ordering, rollback and focus are unchanged. Any failure, or the
 //! system's "Animation effects" being off, falls back to the direct handoff.
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(windows)]
+use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
@@ -121,6 +123,24 @@ fn seed(panel: Rect, folder: Rect) -> Rect {
     Rect::around(folder.centre(), width, height)
 }
 
+/// Where the shadow carrier sits while the panel is drawn at `dest`. The
+/// panel's window rect includes invisible resize borders (`insets`) that the
+/// thumbnail scales with it; the carrier keeps them at their real size so its
+/// visible edge (and so its DWM shadow) hugs the scaled visible content.
+pub fn shadow_rect(dest: Rect, window: Rect, insets: Rect) -> Rect {
+    let sx = dest.width() / window.width().max(1.0);
+    let sy = dest.height() / window.height().max(1.0);
+    let inset = |edge: i32, value: i32, scale: f64, sign: f64| {
+        (edge as f64 + sign * value as f64 * scale - sign * value as f64).round() as i32
+    };
+    Rect {
+        left: inset(dest.left, insets.left, sx, 1.0),
+        top: inset(dest.top, insets.top, sy, 1.0),
+        right: inset(dest.right, insets.right, sx, -1.0),
+        bottom: inset(dest.bottom, insets.bottom, sy, -1.0),
+    }
+}
+
 pub fn frame(direction: Direction, panel: Rect, folder: Rect, t: f64) -> Frame {
     let small = seed(panel, folder);
     let opacity = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -184,19 +204,27 @@ mod native {
     use super::*;
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
+        Foundation::POINT,
         Graphics::Dwm::{
-            DwmFlush, DwmRegisterThumbnail, DwmUnregisterThumbnail, DwmUpdateThumbnailProperties,
+            DwmFlush, DwmRegisterThumbnail, DwmSetWindowAttribute, DwmUnregisterThumbnail,
+            DwmUpdateThumbnailProperties, DWMWA_TRANSITIONS_FORCEDISABLED,
             DWM_THUMBNAIL_PROPERTIES, DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION,
             DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
         },
+        Graphics::Gdi::ClientToScreen,
         System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassExW, ShowWindow,
-            HTTRANSPARENT, SW_SHOWNOACTIVATE, WM_NCHITTEST, WNDCLASSEXW, WS_EX_NOACTIVATE,
+            CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetForegroundWindow,
+            GetWindowLongPtrW, GetWindowRect, IsZoomed, RegisterClassExW, SendMessageW,
+            SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE,
+            HTTRANSPARENT, MA_NOACTIVATE, NCCALCSIZE_PARAMS, SWP_NOACTIVATE, SWP_SHOWWINDOW,
+            SW_HIDE, SW_SHOWNOACTIVATE, WM_MOUSEACTIVATE, WM_NCACTIVATE, WM_NCCALCSIZE,
+            WM_NCCREATE, WM_NCHITTEST, WNDCLASSEXW, WS_CAPTION, WS_DISABLED, WS_EX_NOACTIVATE,
             WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
-            WS_POPUP,
+            WS_MAXIMIZE, WS_MINIMIZE, WS_POPUP, WS_THICKFRAME, WS_VISIBLE,
         },
     };
+    use std::cell::Cell;
 
     unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         // Never takes input: the pointer reaches whatever is underneath.
@@ -206,11 +234,179 @@ mod native {
         DefWindowProcW(hwnd, message, wparam, lparam)
     }
 
+    /// What the shadow carrier's procedure needs: the panel's real
+    /// non-client insets, and whether to draw as the active window.
+    struct Carrier {
+        insets: Rect,
+        active: bool,
+    }
+
+    unsafe extern "system" fn shadow_procedure(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if message == WM_NCCREATE {
+            let create = &*(lparam as *const CREATESTRUCTW);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
+            return DefWindowProcW(hwnd, message, wparam, lparam);
+        }
+        let carrier = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Carrier;
+        match message {
+            WM_NCHITTEST => return HTTRANSPARENT as LRESULT,
+            WM_MOUSEACTIVATE => return MA_NOACTIVATE as LRESULT,
+            // The panel's own borderless frame (tao's undecorated shadow):
+            // keep its insets as non-client so DWM draws the same edge and
+            // shadow around an empty client.
+            WM_NCCALCSIZE if !carrier.is_null() => {
+                let insets = (*carrier).insets;
+                let rect = if wparam != 0 {
+                    &mut (*(lparam as *mut NCCALCSIZE_PARAMS)).rgrc[0]
+                } else {
+                    &mut *(lparam as *mut RECT)
+                };
+                rect.left += insets.left;
+                rect.top += insets.top;
+                rect.right -= insets.right;
+                rect.bottom -= insets.bottom;
+                return 0;
+            }
+            // Drawn as active when the panel is (or is about to be), so its
+            // shadow is the one the real panel shows.
+            WM_NCACTIVATE if !carrier.is_null() && (*carrier).active => {
+                return DefWindowProcW(hwnd, message, 1, lparam);
+            }
+            _ => {}
+        }
+        DefWindowProcW(hwnd, message, wparam, lparam)
+    }
+
+    /// An empty window with the panel's own frame, moved under the panel's
+    /// thumbnail so the travelling panel keeps its real DWM shadow (thumbnails
+    /// never include shadows). It shows and hides with DWM's own fade.
+    struct Shadow {
+        hwnd: HWND,
+        carrier: *mut Carrier,
+        insets: Rect,
+        shown: Cell<bool>,
+    }
+
+    impl Shadow {
+        fn new(panel_hwnd: HWND, owner: HWND, active: bool) -> Option<Shadow> {
+            unsafe {
+                // A maximized panel has no shadow.
+                if IsZoomed(panel_hwnd) != 0 {
+                    return None;
+                }
+                let style = GetWindowLongPtrW(panel_hwnd, GWL_STYLE) as u32;
+                if style & WS_CAPTION != WS_CAPTION || style & WS_THICKFRAME == 0 {
+                    return None;
+                }
+                let mut window = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                let mut client = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                let mut origin = POINT { x: 0, y: 0 };
+                if GetWindowRect(panel_hwnd, &mut window) == 0
+                    || GetClientRect(panel_hwnd, &mut client) == 0
+                    || ClientToScreen(panel_hwnd, &mut origin) == 0
+                {
+                    return None;
+                }
+                let insets = Rect {
+                    left: origin.x - window.left,
+                    top: origin.y - window.top,
+                    right: window.right - (origin.x + client.right),
+                    bottom: window.bottom - (origin.y + client.bottom),
+                };
+                if [insets.left, insets.top, insets.right, insets.bottom].iter().any(|v| !(0..=64).contains(v)) {
+                    return None;
+                }
+                let class = shadow_class().ok()?;
+                let carrier = Box::into_raw(Box::new(Carrier { insets, active }));
+                // Owned by the (topmost) folder: no taskbar button, no Alt+Tab.
+                let hwnd = CreateWindowExW(
+                    WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_NOREDIRECTIONBITMAP,
+                    class.as_ptr(),
+                    std::ptr::null(),
+                    style & !(WS_VISIBLE | WS_MAXIMIZE | WS_MINIMIZE | WS_DISABLED),
+                    window.left,
+                    window.top,
+                    (window.right - window.left).max(1),
+                    (window.bottom - window.top).max(1),
+                    owner,
+                    std::ptr::null_mut(),
+                    GetModuleHandleW(std::ptr::null()),
+                    carrier as *const core::ffi::c_void,
+                );
+                if hwnd.is_null() {
+                    drop(Box::from_raw(carrier));
+                    return None;
+                }
+                if active {
+                    SendMessageW(hwnd, WM_NCACTIVATE, 1, 0);
+                }
+                Some(Shadow { hwnd, carrier, insets, shown: Cell::new(false) })
+            }
+        }
+
+        /// Whether DWM fades this window in and out as it shows and hides.
+        fn fades(&self, on: bool) {
+            let disabled: i32 = i32::from(!on);
+            unsafe {
+                DwmSetWindowAttribute(
+                    self.hwnd,
+                    DWMWA_TRANSITIONS_FORCEDISABLED as u32,
+                    (&disabled as *const i32).cast(),
+                    std::mem::size_of::<i32>() as u32,
+                );
+            }
+        }
+
+        /// Directly beneath the overlay, so it never covers either thumbnail.
+        fn place(&self, overlay: HWND, rect: Rect, show: bool) {
+            let flags = SWP_NOACTIVATE | if show { SWP_SHOWWINDOW } else { 0 };
+            unsafe {
+                SetWindowPos(self.hwnd, overlay, rect.left, rect.top, (rect.right - rect.left).max(1), (rect.bottom - rect.top).max(1), flags);
+            }
+            if show {
+                self.shown.set(true);
+            }
+        }
+
+        fn hide(&self) {
+            if self.shown.replace(false) {
+                unsafe {
+                    ShowWindow(self.hwnd, SW_HIDE);
+                }
+            }
+        }
+    }
+
+    impl Drop for Shadow {
+        fn drop(&mut self) {
+            // Removed at once: the real panel (or nothing) is already in place.
+            self.fades(false);
+            unsafe {
+                DestroyWindow(self.hwnd);
+                drop(Box::from_raw(self.carrier));
+            }
+        }
+    }
+
     fn class() -> Result<Vec<u16>, String> {
         use std::sync::OnceLock;
         static REGISTERED: OnceLock<bool> = OnceLock::new();
-        let name: Vec<u16> = "StashDockHandoff\0".encode_utf16().collect();
-        let ok = *REGISTERED.get_or_init(|| unsafe {
+        register(&REGISTERED, "StashDockHandoff", procedure)
+    }
+
+    fn shadow_class() -> Result<Vec<u16>, String> {
+        use std::sync::OnceLock;
+        static REGISTERED: OnceLock<bool> = OnceLock::new();
+        register(&REGISTERED, "StashDockHandoffShadow", shadow_procedure)
+    }
+
+    fn register(
+        registered: &std::sync::OnceLock<bool>,
+        name: &str,
+        procedure: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT,
+    ) -> Result<Vec<u16>, String> {
+        let name: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        let ok = *registered.get_or_init(|| unsafe {
             let class = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                 style: 0,
@@ -243,6 +439,7 @@ mod native {
         direction: Direction,
         panel: Rect,
         folder: Rect,
+        shadow: Option<Shadow>,
     }
 
     impl Morph {
@@ -272,13 +469,28 @@ mod native {
                 if hwnd.is_null() {
                     return Err("Could not prepare the window transition.".into());
                 }
-                let mut morph = Morph { hwnd, origin: (area.left, area.top), panel_thumb: 0, folder_thumb: 0, direction, panel, folder };
+                let mut morph = Morph { hwnd, origin: (area.left, area.top), panel_thumb: 0, folder_thumb: 0, direction, panel, folder, shadow: None };
                 if DwmRegisterThumbnail(hwnd, panel_hwnd as HWND, &mut morph.panel_thumb) < 0
                     || DwmRegisterThumbnail(hwnd, folder_hwnd as HWND, &mut morph.folder_thumb) < 0
                 {
                     return Err("Could not prepare the window transition.".into());
                 }
                 morph.show(0.0)?;
+                // The panel draws as active once it lands (it takes focus);
+                // a collapse starts from whatever state it is in.
+                let active = match direction {
+                    Direction::Expand => true,
+                    Direction::Collapse => GetForegroundWindow() == panel_hwnd as HWND,
+                };
+                morph.shadow = Shadow::new(panel_hwnd as HWND, folder_hwnd as HWND, active);
+                if direction == Direction::Collapse {
+                    // Already in place, under the panel's own shadow, before
+                    // the panel is cloaked: no change at the first frame.
+                    if let Some(shadow) = morph.shadow.as_ref() {
+                        shadow.fades(false);
+                        shadow.place(hwnd, panel, true);
+                    }
+                }
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 DwmFlush();
                 Ok(morph)
@@ -309,7 +521,18 @@ mod native {
             let frame = frame(self.direction, self.panel, self.folder, t);
             // The folder is drawn over the panel, as its real window is topmost.
             self.place(self.panel_thumb, frame.panel, frame.panel_opacity)?;
-            self.place(self.folder_thumb, frame.folder, frame.folder_opacity)
+            self.place(self.folder_thumb, frame.folder, frame.folder_opacity)?;
+            if let Some(shadow) = self.shadow.as_ref() {
+                let rect = shadow_rect(frame.panel, self.panel, shadow.insets);
+                match self.direction {
+                    // Fades in with the panel (DWM's own show transition)...
+                    Direction::Expand => shadow.place(self.hwnd, rect, t > 0.0),
+                    // ...and fades out as the panel starts to fade.
+                    Direction::Collapse if frame.panel_opacity < 255 => shadow.hide(),
+                    Direction::Collapse => shadow.place(self.hwnd, rect, false),
+                }
+            }
+            Ok(())
         }
 
         /// Plays the whole transition, one step per composed frame. Blocks the
@@ -317,6 +540,9 @@ mod native {
         /// for its native calls; WebView rendering continues in its own process.
         pub fn play(&self) -> Result<(), String> {
             let duration = self.direction.duration();
+            if let Some(shadow) = self.shadow.as_ref() {
+                shadow.fades(true);
+            }
             let start = Instant::now();
             for _ in 0..240 {
                 let t = start.elapsed().as_secs_f64() / duration.as_secs_f64();
@@ -332,7 +558,9 @@ mod native {
         }
 
         /// Wait until the real windows' revealed state has been composed, so
-        /// removing the overlay never leaves an empty frame.
+        /// removing the overlay never leaves an empty frame. Called after the
+        /// destination took focus, so the panel's own (active) shadow is
+        /// already the one the carrier shows.
         pub fn finish(self) {
             unsafe {
                 DwmFlush();
@@ -343,6 +571,7 @@ mod native {
 
     impl Drop for Morph {
         fn drop(&mut self) {
+            self.shadow.take();
             unsafe {
                 if self.panel_thumb != 0 {
                     DwmUnregisterThumbnail(self.panel_thumb);
@@ -391,6 +620,19 @@ mod tests {
         assert_eq!(last.panel, PANEL);
         assert_eq!(last.panel_opacity, 255);
         assert_eq!(last.folder_opacity, 0);
+    }
+
+    #[test]
+    fn the_shadow_hugs_the_scaled_visible_panel() {
+        let insets = Rect { left: 8, top: 1, right: 8, bottom: 8 };
+        // At rest it is exactly the panel's window.
+        assert_eq!(shadow_rect(PANEL, PANEL, insets), PANEL);
+        // Half size: visible content is the scaled one; borders keep their size.
+        let half = Rect::around(PANEL.centre(), PANEL.width() / 2.0, PANEL.height() / 2.0);
+        let rect = shadow_rect(half, PANEL, insets);
+        assert_eq!(rect.left, half.left + 4 - 8);
+        assert_eq!(rect.right, half.right - 4 + 8);
+        assert_eq!(rect.bottom, half.bottom - 4 + 8);
     }
 
     #[test]

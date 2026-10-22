@@ -452,7 +452,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
         }
         .filter(|_| window_morph::enabled());
         let mut folder_cloak = None;
-        let mut panel_cloak = None;
+        let mut panel_cloak: Option<window_frame::Cloak> = None;
         #[cfg(windows)]
         let mut morph = None;
         if let Some(next) = target {
@@ -558,15 +558,17 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
         if let Some(restore) = restore.as_mut() {
             restore.reveal()?;
         }
-        #[cfg(windows)]
-        if let Some(morph) = morph.take() {
-            morph.finish();
-        }
         if let Some(next) = target {
             app.get_webview_window(next.label())
                 .ok_or("The requested window is unavailable")?
                 .set_focus()
                 .map_err(|e| e.to_string())?;
+        }
+        // Last, so the panel's shadow is already its active one when the
+        // transition's own shadow is removed.
+        #[cfg(windows)]
+        if let Some(morph) = morph.take() {
+            morph.finish();
         }
         Ok(())
     })();
