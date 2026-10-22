@@ -11,6 +11,8 @@ import { useI18n } from '../settings/locale';
 import { useMcpSettings } from './settings';
 import styles from '../settings/SettingsView.module.css';
 import { IntegrationSections } from '../settings/IntegrationSections';
+import { GitHubMark } from '../settings/GitHubMark';
+import { versionLabel } from '../settings/UpdateDialog';
 import type { IntegrationInfo } from '../settings/integrations';
 
 export default function McpSettingsView({ onClose, onOpenLink, onLibraryMoved }: { onClose: () => void; onOpenLink: (url: string) => Promise<unknown>; onLibraryMoved: () => void }) {
@@ -30,8 +32,8 @@ export default function McpSettingsView({ onClose, onOpenLink, onLibraryMoved }:
       <StorageSection services={storageServices} onBusyChange={setBusy} onMoved={onLibraryMoved} />
       <IntegrationSections host="codex" load={loadIntegrations} openLink={onOpenLink} openApp={id => call('open_stashdock_integration', { id })} disabled={busy} />
       <section className={styles.section} aria-labelledby="settings-about"><h2 id="settings-about">{t('About')}</h2><div className={styles.group}>
-        <SettingsRow title="StashDock for ChatGPT" icon={<IntegrationIcon id="codex" />} description={`${t('Version')} ${info.version}`}><SettingHelp label={t('About plugin updates')}>{t('Manage plugin updates in ChatGPT.')}</SettingHelp></SettingsRow>
-        {info.githubUrl && <SettingsRow title="GitHub"><Button variant="ghost" size="sm" onClick={() => { setOperationError(''); void onOpenLink(info.githubUrl!).catch(reason => setOperationError(String(reason))); }}>{t('Open')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button></SettingsRow>}
+        <SettingsRow title="StashDock for ChatGPT" meta={versionLabel(info.version)} icon={<IntegrationIcon id="codex" />}><SettingHelp label={t('About plugin updates')}>{t('Manage plugin updates in ChatGPT.')}</SettingHelp></SettingsRow>
+        {info.githubUrl && <SettingsRow title="GitHub" icon={<GitHubMark />}><Button variant="ghost" size="sm" onClick={() => { setOperationError(''); void onOpenLink(info.githubUrl!).catch(reason => setOperationError(String(reason))); }}>{t('Open')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button></SettingsRow>}
       </div><Alert tone="danger" title={t('Try again.')} open={Boolean(operationError)}>{t(operationError)}</Alert></section>
     </>}
   </SettingsFrame>;

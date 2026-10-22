@@ -16,6 +16,7 @@
 .helpButton { display: inline-flex; align-items: center; justify-content: center; width: var(--space-6); height: var(--space-6); flex: none; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
 .helpButton:hover, .helpButton:focus-visible { color: var(--foreground); }
 .label { font-size: var(--text-sm); font-weight: 500; }
+.meta { margin-left: var(--space-2); color: var(--text-secondary); font-weight: 400; font-variant-numeric: tabular-nums; }
 .description { color: var(--text-secondary); font-size: var(--text-xs); line-height: var(--leading-body); }
 .control { min-width: 0; flex-shrink: 0; max-width: 100%; }
 .control:has(fieldset) { width: min(360px, 100%); }
@@ -25,8 +26,6 @@
 .actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
 .location .actions { justify-content: flex-start; }
 .loading { display: grid; gap: var(--space-4); }
-.update { color: var(--text-secondary); font-size: var(--text-sm); }
-.update p { margin: 0 0 var(--space-2); }
 @container settings (max-width: 560px) {
   .header { padding: var(--space-4); }
   .viewport { padding-inline: var(--space-4); }

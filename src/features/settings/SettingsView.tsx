@@ -14,8 +14,9 @@ import { useI18n } from './locale';
 import styles from './SettingsView.module.css';
 import { IntegrationSections } from './IntegrationSections';
 import type { IntegrationInfo } from './integrations';
+import { GitHubMark } from './GitHubMark';
+import { UpdateDialog, versionLabel } from './UpdateDialog';
 
-type UpdateInfo = { status: 'unconfigured' | 'current' | 'available'; version: string | null; url: string | null };
 export default function SettingsView({ onClose, onBusyChange }: { onClose: () => void; onBusyChange: (busy: boolean) => void }) {
   const { t } = useI18n();
   const { info, loading, pending, error, reload, save, setStartup } = useDesktopPreferences();
@@ -23,7 +24,7 @@ export default function SettingsView({ onClose, onBusyChange }: { onClose: () =>
   const [operationError, setOperationError] = useState('');
   const [moving, setMoving] = useState(false);
   const [restartRequired, setRestartRequired] = useState(false);
-  const [checking, setChecking] = useState(false), [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
   const alive = useRef(true), operation = useRef(false);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { onBusyChange(moving || restartRequired); return () => onBusyChange(false); }, [moving, restartRequired, onBusyChange]);
@@ -55,9 +56,10 @@ export default function SettingsView({ onClose, onBusyChange }: { onClose: () =>
         <StorageSection services={storageServices} onBusyChange={setMoving} disabled={restartRequired} />
         <IntegrationSections host="desktop" load={loadIntegrations} openLink={openExternalUrl} openApp={id => invoke('open_integration', { id })} disabled={moving || restartRequired} />
         <section className={styles.section} aria-labelledby="settings-about"><h2 id="settings-about">{t('About')}</h2><div className={styles.group}>
-          <Row title="StashDock Desktop" icon={<IntegrationIcon id="desktop" />} description={`${t('Version')} ${info.version}`}><Button variant="secondary" size="sm" loading={checking} disabled={moving} onClick={() => run(async () => { setChecking(true); try { const result = await invoke<UpdateInfo>('check_desktop_updates'); if (alive.current) setUpdate(result); } finally { if (alive.current) setChecking(false); } })}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />{t('Check for updates')}</Button></Row>
-          {info.githubUrl && <Row title="GitHub"><Button variant="ghost" size="sm" onClick={() => run(() => openExternalUrl(info.githubUrl!))}>{t('Open')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button></Row>}
-        </div>{update && <div className={styles.update} role="status"><p>{update.status === 'unconfigured' ? t('Updates will be available after the public release.') : update.status === 'current' ? t('You are up to date.') : t('Version {version} is available.', { version: update.version || '' })}</p>{update.status === 'available' && update.url && <Button variant="secondary" size="sm" onClick={() => run(() => openExternalUrl(update.url!))}>{t('View release')}<ExternalLink size={16} strokeWidth={1.75} /></Button>}</div>}</section>
+          <Row title="StashDock Desktop" meta={versionLabel(info.version)} icon={<IntegrationIcon id="desktop" />}><Button variant="secondary" size="sm" disabled={moving} onClick={() => setCheckingUpdates(true)}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />{t('Check for updates')}</Button></Row>
+          {info.githubUrl && <Row title="GitHub" icon={<GitHubMark />}><Button variant="ghost" size="sm" onClick={() => run(() => openExternalUrl(info.githubUrl!))}>{t('Open')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button></Row>}
+        </div></section>
+        <UpdateDialog open={checkingUpdates} version={info.version} onClose={() => setCheckingUpdates(false)} openLink={openExternalUrl} />
         </>}
         {restartRequired && operationError ? <Alert tone="info" title={t('Storage location updated')}><Button variant="secondary" onClick={() => run(() => invoke('restart_desktop'))}>{t('Restart StashDock Desktop')}</Button></Alert> : <Alert tone="danger" title={t('Try again.')} open={Boolean(operationError)}>{t(operationError)}</Alert>}
     </SettingsFrame>;

@@ -40,6 +40,13 @@ async page => {
   await page.getByRole('button', { name: 'Check for updates', exact: true }).click();
   await page.getByText('Updates will be available after the public release.', { exact: true }).waitFor();
   if (await page.getByRole('button', { name: /GitHub/ }).count()) throw Error('Unconfigured repository was exposed');
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.evaluate(() => sessionStorage.setItem('settings-fixture-update', 'available'));
+  await page.getByRole('button', { name: 'Check for updates', exact: true }).click();
+  await page.getByText('Version v0.3.0 is available. You have v0.2.2.', { exact: true }).waitFor();
+  await page.screenshot({ path: 'output/playwright/settings-update-available.png' });
+  await page.getByRole('button', { name: 'Not now', exact: true }).click();
+  await page.evaluate(() => sessionStorage.removeItem('settings-fixture-update'));
   await page.getByRole('button', { name: 'Change location', exact: true }).click();
   await page.getByRole('dialog', { name: 'Change storage location?', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Move library', exact: true }).click();

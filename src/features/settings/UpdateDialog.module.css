@@ -1,0 +1,12 @@
+/* Same composition as ImportProgress: mark, centred heading, one status line. */
+.surface { text-align: center; }
+.mark { display: block; width: 72px; height: auto; margin: var(--space-3) auto var(--space-6); opacity: .28; }
+:global([data-theme="dark"]) .mark { filter: invert(1); opacity: .38; }
+.title { margin: 0; font-family: var(--font-body); font-size: var(--text-lg); font-weight: 500; line-height: var(--leading-body); letter-spacing: var(--tracking-body); color: var(--foreground); }
+.detail { min-height: calc(var(--text-sm) * var(--leading-body) * 2); margin-top: var(--space-2); display: grid; place-items: center; }
+.detail p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); overflow-wrap: anywhere; }
+.spinner { width: 20px; height: 20px; border: 1.5px solid var(--text-secondary); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.error { margin: var(--space-2) 0 0; color: var(--danger); font-size: var(--text-sm); line-height: var(--leading-body); }
+.actions { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-6); }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }

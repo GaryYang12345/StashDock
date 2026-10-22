@@ -22,7 +22,7 @@ mockIPC(async (command, raw) => {
   switch (command) {
     case 'get_integration_status': document.documentElement.dataset.presenceChecks=String(Number(document.documentElement.dataset.presenceChecks||'0')+1); return { items: [{ id: 'codex', detected: !new URLSearchParams(location.search).has('no-agent') && sessionStorage.getItem('fixture-agent-disabled')!=='1' }, ...['chrome', 'edge', 'firefox'].map(id => ({ id, detected: new URLSearchParams(location.search).has('browsers-detected') }))], links: {}, githubUrl: new URLSearchParams(location.search).has('github-fixture') ? 'https://github.com/example/stashdock-test-fixture' : null };
     case 'open_integration': if(sessionStorage.getItem('fixture-open-failure'))throw 'The app could not be opened. Try again.'; document.documentElement.dataset.openedIntegration = String(args.id); return;
-    case 'get_desktop_settings': return { preferences, launchAtLogin: startup, version: '0.2.2', githubUrl: null };
+    case 'get_desktop_settings': return { preferences, launchAtLogin: startup, version: '0.2.2', githubUrl: new URLSearchParams(location.search).has('github-fixture') ? 'https://github.com/example/stashdock-test-fixture' : null };
     case 'save_desktop_preferences': {
       const next = args.preferences as DesktopPreferences;
       if (next.shortcut === 'Ctrl+Alt+Space') throw 'This shortcut is in use by another app. Choose another shortcut.';
@@ -30,7 +30,7 @@ mockIPC(async (command, raw) => {
     }
     case 'get_storage_info': return { path: 'D:\\Fixture\\StashDock library with a deliberately long folder name\\Saved references', bytes: 2345678, references: items.length };
     case 'set_launch_at_login': startup = args.enabled as boolean; return startup;
-    case 'check_desktop_updates': return { status: 'unconfigured', version: null, url: null };
+    case 'check_desktop_updates': return sessionStorage.getItem('settings-fixture-update') === 'available' ? { status: 'available', version: 'v0.3.0', url: 'https://github.com/example/stashdock-test-fixture/releases/latest' } : { status: 'unconfigured', version: null, url: null };
     case 'open_storage_folder': document.documentElement.dataset.fixtureFolderOpened = 'true'; return;
     case 'plugin:dialog|open': return 'D:\\Fixture\\New storage';
     case 'move_library': {

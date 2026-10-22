@@ -17,8 +17,8 @@ export function SettingsFrame({ children, onClose, busy = false, loading = false
     <ScrollArea className={styles.scroller} viewportClassName={styles.viewport} label={t('Settings')} fade={0}><div className={styles.page} aria-busy={loading || busy}>{children}</div></ScrollArea>
   </section>;
 }
-export function SettingsRow({ title, description, children, icon }: { title: string; description?: ReactNode; children: ReactNode; icon?: ReactNode }) {
-  return <div className={styles.row}><div className={styles.brandIdentity}>{icon}<div className={styles.copy}><span className={styles.label}>{title}</span>{description && <div className={styles.description}>{description}</div>}</div></div><div className={styles.control}>{children}</div></div>;
+export function SettingsRow({ title, meta, description, children, icon }: { title: string; meta?: string; description?: ReactNode; children: ReactNode; icon?: ReactNode }) {
+  return <div className={styles.row}><div className={styles.brandIdentity}>{icon}<div className={styles.copy}><span className={styles.label}>{title}{meta && <span className={styles.meta}>{meta}</span>}</span>{description && <div className={styles.description}>{description}</div>}</div></div><div className={styles.control}>{children}</div></div>;
 }
 export function SettingsChoice({ label, value, options, disabled, onChange }: { label: string; value: string; options: { value: string; label: string }[]; disabled?: boolean; onChange: (value: string) => void }) {
   return <DesktopMenu label={label} actions={options.map(option => ({ label: option.label, icon: option.value === value ? <Check size={16} strokeWidth={1.75} /> : <span />, onSelect: () => { if (!disabled) onChange(option.value); } }))}>
