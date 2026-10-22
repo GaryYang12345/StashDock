@@ -455,7 +455,15 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             (Some(Surface::Panel), Some(Surface::Folder)) => Some(window_morph::Direction::Collapse),
             _ => None,
         }
-        .filter(|_| window_morph::enabled());
+        .filter(|direction| {
+            // A panel Windows already minimized (its own minimize command
+            // animated it) has nothing left to draw.
+            window_morph::enabled()
+                && (*direction == window_morph::Direction::Expand
+                    || !app
+                        .get_webview_window("main")
+                        .is_some_and(|panel| panel.is_minimized().unwrap_or(false)))
+        });
         let mut folder_cloak = None;
         let mut panel_cloak: Option<window_frame::Cloak> = None;
         #[cfg(windows)]
@@ -512,12 +520,28 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             }
             if handoff == Some(window_morph::Direction::Collapse) {
                 folder_cloak = Some(window_frame::Cloak::new(&window)?);
+                // The overlay takes over the panel before the folder is shown
+                // (showing it activates it): the panel's shadow is still the
+                // one it had when the user collapsed it.
+                #[cfg(windows)]
+                {
+                    morph = start_morph(app, window_morph::Direction::Collapse, &mut folder_cloak, &mut panel_cloak);
+                }
             }
             // Rollback below restores the source if reveal/focus fails.
             window_frame::show_immediately(&window)?;
             #[cfg(windows)]
             if let Some(direction) = handoff {
-                morph = start_morph(app, direction, &mut folder_cloak, &mut panel_cloak);
+                if direction == window_morph::Direction::Expand {
+                    morph = start_morph(app, direction, &mut folder_cloak, &mut panel_cloak);
+                }
+                if let Some(morph) = morph.as_ref() {
+                    // Let the just-shown destination compose its first frame.
+                    window_morph::settle();
+                    if let Err(error) = morph.play() {
+                        eprintln!("StashDock transition ended early: {error}");
+                    }
+                }
                 if morph.is_none() && direction == window_morph::Direction::Expand {
                     // Direct fallback: the folder is hidden before the panel shows.
                     if let Some(outgoing) = app.get_webview_window(Surface::Folder.label()) {
@@ -641,9 +665,9 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
     emit(app);
     Ok(status(app))
 }
-/// Draw the travel between the folder and the panel with live DWM thumbnails.
-/// On entry the destination is shown but cloaked; the source is visible. Once
-/// the overlay draws both, the source is cloaked too, and the travel plays.
+/// Prepare the travel between the folder and the panel with live DWM
+/// thumbnails: the overlay takes over the visible source (which is cloaked in
+/// the same step); the caller shows the destination and plays it.
 /// Returns None (leaving everything as it was) if anything is unavailable.
 #[cfg(windows)]
 fn start_morph(
@@ -684,9 +708,6 @@ fn start_morph(
             eprintln!("StashDock transition skipped: {error}");
             return None;
         }
-    }
-    if let Err(error) = morph.play() {
-        eprintln!("StashDock transition ended early: {error}");
     }
     Some(morph)
 }

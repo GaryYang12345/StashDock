@@ -192,11 +192,18 @@ mod shadow {
     /// top edge, bottom edge offset (px at 150%). The top edge is measured from
     /// the panel's top, or from its bottom for the layer that only darkens the
     /// area below it, so the shadow keeps its shape at any panel size.
-    const LAYERS: [(f64, f64, f64, f64, Edge, f64); 4] = [
+    const ACTIVE: [(f64, f64, f64, f64, Edge, f64); 4] = [
         (0.13, 20.08, 25.70, -12.39, Edge::Top(12.02), 48.57),
         (0.07, 19.02, 50.59, -16.58, Edge::Top(393.29), 36.66),
         (0.12, 191.24, 40.46, 258.77, Edge::Bottom(337.92), 20.65),
         (0.09, 12.49, 14.25, 4.62, Edge::Top(-6.15), 11.36),
+    ];
+    /// The lighter shadow Windows gives an inactive window.
+    const INACTIVE: [(f64, f64, f64, f64, Edge, f64); 4] = [
+        (0.07, 20.43, 24.95, -6.40, Edge::Top(51.29), 50.91),
+        (0.04, 21.67, 37.22, -16.19, Edge::Top(505.57), 56.86),
+        (0.05, 210.30, 32.18, 232.48, Edge::Bottom(255.69), 39.91),
+        (0.12, 8.75, 9.69, -0.62, Edge::Top(-1.01), 5.75),
     ];
     #[derive(Clone, Copy)]
     enum Edge {
@@ -225,14 +232,15 @@ mod shadow {
 
     /// Premultiplied BGRA pixels of the shadow around a `width` x `height`
     /// visible panel, `margin` px on every side; nothing under the panel.
-    pub fn render(width: i32, height: i32, scale: f64) -> (i32, i32, i32, Vec<u8>) {
+    pub fn render(width: i32, height: i32, scale: f64, active: bool) -> (i32, i32, i32, Vec<u8>) {
+        let layers = if active { ACTIVE } else { INACTIVE };
         let margin = (REACH * scale).ceil() as i32;
         let (w, h) = (width + 2 * margin, height + 2 * margin);
         let (right, bottom) = ((width + margin) as f64, (height + margin) as f64);
         let (left, top) = (margin as f64, margin as f64);
         let mut columns = Vec::new();
         let mut rows = Vec::new();
-        for (amp, bx, by, ix, edge, below) in LAYERS {
+        for (amp, bx, by, ix, edge, below) in layers {
             let (bx, by, ix, below) = (bx * scale, by * scale, ix * scale, below * scale);
             let from = match edge {
                 Edge::Top(offset) => top + offset * scale,
@@ -249,7 +257,7 @@ mod shadow {
                     continue;
                 }
                 let mut clear = 1.0;
-                for layer in 0..LAYERS.len() {
+                for layer in 0..layers.len() {
                     clear *= 1.0 - columns[layer][x as usize] * rows[layer][y as usize];
                 }
                 let alpha = ((1.0 - clear) * 255.0).round().clamp(0.0, 255.0) as u8;
@@ -390,7 +398,7 @@ mod native {
         System::LibraryLoader::GetModuleHandleW,
         UI::HiDpi::GetDpiForWindow,
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassExW, ShowWindow,
+            CreateWindowExW, DefWindowProcW, DestroyWindow, GetForegroundWindow, RegisterClassExW, ShowWindow,
             IsZoomed, UpdateLayeredWindow, HTTRANSPARENT, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_NCHITTEST,
             WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
             WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
@@ -480,11 +488,25 @@ mod native {
     }
 
     type Image = (i32, i32, i32, Vec<u8>);
-    /// The last rendered shadow, by visible panel size and scale.
-    static CACHE: Mutex<Option<((i32, i32, u32), Image)>> = Mutex::new(None);
+    type Key = (i32, i32, u32, bool);
+    /// The rendered shadows (active and inactive) for the panel's last size.
+    static CACHE: Mutex<Vec<(Key, std::sync::Arc<Image>)>> = Mutex::new(Vec::new());
 
-    fn key(panel: Rect, scale: f64) -> (i32, i32, u32) {
-        (panel.right - panel.left, panel.bottom - panel.top, (scale * 1000.0).round() as u32)
+    fn key(panel: Rect, scale: f64, active: bool) -> Key {
+        (panel.right - panel.left, panel.bottom - panel.top, (scale * 1000.0).round() as u32, active)
+    }
+
+    fn cached(key: Key) -> Option<std::sync::Arc<Image>> {
+        CACHE.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(k, _)| *k == key).map(|(_, image)| image.clone())
+    }
+
+    fn render(key: Key) -> std::sync::Arc<Image> {
+        let scale = key.2 as f64 / 1000.0;
+        let image = std::sync::Arc::new(shadow::render(key.0, key.1, scale, key.3));
+        let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        cache.retain(|(k, _)| *k != key && (k.0, k.1, k.2) == (key.0, key.1, key.2));
+        cache.push((key, image.clone()));
+        image
     }
 
     fn scale_of(hwnd: HWND) -> f64 {
@@ -508,16 +530,19 @@ mod native {
             return;
         }
         let scale = scale_of(hwnd);
-        let key = key(panel, scale);
-        if CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|(k, _)| *k) == Some(key) {
+        let keys = [key(panel, scale, true), key(panel, scale, false)];
+        if keys.iter().all(|k| cached(*k).is_some()) {
             return;
         }
         if BUSY.swap(true, Ordering::SeqCst) {
             return;
         }
         std::thread::spawn(move || {
-            let image = shadow::render(key.0, key.1, scale);
-            *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, image));
+            for key in keys {
+                if cached(key).is_none() {
+                    render(key);
+                }
+            }
             BUSY.store(false, Ordering::SeqCst);
         });
     }
@@ -531,14 +556,10 @@ mod native {
     }
 
     impl ShadowSource {
-        fn new(panel: Rect, scale: f64) -> Result<ShadowSource, String> {
-            let key = key(panel, scale);
-            let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-            if cache.as_ref().map(|(k, _)| *k) != Some(key) {
-                *cache = Some((key, shadow::render(key.0, key.1, scale)));
-            }
-            let (_, (w, h, margin, pixels)) = cache.as_ref().ok_or("Could not draw the window transition.")?;
-            let (w, h, margin) = (*w, *h, *margin);
+        fn new(panel: Rect, scale: f64, active: bool) -> Result<ShadowSource, String> {
+            let key = key(panel, scale, active);
+            let image = cached(key).unwrap_or_else(|| render(key));
+            let (w, h, margin, pixels) = (image.0, image.1, image.2, &image.3);
             let area = Rect { left: panel.left - margin, top: panel.top - margin, right: panel.left - margin + w, bottom: panel.top - margin + h };
             let hwnd = window(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT, area)?;
             let source = ShadowSource { hwnd, margin };
@@ -646,7 +667,10 @@ mod native {
             unsafe {
                 // Registration order is drawing order: shadow, panel, folder
                 // (the folder's real window is topmost).
-                match ShadowSource::new(panel, scale) {
+                // Drawn as the panel will look: active once it lands, or as it
+                // is when it is collapsed.
+                let active = direction == Direction::Expand || GetForegroundWindow() == panel_hwnd;
+                match ShadowSource::new(panel, scale, active) {
                     Ok(source) => {
                         let mut thumb = 0;
                         if DwmRegisterThumbnail(hwnd, source.hwnd, &mut thumb) >= 0 {
@@ -863,15 +887,20 @@ mod tests {
     #[test]
     fn the_shadow_matches_the_measured_panel_shadow_and_never_covers_it() {
         // Measured at 150% around a 1608x1070 panel (alpha over white).
-        let image = shadow::render(1608, 1070, 1.0);
+        let image = shadow::render(1608, 1070, 1.0, true);
         let at = |x, y| shadow::alpha_at(&image, x, y);
         assert_eq!(at(800, 500), 0.0);
         assert_eq!(at(0, 0), 0.0);
         for (x, y, measured) in [(800, 1080, 0.271), (800, 1110, 0.152), (800, 1138, 0.066), (-10, 520, 0.119), (-40, 520, 0.019), (1612, 200, 0.106), (1612, 900, 0.167)] {
             assert!((at(x, y) - measured).abs() < 0.02, "({x}, {y}): {} vs {measured}", at(x, y));
         }
+        let inactive = shadow::render(1608, 1070, 1.0, false);
+        for (x, y, measured) in [(800, 1080, 0.173), (800, 1110, 0.097), (-10, 520, 0.063), (-40, 520, 0.008), (1612, 200, 0.069)] {
+            let value = shadow::alpha_at(&inactive, x, y);
+            assert!((value - measured).abs() < 0.02, "inactive ({x}, {y}): {value} vs {measured}");
+        }
         // It scales with DPI.
-        let small = shadow::render(1072, 713, 2.0 / 3.0);
+        let small = shadow::render(1072, 713, 2.0 / 3.0, true);
         assert_eq!(small.2, 94);
     }
 
