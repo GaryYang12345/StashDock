@@ -27,7 +27,7 @@ import { Toolbar } from "../../components/Toolbar";
 import { hideStashDock } from "../../lib/desktopWindows";
 import { useLibraryController } from "./useLibraryController";
 import { usePinnedTags } from './usePinnedTags';
-import { useIncrementalList } from './useIncrementalList';
+import { VirtualShelf } from './VirtualShelf';
 import styles from "./LibraryView.module.css";
 import listStyles from '../../components/ReferenceList.module.css';
 import { ReferenceImportDialog } from '../../components/ReferenceImportDialog';
@@ -37,6 +37,7 @@ const SettingsView = lazy(() => import('../settings/SettingsView'));
 export default function LibraryView({ onCollapse, active = true, maximized = false, floatingWindow = true }: { onCollapse?: () => void; active?: boolean; maximized?: boolean; floatingWindow?: boolean }) {
   const { t } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsBusy, setSettingsBusy] = useState(false);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const settingsTrigger = useRef<HTMLElement | null>(null);
   const openSettings = useCallback(() => { settingsTrigger.current = document.activeElement as HTMLElement; setSettingsOpen(true); }, []);
   const closeSettings = useCallback(() => { setSettingsOpen(false); requestAnimationFrame(() => settingsTrigger.current?.focus()); }, []);
@@ -54,7 +55,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     setTagOperation({ name, action });
   }, []);
   useEffect(() => { if (!active) { setEditing(null); setContentEditing(null); setTagOperation(null); } }, [active]);
-  const { storageReady, error, refresh, refreshing, searching, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
+  const { storageReady, error, refresh, refreshing, searching, shownKey, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
   const editContent = useCallback((item: StashItem) => {
     returnFocus.current = document.querySelector<HTMLElement>(`article[data-reference-id="${CSS.escape(item.id)}"] button[aria-haspopup="menu"]`);
     // Desktop shelf rows carry no bodies: read this reference in full first.
@@ -64,7 +65,6 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     }).catch(error => setNotice(t(error instanceof Error ? error.message : String(error)), 5000));
   }, [setNotice, t]);
   const pinnedError = useCallback((message: string) => setNotice(message, 5000), [setNotice]);
-  const shownItems = useIncrementalList(visibleItems);
   const { pinnedTags, pinTag, reconcileTag } = usePinnedTags(pinnedError);
   // Stable handlers let the memoized navigation and tag menus skip the
   // re-render that every search keystroke causes here.
@@ -105,7 +105,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
             tagControls={<ShelfTagFilter tags={tags} activeTag={activeTag || ''} disabled={!storageReady} busy={false} triggerRef={tagFocus} onFilter={filterTag} onEdit={editTagOperation} pinnedTags={pinnedTags} onPin={togglePin} />}
           />
 
-          <ScrollArea className={styles.scroller} viewportClassName={styles.content} label={t("References")} fade={0} aria-busy={!storageReady || refreshing} data-shell-scroller>
+          <ScrollArea className={styles.scroller} viewportClassName={styles.content} viewportRef={setScroller} label={t("References")} fade={0} aria-busy={!storageReady || refreshing} data-shell-scroller>
             <h2 className="sr-only">{t("References")}</h2>
             <div className={styles.feedback}>
               <Alert tone="danger" title={t("Library could not be refreshed")} open={Boolean(error)}>{t(error || '')}<div className={styles.retry}><Button variant="secondary" onClick={() => void refresh()}>{t("Retry connection")}</Button></div></Alert>
@@ -114,8 +114,8 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
             {!storageReady ? (
               <LoadingReferences compact={view === "list"} className={view === 'grid' ? styles.grid : undefined} />
             ) : visibleItems.length ? (
-                <div className={view === "grid" ? styles.grid : listStyles.list}>
-                  {shownItems.map(item => (
+                <VirtualShelf items={visibleItems} view={view} scroller={scroller} gridClassName={styles.grid} listClassName={listStyles.list} resetKey={shownKey}>
+                  {item => (
                     <StashCard
                       key={item.id}
                       item={item}
@@ -131,8 +131,8 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
                       onEdit={editReference}
                       onEditContent={editContent}
                     />
-                  ))}
-                </div>
+                  )}
+                </VirtualShelf>
             ) : (
               <EmptyState hasQuery={Boolean(query || activeTag || filter !== "all")} onAdd={() => importDialog.current?.open()} onClear={() => { setQuery(""); setActiveTag(null); setFilter("all"); }} />
             )}

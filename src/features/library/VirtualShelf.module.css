@@ -1,0 +1,10 @@
+.grid { min-width: 0; }
+/* Zero-height copy of the shelf grid: its resolved tracks give the column count. */
+.probe { height: 0; overflow: hidden; visibility: hidden; }
+.body { position: relative; min-width: 0; }
+.body > [data-shelf-row] { position: absolute; top: 0; left: 0; width: 100%; box-sizing: border-box; }
+/* A raised (hovered or menu-open) card's shadow stays above the next row. */
+.body > [data-shelf-row]:hover, .body > [data-shelf-row]:focus-within, .body > [data-shelf-row]:has([data-menu-open]) { z-index: 1; }
+/* List rows each sit in their own wrapper; keep every divider but the last. */
+.body > .listRow > article { border-bottom: 1px solid var(--border-subtle); }
+.body > .listRow[data-last] > article { border-bottom: 0; }

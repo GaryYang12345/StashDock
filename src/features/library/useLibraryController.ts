@@ -11,6 +11,9 @@ import { referenceOpenTarget } from '../../lib/referenceOpen';
 import type { ReferenceImportHandle } from '../../components/ReferenceImportDialog';
 import type { ReferenceDeletion } from '../../components/ReferenceDeleteDialog';
 
+type Answer = { query: string; results: string[] | null };
+const EVERYTHING: Answer = { query: '', results: null };
+
 export function useLibraryController(active: boolean, allowImport = true, editing = false) {
   const { items, ready: storageReady, error, refresh: load } = useLibrary();
   const { filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedIds, setSelectedIds, view, setView, copied, setCopied, copiedItemId, setCopiedItemId, refreshing, notice, setNotice, search, setSearch } = useLibrarySession();
@@ -62,13 +65,19 @@ export function useLibraryController(active: boolean, allowImport = true, editin
 
   const { counts, tags } = useMemo(() => summarizeItems(items), [items]);
   const searchIndex = useMemo(() => buildSearchIndex(items), [items]);
-  // The field and navigation answer at once; the cards follow in an
-  // interruptible background render, so typing or deleting never waits for a
-  // large shelf to mount.
-  const shownQuery = useDeferredValue(query), shownFilter = useDeferredValue(filter), shownTag = useDeferredValue(activeTag);
-  const resultIds = useMemo(() => search?.query === shownQuery && search.items === items && search.results ? new Set(search.results) : null, [search, shownQuery, items]);
-  const visibleItems = useMemo(() => filterItems(items, searchIndex, shownQuery, shownFilter, shownTag, resultIds), [items, searchIndex, shownQuery, shownFilter, shownTag, resultIds]);
-  const searching = query !== shownQuery || Boolean(active && storageReady && query.trim() && !(search?.query === query && search.items === items));
+  // One answer per query: the shelf keeps showing the last settled results
+  // until the index has answered the typed query, then changes once. An empty
+  // query is answered at once. The field never waits, and the swap renders in
+  // an interruptible background pass.
+  const answered = !query.trim() ? EVERYTHING : search?.query === query && search.items === items ? search : null;
+  const [settled, setSettled] = useState<Answer>(EVERYTHING);
+  if (answered && answered !== settled) setSettled(answered);
+  const shown = useDeferredValue(answered ?? settled), shownFilter = useDeferredValue(filter), shownTag = useDeferredValue(activeTag);
+  const visibleItems = useMemo(() => filterItems(items, searchIndex, shown.query, shownFilter, shownTag, shown.results ? new Set(shown.results) : null), [items, searchIndex, shown, shownFilter, shownTag]);
+  // Spins only while the typed query is unanswered or still rendering, not
+  // while unchanged results are re-checked after a background card update.
+  const shownKey = `${shown.query}\n${shownFilter}\n${shownTag ?? ''}`;
+  const searching = active && storageReady && (answered ? answered !== shown : settled.query !== query);
   const selectedItems = useMemo(() => selectItems(items, selectedIds), [items, selectedIds]);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -154,5 +163,5 @@ export function useLibraryController(active: boolean, allowImport = true, editin
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [active, allowImport, editing, pendingDelete, handleCopy, selectedItems.length]);
 
-  return { storageReady, error, refresh, refreshing, searching, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem };
+  return { storageReady, error, refresh, refreshing, searching, shownKey, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem };
 }

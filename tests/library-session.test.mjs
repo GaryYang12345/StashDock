@@ -70,7 +70,7 @@ test('both refresh controls share one flight and recover after failure', async (
 test('grid and list preserve the same source and action DOM with one collection map', async () => {
   const view = await readFile(new URL('../src/features/library/LibraryView.tsx', import.meta.url), 'utf8');
   const card = await readFile(new URL('../src/components/StashCard.tsx', import.meta.url), 'utf8');
-  assert.equal((view.match(/shownItems.map/g) || []).length, 1);
+  assert.equal((view.match(/<VirtualShelf items=\{visibleItems\}/g) || []).length, 1);
   assert.equal((card.match(/<SiteIdentity/g) || []).length, 1);
   assert.doesNotMatch(card, /import \{ Card \}/);
   assert.equal((card.match(/const source =/g) || []).length, 1);
