@@ -67,13 +67,13 @@ export function previewQueue(dataDir, { now = () => Math.floor(Date.now()/1000),
     const version = db.prepare('PRAGMA data_version').get().data_version;
     if (version === emptyVersion && now() < emptyUntil) return null;
     const row = db.prepare(`SELECT s.id,s.url,CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END AS preview,s.origin_json,
-    (s.context_override IS NULL AND length(COALESCE(trim(s.content),'')) < 500
+    (s.context_override IS NULL AND COALESCE(trim(s.content),'')=''
       AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
       AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentEdited'),0)!=1
       AND json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.importMethod') IN ('manual_url','browser_bookmarks')) AS needs_text
     FROM stash_items s LEFT JOIN web_preview_jobs j ON j.id=s.id AND j.url=s.url
     WHERE s.kind IN ('web','repo') AND s.url IS NOT NULL AND (s.preview IS NULL OR s.preview='' OR COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.faviconUrl'),'') NOT LIKE 'data:image/%')
-    AND (j.id IS NULL OR (j.status!='done' AND j.attempts<2 AND (j.status!='working' OR j.retry_at<=?))) ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END,CASE WHEN j.status='queued' THEN 0 WHEN j.id IS NULL THEN 1 ELSE 2 END,s.created_at DESC,s.rowid LIMIT 1`).get(now());
+    AND (j.id IS NULL OR (j.status!='done' AND j.attempts<2 AND (j.status!='working' OR j.retry_at<=?))) ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END,CASE WHEN j.id IS NULL OR j.status='queued' THEN 0 ELSE 1 END,s.created_at DESC,s.rowid LIMIT 1`).get(now());
     if (!row) { emptyVersion = version; emptyUntil = now() + 15; }
     return row;
   };
@@ -93,7 +93,7 @@ export function previewQueue(dataDir, { now = () => Math.floor(Date.now()/1000),
       if (safeRaster(result?.faviconUrl, 32768) && (!origin.faviconUrl || origin.faviconUrl === job.faviconUrl)) origin.faviconUrl = result.faviconUrl;
       if (changed || JSON.stringify(origin) !== row.origin_json) db.prepare("UPDATE stash_items SET preview=COALESCE(NULLIF(preview,''),?),origin_json=? WHERE id=? AND url=?").run(image, JSON.stringify(origin), job.id, job.url);
       const textChanged = publishRenderedText(db, job, result);
-      if (final) db.prepare('UPDATE web_preview_jobs SET status=?,retry_at=0 WHERE id=? AND url=?').run((row.preview || image) && safeRaster(origin.faviconUrl,32768) ? 'done' : active.attempts < 2 ? 'queued' : 'failed', job.id, job.url);
+      if (final) db.prepare('UPDATE web_preview_jobs SET status=?,retry_at=0 WHERE id=? AND url=?').run((row.preview || image) && safeRaster(origin.faviconUrl,32768) ? 'done' : active.attempts < 2 ? 'retry' : 'failed', job.id, job.url);
       return Boolean(changed || textChanged);
   });
   return {

@@ -135,7 +135,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     const until = Number(db.prepare("SELECT value FROM app_meta WHERE key='web_preview_worker_until'").get()?.value || 0);
     const imageLive=until>Date.now()/1000 && db.prepare("SELECT 1 FROM sqlite_master WHERE name='web_preview_jobs'").get();
     const contentUntil=Number(db.prepare("SELECT value FROM app_meta WHERE key='web_content_worker_until'").get()?.value||0);
-    const status = imageLive ? db.prepare('SELECT status,retry_at FROM web_preview_jobs WHERE id=? AND url=?') : null;
+    const status = imageLive ? db.prepare('SELECT status,retry_at,attempts FROM web_preview_jobs WHERE id=? AND url=?') : null;
     const content = contentUntil>Date.now()/1000 && db.prepare("SELECT 1 FROM sqlite_master WHERE name='web_content_jobs'").get() ? db.prepare(`SELECT COALESCE(j.status,'queued') status FROM stash_items s LEFT JOIN web_content_jobs j ON j.id=s.id AND j.url=s.url
       WHERE s.id=? AND s.url=? AND s.context_override IS NULL
       AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
@@ -150,7 +150,10 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || (url.port && !['80', '443'].includes(url.port))) continue;
       } catch { continue; }
       const job = status.get(item.id, item.url), state = job?.status;
-      item.previewStatus = !state || state === 'queued' ? 'queued' : state === 'working' ? (job.retry_at > Date.now()/1000 ? 'working' : 'failed') : state === 'failed' ? 'failed' : 'unavailable';
+      // After a failed first screenshot the default cover shows at once; the one
+      // background retry replaces it only on success, without a loading state.
+      // Mirrors preview_status in src-tauri/src/web_preview.rs.
+      item.previewStatus = !state || state === 'queued' ? 'queued' : state === 'working' && job.retry_at > Date.now()/1000 && job.attempts < 2 ? 'working' : ['retry', 'working', 'failed'].includes(state) ? 'failed' : 'unavailable';
     }
     return items;
   }

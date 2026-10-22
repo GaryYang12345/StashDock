@@ -111,7 +111,7 @@ pub(crate) fn annotate(
         return Ok(());
     }
     let mut query =
-        db.prepare("SELECT status,retry_at FROM web_preview_jobs WHERE id=?1 AND url=?2")?;
+        db.prepare("SELECT status,retry_at,attempts FROM web_preview_jobs WHERE id=?1 AND url=?2")?;
     for item in items {
         if !matches!(item.kind.as_str(), "web" | "repo")
             || item.preview.as_ref().is_some_and(|s| !s.is_empty())
@@ -127,23 +127,36 @@ pub(crate) fn annotate(
         };
         let status = query
             .query_row(params![item.id, url], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
             })
             .optional()?;
         item.preview_status = Some(
-            match status
-                .as_ref()
-                .map(|(status, until)| (status.as_str(), *until))
-            {
-                None | Some(("queued", _)) => "queued",
-                Some(("working", until)) if until > timestamp() => "working",
-                Some(("working" | "failed", _)) => "failed",
-                _ => "unavailable",
-            }
+            preview_status(
+                status
+                    .as_ref()
+                    .map(|(status, until, attempts)| (status.as_str(), *until, *attempts)),
+                timestamp(),
+            )
             .into(),
         );
     }
     Ok(())
+}
+/// What a card shows while it has no cover. After a failed first screenshot
+/// the default cover shows at once; the one background retry (scheduled after
+/// every new cover) replaces it only if it succeeds, without a loading state.
+/// Mirrors `previewStatus` in plugins/stashdock/server/local-library.mjs.
+fn preview_status(job: Option<(&str, i64, i64)>, now: i64) -> &'static str {
+    match job {
+        None | Some(("queued", _, _)) => "queued",
+        Some(("working", until, attempts)) if until > now && attempts < 2 => "working",
+        Some(("retry" | "working" | "failed", _, _)) => "failed",
+        _ => "unavailable",
+    }
 }
 fn heartbeat(db: &Connection, owner: &str) -> rusqlite::Result<bool> {
     // A lease is not a heartbeat log. Reads suffice until renewal is due;
@@ -247,7 +260,7 @@ fn next_job(db: &Connection) -> rusqlite::Result<Option<Job>> {
         db.execute("UPDATE web_preview_jobs SET status=CASE WHEN attempts<2 THEN 'queued' ELSE 'failed' END,retry_at=0 WHERE status='working' AND retry_at<=?1", [timestamp()])?;
     }
     db.query_row("SELECT s.id, s.url, s.preview, s.origin_json, COALESCE(j.attempts,0),
-          COALESCE(s.context_override IS NULL AND length(COALESCE(trim(s.content),'')) < 500
+          COALESCE(s.context_override IS NULL AND COALESCE(trim(s.content),'')=''
           AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
           AND COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.contentEdited'),0)!=1
           AND json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END,'$.importMethod') IN ('manual_url','browser_bookmarks'), 0)
@@ -256,7 +269,7 @@ fn next_job(db: &Connection) -> rusqlite::Result<Option<Job>> {
         WHERE s.kind IN ('web','repo') AND s.url IS NOT NULL
           AND (s.preview IS NULL OR s.preview='' OR COALESCE(json_extract(CASE WHEN json_valid(s.origin_json) THEN s.origin_json ELSE '{}' END, '$.faviconUrl'),'') NOT LIKE 'data:image/%')
           AND (j.id IS NULL OR (j.status != 'done' AND j.attempts < 2 AND (j.status != 'working' OR j.retry_at <= ?1)))
-        ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END, CASE WHEN j.status='queued' THEN 0 WHEN j.id IS NULL THEN 1 ELSE 2 END, s.created_at DESC, s.rowid LIMIT 1", [timestamp()], |row| {
+        ORDER BY CASE WHEN s.preview IS NULL OR s.preview='' THEN 0 ELSE 1 END, CASE WHEN j.id IS NULL OR j.status='queued' THEN 0 ELSE 1 END, s.created_at DESC, s.rowid LIMIT 1", [timestamp()], |row| {
             let origin: Option<String> = row.get(3)?;
             let favicon = origin.and_then(|value| serde_json::from_str::<Value>(&value).ok()).and_then(|origin| origin["faviconUrl"].as_str().map(str::to_string));
             let preview: Option<String> = row.get(2)?;
@@ -367,7 +380,7 @@ fn finish(db: &Connection, job: &Job, success: bool) -> rusqlite::Result<()> {
     db.execute(
         "UPDATE web_preview_jobs SET status=?1,retry_at=0 WHERE id=?2 AND url=?3 AND attempts=?4 AND status='working' AND retry_at>?5",
         params![
-            if success { "done" } else if job.attempts < 2 { "queued" } else { "failed" },
+            if success { "done" } else if job.attempts < 2 { "retry" } else { "failed" },
             job.id,
             job.url
             ,job.attempts,timestamp()
@@ -588,6 +601,34 @@ mod tests {
         assert_eq!(row("note").1, None);
     }
     #[test]
+    fn a_failed_cover_is_retried_once_after_every_new_cover() {
+        let db = database();
+        db.execute("DELETE FROM stash_items", []).unwrap();
+        for (id, created) in [("older", "2026-10-21"), ("newer", "2026-10-22")] {
+            db.execute("INSERT INTO stash_items(id,title,kind,source,url,excerpt,created_at,updated_at,tags_json) VALUES(?1,?1,'web','e','https://example.org/'||?1,'',?2,'now','[]')", params![id, created]).unwrap();
+        }
+        let first = next_job(&db).unwrap().unwrap();
+        assert_eq!(first.id, "newer");
+        claim(&db, &first).unwrap();
+        finish(&db, &first, false).unwrap();
+        assert_eq!(
+            next_job(&db).unwrap().unwrap().id,
+            "older",
+            "new covers come before a retry"
+        );
+        let older = next_job(&db).unwrap().unwrap();
+        claim(&db, &older).unwrap();
+        finish(&db, &older, true).unwrap();
+        let retry = next_job(&db).unwrap().unwrap();
+        assert_eq!((retry.id.as_str(), retry.attempts), ("newer", 2));
+        claim(&db, &retry).unwrap();
+        finish(&db, &retry, false).unwrap();
+        assert!(
+            next_job(&db).unwrap().is_none(),
+            "after one retry the default cover stays"
+        );
+    }
+    #[test]
     fn a_batch_imported_together_gets_covers_in_shelf_order() {
         let db = database();
         db.execute("DELETE FROM stash_items", []).unwrap();
@@ -708,9 +749,12 @@ mod tests {
         assert_eq!(items[0].preview_status.as_deref(), Some("working"));
         finish(&db, &job, false).unwrap();
         annotate(&db, &mut items).unwrap();
-        assert_eq!(items[0].preview_status.as_deref(), Some("queued"));
+        // The default cover shows at once; the background retry never shows loading.
+        assert_eq!(items[0].preview_status.as_deref(), Some("failed"));
         let retry = next_job(&db).unwrap().unwrap();
         claim(&db, &retry).unwrap();
+        annotate(&db, &mut items).unwrap();
+        assert_eq!(items[0].preview_status.as_deref(), Some("failed"));
         assert!(claim(&db, &retry).is_err());
         finish(&db, &retry, false).unwrap();
         annotate(&db, &mut items).unwrap();

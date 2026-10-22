@@ -33,9 +33,7 @@ trait Source {
     /// Direct document read: (title, body).
     fn direct_text(&self, url: &str) -> Option<(String, String)>;
 }
-/// Rendered text shorter than this is checked against a direct read; some
-/// pages are read before late content appears, or the render failed.
-const RENDERED_TEXT_ENOUGH: usize = 500;
+
 struct PublicSource<F>(F);
 impl<F: Fn(&str, Instant) -> Option<String>> Source for PublicSource<F> {
     fn capture(&self, url: &str, stop: &AtomicBool) -> Option<crate::preview_browser::Rendered> {
@@ -139,22 +137,16 @@ fn acquire(
         if images.preview.is_some() {
             images.preview_kind = Some("screenshot".into());
         }
-        // Short rendered text is held back until a direct read in the same job
-        // has been compared with it (a published text settles the reference),
-        // but the screenshot is published first so it never waits for that read.
-        let rendered = images
-            .content
-            .as_deref()
-            .map_or(0, |text| text.chars().count());
-        let compare = needs_text && rendered < RENDERED_TEXT_ENOUGH;
-        let held = if compare { images.content.take() } else { None };
+        // Only when the render produced no text (for example a page that
+        // blocks it) does the same job read the page directly, after the
+        // screenshot has been published so the cover never waits for it.
+        let compare = needs_text && images.content.is_none();
         if images.preview.is_some() || images.content.is_some() {
             changed(&images); // Do not hold the visible screenshot behind icon work.
         }
         if compare && !stop.load(Ordering::Relaxed) {
-            images.content = held;
             if let Some((title, content)) = source.direct_text(url) {
-                if content.trim().chars().count() > rendered {
+                if !content.trim().is_empty() {
                     images.content = Some(content);
                 }
                 if images.title.is_none() && !title.trim().is_empty() {
@@ -333,7 +325,7 @@ mod tests {
         assert!(source.events.borrow().is_empty());
     }
     #[test]
-    fn a_reference_without_text_falls_back_to_a_direct_read_in_the_same_job() {
+    fn a_render_without_text_falls_back_to_a_direct_read_after_the_cover() {
         let source = Fake {
             events: RefCell::new(vec![]),
             success: false,
@@ -368,19 +360,11 @@ mod tests {
         );
         assert_eq!(
             *source.events.borrow(),
-            ["capture", "publish", "direct", "publish"],
-            "the screenshot never waits for the direct read"
+            ["capture", "publish"],
+            "rendered text is used as it is"
         );
-        assert_eq!(
-            *published.borrow(),
-            [None, Some("Rendered body".to_string())],
-            "short text is published once, after comparison"
-        );
-        assert_eq!(
-            images.content.as_deref(),
-            Some("Rendered body"),
-            "the longer text wins"
-        );
+        assert_eq!(*published.borrow(), [Some("Rendered body".to_string())]);
+        assert_eq!(images.content.as_deref(), Some("Rendered body"));
     }
     #[test]
     fn cancellation_after_publishing_a_screenshot_skips_optional_network_work() {

@@ -190,3 +190,21 @@ test('rendered text fills a bookmark once and never user text (same rules as mer
     assert.equal(db.prepare("SELECT content FROM stash_items WHERE id='edited'").get().content, '');
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a failed cover is retried once after every new cover (same order as Desktop)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'stashdock-retry-order-'));
+  const library = createLocalLibrary({ dataDir: dir });
+  const queue = previewQueue(dir, { owner: 'retry', now: () => 100 });
+  try {
+    library.importItems([{ title: 'Older', kind: 'web', url: 'https://example.org/older', source: 'S', tags: [], createdAt: '2026-10-21T00:00:00Z' }]);
+    library.importItems([{ title: 'Newer', kind: 'web', url: 'https://example.org/newer', source: 'S', tags: [], createdAt: '2026-10-22T00:00:00Z' }]);
+    queue.renew();
+    const first = queue.claim(); assert.equal(first.url, 'https://example.org/newer');
+    queue.finish(first, {});
+    const second = queue.claim(); assert.equal(second.url, 'https://example.org/older', 'new covers come before a retry');
+    queue.finish(second, { preview: 'data:image/png;base64,YQ==', previewKind: 'screenshot', faviconUrl: 'data:image/png;base64,YQ==' });
+    const retry = queue.claim(); assert.deepEqual([retry.url, retry.attempts], ['https://example.org/newer', 2]);
+    queue.finish(retry, {});
+    assert.equal(queue.claim(), null, 'after one retry the default cover stays');
+  } finally { queue.close(); library.close(); rmSync(dir, { recursive: true, force: true }); }
+});
