@@ -139,12 +139,20 @@ fn acquire(
         if images.preview.is_some() {
             images.preview_kind = Some("screenshot".into());
         }
-        // The same job falls back to a direct read and keeps the longer text.
+        // Short rendered text is held back until a direct read in the same job
+        // has been compared with it (a published text settles the reference),
+        // but the screenshot is published first so it never waits for that read.
         let rendered = images
             .content
             .as_deref()
             .map_or(0, |text| text.chars().count());
-        if needs_text && rendered < RENDERED_TEXT_ENOUGH && !stop.load(Ordering::Relaxed) {
+        let compare = needs_text && rendered < RENDERED_TEXT_ENOUGH;
+        let held = if compare { images.content.take() } else { None };
+        if images.preview.is_some() || images.content.is_some() {
+            changed(&images); // Do not hold the visible screenshot behind icon work.
+        }
+        if compare && !stop.load(Ordering::Relaxed) {
+            images.content = held;
             if let Some((title, content)) = source.direct_text(url) {
                 if content.trim().chars().count() > rendered {
                     images.content = Some(content);
@@ -153,9 +161,9 @@ fn acquire(
                     images.title = Some(title);
                 }
             }
-        }
-        if images.preview.is_some() || images.content.is_some() {
-            changed(&images); // Do not hold the visible screenshot behind icon work.
+            if images.content.is_some() {
+                changed(&images);
+            }
         }
     }
     if stop.load(Ordering::Relaxed)
@@ -345,6 +353,7 @@ mod tests {
             events: RefCell::new(vec![]),
             success: true,
         };
+        let published = RefCell::new(Vec::new());
         let images = acquire(
             "https://example.org",
             true,
@@ -352,12 +361,20 @@ mod tests {
             None,
             &AtomicBool::new(false),
             &source,
-            |_| {},
+            |images| {
+                source.events.borrow_mut().push("publish");
+                published.borrow_mut().push(images.content.clone());
+            },
         );
         assert_eq!(
             *source.events.borrow(),
-            ["capture", "direct"],
-            "short rendered text is compared with a direct read"
+            ["capture", "publish", "direct", "publish"],
+            "the screenshot never waits for the direct read"
+        );
+        assert_eq!(
+            *published.borrow(),
+            [None, Some("Rendered body".to_string())],
+            "short text is published once, after comparison"
         );
         assert_eq!(
             images.content.as_deref(),
