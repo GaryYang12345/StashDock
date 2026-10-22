@@ -277,6 +277,11 @@ fn remember_panel_frame(app: &AppHandle, window: &WebviewWindow) {
     if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
         return;
     }
+    // The handoff's copy of the panel shadow follows the panel's size.
+    #[cfg(windows)]
+    if let Ok(hwnd) = window.hwnd() {
+        window_morph::prewarm(hwnd.0 as isize);
+    }
     if let (Ok(p), Ok(size)) = (window.outer_position(), window.outer_size()) {
         // The tiny iconic rectangle is not a usable anchor. This transient
         // frame is independent of renderer readiness and saved client size.
@@ -522,7 +527,10 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
                 if direction == window_morph::Direction::Collapse {
                     // The folder is now in place (and drawn); reveal it.
                     if let Some(cloak) = folder_cloak.take() {
-                        cloak.release()?;
+                        match morph.as_ref() {
+                            Some(morph) => morph.hand_over(|| cloak.release())?,
+                            None => cloak.release()?,
+                        }
                     }
                 }
             }
@@ -556,6 +564,13 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             cloak.release()?;
         }
         if let Some(restore) = restore.as_mut() {
+            #[cfg(windows)]
+            match morph.as_ref() {
+                // The drawn panel and its shadow give way to the real ones.
+                Some(morph) => morph.hand_over(|| restore.reveal())?,
+                None => restore.reveal()?,
+            }
+            #[cfg(not(windows))]
             restore.reveal()?;
         }
         if let Some(next) = target {
@@ -655,9 +670,9 @@ fn start_morph(
             return None;
         }
     };
-    // The overlay now shows both; hide the source behind it.
+    // The overlay starts drawing the source as the real one is hidden.
     let source = if direction == window_morph::Direction::Expand { &folder } else { &panel };
-    match window_frame::Cloak::new(source) {
+    match morph.take_over(|| window_frame::Cloak::new(source)) {
         Ok(cloak) => {
             if direction == window_morph::Direction::Expand {
                 *folder_cloak = Some(cloak);

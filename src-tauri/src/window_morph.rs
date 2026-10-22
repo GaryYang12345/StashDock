@@ -187,12 +187,22 @@ pub fn settle() {
 /// real shadow) is revealed, and still in place when it is cloaked.
 #[cfg_attr(not(windows), allow(dead_code))]
 mod shadow {
-    /// amplitude, blur x, blur y, inset x, offset y, inset y (px at 150%).
-    const LAYERS: [[f64; 6]; 3] = [
-        [0.15, 7.42, 19.22, 4.72, 1.43, 1.24],
-        [0.18, 17.73, 30.07, -13.35, 37.13, -12.19],
-        [0.20, 185.0, 48.76, 226.01, 281.04, 281.02],
+    /// Measured from the real shadow (alpha over a light background, fitted
+    /// to well under 1% rms): amplitude, blur x, blur y, inset from each side,
+    /// top edge, bottom edge offset (px at 150%). The top edge is measured from
+    /// the panel's top, or from its bottom for the layer that only darkens the
+    /// area below it, so the shadow keeps its shape at any panel size.
+    const LAYERS: [(f64, f64, f64, f64, Edge, f64); 4] = [
+        (0.13, 20.08, 25.70, -12.39, Edge::Top(12.02), 48.57),
+        (0.07, 19.02, 50.59, -16.58, Edge::Top(393.29), 36.66),
+        (0.12, 191.24, 40.46, 258.77, Edge::Bottom(337.92), 20.65),
+        (0.09, 12.49, 14.25, 4.62, Edge::Top(-6.15), 11.36),
     ];
+    #[derive(Clone, Copy)]
+    enum Edge {
+        Top(f64),
+        Bottom(f64),
+    }
     /// How far past the visible edge the shadow is drawn (px at 150%).
     pub const REACH: f64 = 140.0;
 
@@ -222,10 +232,14 @@ mod shadow {
         let (left, top) = (margin as f64, margin as f64);
         let mut columns = Vec::new();
         let mut rows = Vec::new();
-        for [amp, bx, by, ix, oy, iy] in LAYERS {
-            let (bx, by, ix, oy, iy) = (bx * scale, by * scale, ix * scale, oy * scale, iy * scale);
+        for (amp, bx, by, ix, edge, below) in LAYERS {
+            let (bx, by, ix, below) = (bx * scale, by * scale, ix * scale, below * scale);
+            let from = match edge {
+                Edge::Top(offset) => top + offset * scale,
+                Edge::Bottom(offset) => bottom - offset * scale,
+            };
             columns.push((0..w).map(|x| span(x as f64 + 0.5, left + ix, right - ix, bx)).collect::<Vec<_>>());
-            rows.push((0..h).map(|y| amp * span(y as f64 + 0.5, top + oy + iy, bottom + oy - iy, by)).collect::<Vec<_>>());
+            rows.push((0..h).map(|y| amp * span(y as f64 + 0.5, from, bottom + below, by)).collect::<Vec<_>>());
         }
         let mut pixels = vec![0u8; (w * h * 4) as usize];
         for y in 0..h {
@@ -354,11 +368,12 @@ mod probe {
 }
 
 #[cfg(windows)]
-pub use native::Morph;
+pub use native::{prewarm, Morph};
 
 #[cfg(windows)]
 mod native {
     use super::*;
+    use std::cell::Cell;
     use std::sync::Mutex;
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM},
@@ -376,7 +391,7 @@ mod native {
         UI::HiDpi::GetDpiForWindow,
         UI::WindowsAndMessaging::{
             CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassExW, ShowWindow,
-            UpdateLayeredWindow, HTTRANSPARENT, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_NCHITTEST,
+            IsZoomed, UpdateLayeredWindow, HTTRANSPARENT, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_NCHITTEST,
             WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
             WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
         },
@@ -464,6 +479,49 @@ mod native {
         }
     }
 
+    type Image = (i32, i32, i32, Vec<u8>);
+    /// The last rendered shadow, by visible panel size and scale.
+    static CACHE: Mutex<Option<((i32, i32, u32), Image)>> = Mutex::new(None);
+
+    fn key(panel: Rect, scale: f64) -> (i32, i32, u32) {
+        (panel.right - panel.left, panel.bottom - panel.top, (scale * 1000.0).round() as u32)
+    }
+
+    fn scale_of(hwnd: HWND) -> f64 {
+        match unsafe { GetDpiForWindow(hwnd) } {
+            0 => 1.0,
+            dpi => dpi as f64 / 144.0,
+        }
+    }
+
+    /// Renders the shadow for the panel's current size in the background, so
+    /// the next collapse starts at once.
+    pub fn prewarm(panel_hwnd: isize) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static BUSY: AtomicBool = AtomicBool::new(false);
+        let hwnd = panel_hwnd as HWND;
+        if unsafe { IsZoomed(hwnd) } != 0 {
+            return;
+        }
+        let panel = visible_bounds(hwnd, Rect { left: 0, top: 0, right: 0, bottom: 0 });
+        if panel.width() < 144.0 || panel.height() < 144.0 {
+            return;
+        }
+        let scale = scale_of(hwnd);
+        let key = key(panel, scale);
+        if CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|(k, _)| *k) == Some(key) {
+            return;
+        }
+        if BUSY.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        std::thread::spawn(move || {
+            let image = shadow::render(key.0, key.1, scale);
+            *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, image));
+            BUSY.store(false, Ordering::SeqCst);
+        });
+    }
+
     /// A cloaked layered window holding the panel's shadow, shown only through
     /// its thumbnail. The pixels are kept for the next transition at the same
     /// size and scale.
@@ -474,8 +532,7 @@ mod native {
 
     impl ShadowSource {
         fn new(panel: Rect, scale: f64) -> Result<ShadowSource, String> {
-            static CACHE: Mutex<Option<((i32, i32, u32), (i32, i32, i32, Vec<u8>))>> = Mutex::new(None);
-            let key = ((panel.right - panel.left), (panel.bottom - panel.top), (scale * 1000.0).round() as u32);
+            let key = key(panel, scale);
             let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
             if cache.as_ref().map(|(k, _)| *k) != Some(key) {
                 *cache = Some((key, shadow::render(key.0, key.1, scale)));
@@ -543,6 +600,10 @@ mod native {
         /// Visible bounds, which is what the thumbnails draw.
         panel: Rect,
         folder: Rect,
+        /// Which windows the overlay draws: until `take_over` it draws
+        /// nothing, so no frame ever shows a real window and its thumbnail
+        /// (or both shadows) at once; after `hand_over` nothing again.
+        drawing: Cell<bool>,
         #[cfg(debug_assertions)]
         probe: Option<super::probe::Probe>,
     }
@@ -552,10 +613,7 @@ mod native {
             let (panel_hwnd, folder_hwnd) = (panel_hwnd as HWND, folder_hwnd as HWND);
             let panel = visible_bounds(panel_hwnd, panel);
             let folder = visible_bounds(folder_hwnd, folder);
-            let scale = match unsafe { GetDpiForWindow(panel_hwnd) } {
-                0 => 1.0,
-                dpi => dpi as f64 / 144.0,
-            };
+            let scale = scale_of(panel_hwnd);
             // Cover both resting places, the panel's shadow and the folder's
             // grown/shrunk size.
             let reach = (shadow::REACH * scale).ceil() as i32;
@@ -581,6 +639,7 @@ mod native {
                 direction,
                 panel,
                 folder,
+                drawing: Cell::new(false),
                 #[cfg(debug_assertions)]
                 probe,
             };
@@ -601,7 +660,7 @@ mod native {
                 {
                     return Err("Could not prepare the window transition.".into());
                 }
-                morph.show(0.0)?;
+                // Shown empty; `take_over` starts drawing.
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 DwmFlush();
             }
@@ -628,7 +687,33 @@ mod native {
             Ok(())
         }
 
+        /// Starts drawing the source window in place and immediately hides the
+        /// real one (`cloak`), back to back, so DWM composes the switch in one
+        /// frame: never both at once, never neither.
+        pub fn take_over<T>(&self, cloak: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+            self.drawing.set(true);
+            self.show(0.0)?;
+            cloak()
+        }
+
+        /// The reverse at the end: stops drawing and immediately reveals the
+        /// real destination (`reveal`). Later calls only reveal.
+        pub fn hand_over<T>(&self, reveal: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+            if self.drawing.replace(false) {
+                let hidden = Rect { left: 0, top: 0, right: 1, bottom: 1 };
+                if let Some((_, thumb)) = self.shadow.as_ref() {
+                    self.place(*thumb, hidden, 0)?;
+                }
+                self.place(self.panel_thumb, hidden, 0)?;
+                self.place(self.folder_thumb, hidden, 0)?;
+            }
+            reveal()
+        }
+
         fn show(&self, t: f64) -> Result<(), String> {
+            if !self.drawing.get() {
+                return Ok(());
+            }
             let frame = frame(self.direction, self.panel, self.folder, t);
             if let Some((source, thumb)) = self.shadow.as_ref() {
                 // The shadow travels and fades with the panel.
@@ -782,8 +867,8 @@ mod tests {
         let at = |x, y| shadow::alpha_at(&image, x, y);
         assert_eq!(at(800, 500), 0.0);
         assert_eq!(at(0, 0), 0.0);
-        for (x, y, measured) in [(811, 1070 + 10, 0.270), (811, 1070 + 40, 0.149), (811, 1070 + 68, 0.062), (-10, 520, 0.110), (-40, 520, 0.017), (811, -1, 0.107)] {
-            assert!((at(x, y) - measured).abs() < 0.025, "({x}, {y}): {} vs {measured}", at(x, y));
+        for (x, y, measured) in [(800, 1080, 0.271), (800, 1110, 0.152), (800, 1138, 0.066), (-10, 520, 0.119), (-40, 520, 0.019), (1612, 200, 0.106), (1612, 900, 0.167)] {
+            assert!((at(x, y) - measured).abs() < 0.02, "({x}, {y}): {} vs {measured}", at(x, y));
         }
         // It scales with DPI.
         let small = shadow::render(1072, 713, 2.0 / 3.0);
