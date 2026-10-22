@@ -4,6 +4,7 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSyn
 import { dirname, resolve, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { installedPluginFolder, libraryFolder } from './lib/local-install.mjs';
 const root=resolve(import.meta.dirname,'..');
 const destination=resolve(process.argv[2]||root+'/artifacts/version-before-native-windows-20261013');
 if(!destination.startsWith(root+'/artifacts/')&&!destination.startsWith(root+'\\artifacts\\'))throw Error('Snapshot must be inside this project artifacts directory.');
@@ -22,10 +23,10 @@ for(const path of candidates){
 }
 cpSync(resolve(root,'dist'),resolve(destination,'desktop-ui'),{recursive:true});
 copyFileSync(resolve(root,'stashdock.exe'),resolve(destination,'stashdock.exe'));
-const installed='C:/Users/86137/.codex/plugins/cache/personal/stashdock/0.4.27';
+const installed=installedPluginFolder();
 for(const folder of ['.codex-plugin','scripts','dist','web','server','bin','skills','notices','assets'])cpSync(installed+'/'+folder,destination+'/plugin/'+folder,{recursive:true});
 copyFileSync(installed+'/.mcp.json',destination+'/plugin/.mcp.json');
-const database=new DatabaseSync('D:/StashDockData/stashdock.sqlite3',{readOnly:true});
+const database=new DatabaseSync(resolve(libraryFolder(),'stashdock.sqlite3'),{readOnly:true});
 let references;
 try{references=database.prepare('SELECT COUNT(*) AS count FROM stash_items').get().count;await backup(database,destination+'/stashdock.sqlite3');}finally{database.close();}
 writeFileSync(destination+'/manifest.json',JSON.stringify({createdAt:new Date().toISOString(),root,files,excluded,referenceCount:references,desktopSha256:digest(destination+'/stashdock.exe'),notes:'Runtime/dependency caches are unchanged and excluded. Source, generated desktop UI, installed desktop/plugin and consistent library are saved. Restore code separately; never restore this database over newer references.'},null,2));

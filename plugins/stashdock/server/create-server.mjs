@@ -15,6 +15,9 @@ import { openIntegration } from './open-integration.mjs';
 import { readStorageInfo } from './settings.mjs';
 import { createStorageService } from './storage-service.mjs';
 import productLinks from '../../../src-tauri/product-links.json' with { type: 'json' };
+// One plugin version: the manifest the host installs and caches by.
+import pluginManifest from '../.codex-plugin/plugin.json' with { type: 'json' };
+const PLUGIN_VERSION = pluginManifest.version;
 import { fileURLToPath } from 'node:url';
 import { contextSaveSchema, readContextBatch, tagCatalog } from './ai-context.mjs';
 
@@ -32,7 +35,7 @@ const guarded = callback => async args => {
 export function createServer({ dataDir, captureBridge = false, previewWorker = captureBridge, htmlUrl, importServices, storageServices }) {
   const library = createLocalLibrary({ dataDir });
   const storageService = storageServices || createStorageService(library, htmlUrl);
-  if (captureBridge) library.registerInstallation('codex', '0.4.27', fileURLToPath(new URL('../.codex-plugin/plugin.json', htmlUrl)));
+  if (captureBridge) library.registerInstallation('codex', PLUGIN_VERSION, fileURLToPath(new URL('../.codex-plugin/plugin.json', htmlUrl)));
   const previewService = packagedPreviewService(htmlUrl, library.dataDir || dataDir);
   importServices ??= { sources: previewService.sources, bookmarks: previewService.bookmarks, icons: previewService.icons, preview: previewService.content, openCaptureSite };
   const prepareCover = importServices.prepareCover ?? previewService.prepareCover;
@@ -44,7 +47,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
   const previews = previewWorker ? startPreviewWorker(library.dataDir, htmlUrl, previewService) : undefined;
   const iconUrl = new URL('../assets/icon.png', htmlUrl);
   const icons = [{ src: `data:image/png;base64,${readFileSync(iconUrl).toString('base64')}`, mimeType: 'image/png' }];
-  const server = new McpServer({ name: 'stashdock', version: '0.4.27', icons });
+  const server = new McpServer({ name: 'stashdock', version: PLUGIN_VERSION, icons });
   const close = server.close.bind(server);
   server.close = async () => { storageService.close?.(); bridge?.close(); await Promise.all([previewService.close(), previews?.close()]); await close(); library.close?.(); };
   let resourceDomains = [];
@@ -170,7 +173,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
     if (!library.getCodexPreferences) throw Error('Settings require the independent local library.');
     const repository = productLinks.githubRepository;
     const githubUrl = typeof repository === 'string' && /^[\w.-]+\/[\w.-]+$/.test(repository) ? `https://github.com/${repository}` : null;
-    return { ...valueResult({}), _meta: { settings: { preferences: library.getCodexPreferences(), version: '0.4.27', githubUrl } } };
+    return { ...valueResult({}), _meta: { settings: { preferences: library.getCodexPreferences(), version: PLUGIN_VERSION, githubUrl } } };
   }));
   server.registerTool('save_stashdock_preferences', {
     description: 'Save only the language or theme explicitly chosen in the Codex panel. Does not change desktop preferences.',

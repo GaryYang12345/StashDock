@@ -1,7 +1,8 @@
-param([switch]$Launcher,[string]$Executable='D:\StashDock\src-tauri\target\release\stashdock.exe')
+param([switch]$Launcher,[string]$Executable=(Join-Path (Split-Path -Parent $PSScriptRoot) 'src-tauri\target\release\stashdock.exe'))
+$projectRoot=Split-Path -Parent $PSScriptRoot
 $ErrorActionPreference='Stop'
 $resolved=(Resolve-Path -LiteralPath $Executable).Path
-if($resolved -ne 'D:\StashDock\src-tauri\target\release\stashdock.exe'){throw 'Only the project-built desktop is in scope.'}
+if($resolved -ne (Join-Path $projectRoot 'src-tauri\target\release\stashdock.exe')){throw 'Only the project-built desktop is in scope.'}
 if($Launcher){
   Start-Process -FilePath $resolved -WindowStyle Hidden | Out-Null
   Start-Sleep -Seconds 45
@@ -35,7 +36,7 @@ $info=New-Object OwnedDesktopLauncher+PI
 $ownedApp=$null
 $previousData=$env:STASHDOCK_DATA_DIR
 try {
-  $fixture=Join-Path 'D:\StashDock\output' ('desktop-independent-'+[Guid]::NewGuid().ToString('N'))
+  $fixture=Join-Path (Join-Path $projectRoot 'output') ('desktop-independent-'+[Guid]::NewGuid().ToString('N'))
   [void](New-Item -ItemType Directory -Path $fixture)
   $env:STASHDOCK_DATA_DIR=$fixture
   $limits=New-Object OwnedDesktopLauncher+Limits
@@ -50,7 +51,7 @@ try {
   $shell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   $command=New-Object Text.StringBuilder
   [void]$command.Append(('"{0}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{1}" -Launcher -Executable "{2}"' -f $shell,$PSCommandPath,$resolved))
-  [OwnedDesktopLauncher]::Check([OwnedDesktopLauncher]::CreateProcessW($shell,$command,[IntPtr]::Zero,[IntPtr]::Zero,$false,0x08000004,[IntPtr]::Zero,'D:\StashDock',[ref]$start,[ref]$info))
+  [OwnedDesktopLauncher]::Check([OwnedDesktopLauncher]::CreateProcessW($shell,$command,[IntPtr]::Zero,[IntPtr]::Zero,$false,0x08000004,[IntPtr]::Zero,$projectRoot,[ref]$start,[ref]$info))
   [OwnedDesktopLauncher]::Check([OwnedDesktopLauncher]::AssignProcessToJobObject($job,$info.process))
   if([OwnedDesktopLauncher]::ResumeThread($info.thread) -eq [uint32]::MaxValue){throw 'Owned launcher could not resume.'}
   for($i=0;$i -lt 100;$i++){
@@ -69,7 +70,7 @@ try {
   $ownedApp.Refresh()
   if($ownedApp.HasExited){throw 'Desktop exited together with the owned launcher.'}
   if(Get-Process -Id $info.pid -ErrorAction SilentlyContinue){throw 'Owned launcher did not exit when its job closed.'}
-  & 'D:\StashDock\scripts\verify-desktop-windows.ps1' -AppProcessId $ownedApp.Id -Surface panel
+  & (Join-Path $PSScriptRoot 'verify-desktop-windows.ps1') -AppProcessId $ownedApp.Id -Surface panel
   @{independent=$true;launcherKilled=$true;desktopSurvived=$true;outsideJob=$true;creationParent=$owner.Name;isolatedLibrary=$fixture} | ConvertTo-Json -Compress
 } finally {
   $env:STASHDOCK_DATA_DIR=$previousData

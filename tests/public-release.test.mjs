@@ -20,3 +20,15 @@ test('Git preserves verbatim upstream notice bytes for fresh-checkout asset pari
   const attributes = readFileSync('.gitattributes','utf8');
   for (const path of ['extension/ui/notices/**','plugins/stashdock/notices/**','public/licenses/**']) assert.ok(attributes.split(/\r?\n/).includes(`${path} -text`),path);
 });
+
+test('each product has one version source', async () => {
+  const { readFile: read } = await import('node:fs/promises');
+  const pkg = JSON.parse(await read('package.json', 'utf8'));
+  const cargo = (await read('src-tauri/Cargo.toml', 'utf8')).match(/^version = "([^"]+)"/m)[1];
+  assert.equal(cargo, pkg.version, 'Desktop: Cargo.toml follows package.json');
+  assert.equal(JSON.parse(await read('src-tauri/tauri.conf.json', 'utf8')).version, '../package.json');
+  const server = await read('plugins/stashdock/server/create-server.mjs', 'utf8');
+  assert.match(server, /import pluginManifest from '\.\.\/\.codex-plugin\/plugin\.json'/);
+  assert.doesNotMatch(server, /version: '\d+\.\d+\.\d+'|'\d+\.\d+\.\d+'/, 'the plugin reads its version from its manifest');
+  assert.doesNotMatch(await read('src-tauri/src/public_web.rs', 'utf8'), /StashDock\/\d/);
+});

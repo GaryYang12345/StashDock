@@ -1,7 +1,8 @@
 param([Parameter(Mandatory=$true)][int]$AppProcessId,[ValidateSet('panel','folder','hidden')][string]$Surface='panel')
 $ErrorActionPreference='Stop'
 $application=Get-Process -Id $AppProcessId
-$allowed=@('D:\StashDock\stashdock.exe','D:\StashDock\src-tauri\target\release\stashdock.exe')
+$projectRoot=Split-Path -Parent $PSScriptRoot
+$allowed=@((Join-Path $projectRoot 'stashdock.exe'),(Join-Path $projectRoot 'src-tauri\target\release\stashdock.exe'))
 if($application.Path -notin $allowed){throw 'Only the installed or project-built StashDock is in scope.'}
 Add-Type -TypeDefinition @'
 using System;

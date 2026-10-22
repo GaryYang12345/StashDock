@@ -8,7 +8,8 @@ import { resolve, join, relative, isAbsolute } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const root = await realpath(resolve(process.argv[2] || 'output/releases/stashdock-plugin-0.4.27-win32-x64'));
+const { version } = JSON.parse(await readFile('plugins/stashdock/.codex-plugin/plugin.json', 'utf8'));
+const root = await realpath(resolve(process.argv[2] || `output/releases/stashdock-plugin-${version}-win32-x64`));
 const manifest = JSON.parse(await readFile(join(root, 'RELEASE_MANIFEST.json'), 'utf8'));
 for (const file of manifest.files) {
   const path = await realpath(resolve(root, file.path)), inside = relative(root, path);

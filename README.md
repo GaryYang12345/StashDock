@@ -12,14 +12,17 @@ Get Windows x64 packages from [GitHub Releases](https://github.com/GaryYang12345
 
 | Package | Use |
 | --- | --- |
-| `StashDock_0.2.5_x64-setup.exe` | Standalone Windows desktop app |
-| `stashdock-plugin-0.4.27-win32-x64.zip` | ChatGPT/Codex local plugin, including Node runtime and native helpers |
-| `stashdock-extension-chrome-0.4.13.zip` | Chrome extension, manual installation |
-| `stashdock-extension-edge-0.4.13.zip` | Edge extension, manual installation |
-| `stashdock-extension-firefox-0.4.13.zip` | Firefox development extension, temporary installation |
+| `StashDock_<version>_x64-setup.exe` | Standalone Windows desktop app |
+| `stashdock-plugin-<version>-win32-x64.zip` | ChatGPT/Codex local plugin, including Node runtime and native helpers |
+| `stashdock-extension-chrome-<version>.zip` | Chrome extension, manual installation |
+| `stashdock-extension-edge-<version>.zip` | Edge extension, manual installation |
+| `stashdock-extension-firefox-<version>.zip` | Firefox development extension, temporary installation |
 
 Desktop and the AI plugin work independently. On the same computer they resolve
 one local library. The browser extension saves through either running local provider.
+
+Versions come from `package.json` (Desktop), `plugins/stashdock/.codex-plugin/plugin.json`
+(AI plugin) and `extension/manifest.json` (browser extension).
 
 - [Windows installation](docs/INSTALL_WINDOWS.md)
 - [ChatGPT plugin installation](docs/windows-plugin-install.md)
