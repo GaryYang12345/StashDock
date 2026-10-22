@@ -27,6 +27,10 @@ pub async fn drag_folder_window(
     pointer_y: Option<f64>,
 ) -> Result<bool, String> {
     require_folder(&window)?;
+    // A press on the folder (to move or open it) puts its search away.
+    let app = window.app_handle().clone();
+    let copy = app.clone();
+    let _ = app.run_on_main_thread(move || crate::folder_search::detach(&copy, false));
     if [pointer_x, pointer_y]
         .into_iter()
         .flatten()

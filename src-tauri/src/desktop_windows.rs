@@ -488,6 +488,16 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             }
             // Rollback below restores the source if reveal/focus fails.
             window_frame::show_immediately(&window)?;
+            // The folder search is present (with nothing visible) only
+            // while the folder is; it is shown before the folder takes focus.
+            if next == Surface::Folder {
+                if let Err(error) = crate::folder_search::attach(app) {
+                    eprintln!("Could not prepare the StashDock search: {error}");
+                }
+            }
+        }
+        if target != Some(Surface::Folder) {
+            crate::folder_search::detach(app, true);
         }
         for surface in [Surface::Panel, Surface::Folder] {
             if Some(surface) != target {
@@ -837,6 +847,12 @@ async fn on_ui(
     tauri::async_runtime::spawn_blocking(move || receive.recv().map_err(|e| e.to_string())?)
         .await
         .map_err(|e| e.to_string())?
+}
+/// Open the library panel from another surface (the folder search).
+pub async fn open_panel(app: &AppHandle) -> Result<(), String> {
+    on_ui(app.clone(), |app| dispatch(app, Intent::Open))
+        .await
+        .map(|_| ())
 }
 #[tauri::command]
 pub fn desktop_window_status(window: WebviewWindow) -> Result<Status, String> {

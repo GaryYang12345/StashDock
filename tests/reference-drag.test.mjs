@@ -103,7 +103,7 @@ test('all card forms share transport and cleanup; controls are not drag handles'
 
 test('native command owns its source; the retired HTTP broker cannot enter an OLE loop',async()=>{
   const native=await read('src-tauri/src/reference_drag.rs');
-  assert.match(native,/window.label\(\) != "main"/);
+  assert.match(native,/!matches!\(window.label\(\), "main" \| "search"\)/);
   assert.match(native,/spawn_blocking/);
   assert.match(native,/if !owns_foreground_input\(\)/);
   assert.match(native,/GetForegroundWindow/);

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Permissions for the main StashDock window",
-  "windows": ["main", "folder"],
+  "windows": ["main", "folder", "search"],
   "permissions": [
     "core:default",
     "core:window:allow-current-monitor",

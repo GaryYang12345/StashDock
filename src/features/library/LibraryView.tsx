@@ -10,6 +10,7 @@ import { TagEditor, type TagOperation } from '../../components/TagEditor';
 import { libraryStore } from './useLibrary';
 import { getItems } from '../../lib/storage';
 import { isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { handleTitlebarDrag, handleTitlebarDoubleClick } from '../../lib/desktopWindows';
 import { Alert } from "../../components/arc/alert/alert";
 import { ScrollArea } from "../../components/arc/scroll-area/scroll-area";
@@ -56,6 +57,16 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
   }, []);
   useEffect(() => { if (!active) { setEditing(null); setContentEditing(null); setTagOperation(null); } }, [active]);
   const { storageReady, error, refresh, refreshing, searching, shownKey, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
+  // The folder search opens the library on the same search.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let stopped = false, cleanup: (() => void) | undefined;
+    void listen<string>('library-search', event => {
+      if (stopped || typeof event.payload !== 'string') return;
+      setSettingsOpen(false); setFilter('all'); setActiveTag(null); setQuery(event.payload.slice(0, 500));
+    }).then(stop => { if (stopped) stop(); else cleanup = stop; });
+    return () => { stopped = true; cleanup?.(); };
+  }, [setFilter, setActiveTag, setQuery]);
   const editContent = useCallback((item: StashItem) => {
     returnFocus.current = document.querySelector<HTMLElement>(`article[data-reference-id="${CSS.escape(item.id)}"] button[aria-haspopup="menu"]`);
     // Desktop shelf rows carry no bodies: read this reference in full first.

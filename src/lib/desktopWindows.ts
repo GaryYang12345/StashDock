@@ -1,9 +1,9 @@
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-export type DesktopSurface = "panel" | "folder";
+export type DesktopSurface = "panel" | "folder" | "search";
 export type DesktopWindowStatus = { visible: DesktopSurface | null; requested: DesktopSurface | null; maximized: boolean };
-export const desktopSurface = (): DesktopSurface => new URLSearchParams(window.location.search).get("surface") === "folder" ? "folder" : "panel";
+export const desktopSurface = (): DesktopSurface => { const surface = new URLSearchParams(window.location.search).get("surface"); return surface === "folder" || surface === "search" ? surface : "panel"; };
 export const switchDesktopSurface = (target: DesktopSurface) => invoke<DesktopWindowStatus>("set_desktop_surface", { target });
 
 export function handleTitlebarDrag(event: React.PointerEvent<HTMLElement>, enabled = true) {

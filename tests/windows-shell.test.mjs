@@ -29,7 +29,7 @@ test('native lifecycle serializes handoffs on UI thread with readiness and failu
 });
 test('all native hosts have window capabilities, no cross-host geometry writes',async()=>{
  const cap=JSON.parse(await read('src-tauri/capabilities/default.json'));
- assert.deepEqual(cap.windows,['main','folder']);
+ assert.deepEqual(cap.windows,['main','folder','search']);
  const bridge=await read('src/lib/desktopWindows.ts');
  assert.match(bridge,/startDragging/);assert.match(bridge,/drag_folder_window/);
  assert.doesNotMatch(bridge,/setSize|setPosition|requestAnimationFrame|localStorage/);

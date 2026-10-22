@@ -1,0 +1,23 @@
+/* The whole transparent search window; its native region exposes only the
+   field and, while shown, the cards. */
+.surface { --edge: 16px; --above-field: calc(var(--edge) + 44px + var(--space-3)); position: fixed; inset: 0; overflow: hidden; color: var(--foreground); font-family: var(--font-body); }
+.field, .frame, .empty { position: absolute; translate: -50% 0; }
+.field { width: 184px; transform-origin: 50% 100%; bottom: var(--edge); }
+.surface:not([data-upward]) .field { bottom: auto; top: var(--edge); transform-origin: 50% 0; }
+.field { --search-border: transparent; --search-border-active: transparent; }
+.field label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.field > div > div { min-height: 44px; border-radius: var(--radius-pill); padding-inline: var(--space-4); background: var(--surface-raised); box-shadow: var(--shadow-floating); }
+
+/* Cards sit above the field (below it when it opens downwards). */
+.frame { width: 460px; height: 0; bottom: var(--above-field); transform-origin: 50% 100%; }
+.surface:not([data-upward]) .frame { bottom: auto; top: var(--above-field); transform-origin: 50% 0; }
+.frame[data-filled] { height: 160px; }
+.swap { position: absolute; inset: 0; transform-origin: inherit; }
+/* Both ends dissolve; only the current card is fully clear. */
+.flow { position: absolute; inset: -72px 0; display: grid; place-items: center; pointer-events: none;
+  mask-image: linear-gradient(90deg, transparent 0, #000 24%, #000 76%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 24%, #000 76%, transparent 100%); }
+.stage3d { position: relative; width: 232px; height: 152px; transform-style: preserve-3d; perspective: 1100px; }
+.slot { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform, opacity; }
+.empty { bottom: var(--above-field); margin: 0; white-space: nowrap; font-size: var(--text-sm); color: var(--text-secondary); text-shadow: 0 0 12px var(--surface); }
+.surface:not([data-upward]) .empty { bottom: auto; top: var(--above-field); }

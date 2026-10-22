@@ -83,7 +83,8 @@ pub async fn drag_reference_file(
     preview: String,
     hotspot: Option<DragHotspot>,
 ) -> Result<DragOutcome, String> {
-    if window.label() != "main" {
+    // The library panel and the folder search are local desktop windows.
+    if !matches!(window.label(), "main" | "search") {
         return Err("Use the StashDock desktop window to drag a file.".into());
     }
     let database = library.database_path().to_path_buf();

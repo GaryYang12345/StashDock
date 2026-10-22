@@ -4,6 +4,7 @@ mod capture_platforms;
 mod codex_presence;
 mod desktop_window_policy;
 mod desktop_windows;
+mod folder_search;
 mod folder_window;
 #[allow(dead_code)]
 mod independent_startup;
@@ -147,15 +148,29 @@ pub fn run() {
             desktop_windows::desktop_window_ready,
             desktop_windows::set_desktop_surface,
             desktop_windows::hide_stashdock,
-            folder_window::drag_folder_window
+            folder_window::drag_folder_window,
+            folder_search::folder_search_pointer,
+            folder_search::folder_search_hold,
+            folder_search::folder_search_close,
+            folder_search::folder_search_focus,
+            folder_search::folder_search_region,
+            folder_search::folder_search_closed,
+            folder_search::folder_search_status,
+            folder_search::folder_search_open_library
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Focused(true)) && window.label() == "main" {
                 settings::follow_library_move(window.app_handle());
             }
+            if matches!(event, tauri::WindowEvent::Focused(false)) && window.label() == "search" {
+                folder_search::blurred(window.app_handle());
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                if !window
+                // Alt+F4 in the folder search only puts it away.
+                if window.label() == "search" {
+                    folder_search::blurred(window.app_handle());
+                } else if !window
                     .app_handle()
                     .try_state::<settings::SettingsState>()
                     .is_some_and(|s| s.0.try_lock().is_err())
@@ -172,6 +187,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(settings::SettingsState(std::sync::Mutex::new(())));
             app.manage(reference_drag::ReferenceDragState::default());
+            app.manage(folder_search::FolderSearchState::default());
             lifecycle::install_tray(app.handle())?;
             let library_state = library::LibraryState::new(app.handle())?;
             library::start_extension_server(

@@ -133,9 +133,75 @@ pub fn anchored_folder(area: WorkArea, center: (f64, f64)) -> Geometry {
         true,
     )
 }
+/// The folder's quick search: a fixed transparent canvas beside the
+/// folder (above it, or below when the work area has no room above). Only its
+/// visible pieces take input, through a window region set by the search itself.
+pub const SEARCH_WIDTH: f64 = 480.0;
+pub const SEARCH_HEIGHT: f64 = 300.0;
+/// The search field sits on the folder artwork's transparent top margin; the
+/// window reaches a little further so the field's shadow is not cut off.
+pub const SEARCH_OVERLAP: f64 = 24.0;
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchPlacement {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    /// Cards grow upward from a field below them; false mirrors the layout.
+    pub upward: bool,
+    /// The folder's centre in the search window's own CSS pixels.
+    pub anchor_x: f64,
+}
+pub fn search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) -> SearchPlacement {
+    let scale = area.scale;
+    let (w, h) = ((SEARCH_WIDTH * scale).round(), (SEARCH_HEIGHT * scale).round());
+    let overlap = SEARCH_OVERLAP * scale;
+    let centre = folder.0 as f64 + folder_size / 2.0;
+    let left = area.x as f64;
+    let right = left + area.width as f64;
+    let x = (centre - w / 2.0).clamp(left, (right - w).max(left)).round();
+    let above = folder.1 as f64 - h + overlap;
+    let upward = above >= area.y as f64;
+    let y = if upward { above } else { folder.1 as f64 + folder_size - overlap };
+    let y = y.clamp(area.y as f64, (area.y as f64 + area.height as f64 - h).max(area.y as f64)).round();
+    SearchPlacement {
+        x: x as i32,
+        y: y as i32,
+        width: w as u32,
+        height: h as u32,
+        upward,
+        anchor_x: ((centre - x) / scale).clamp(0.0, SEARCH_WIDTH),
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn search_sits_over_the_folder_flips_at_the_top_and_stays_on_screen() {
+        let area = WorkArea { x: 0, y: 0, width: 1920, height: 1040, scale: 1.5 };
+        let folder = 144.0 * 1.5;
+        // Room above: centred on the folder, overlapping its transparent top.
+        let up = search_placement((900, 700), folder, area);
+        assert!(up.upward);
+        assert_eq!((up.width, up.height), (720, 450));
+        assert_eq!(up.y, 700 - 450 + 36);
+        assert_eq!(up.x, 900 + 108 - 360);
+        assert!((up.anchor_x - 240.0).abs() < 0.01);
+        // No room above: mirrored below the folder.
+        let down = search_placement((900, 40), folder, area);
+        assert!(!down.upward);
+        assert_eq!(down.y, 40 + 216 - 36);
+        // Screen edge: the window is clamped, the anchor still points at the folder.
+        let edge = search_placement((1920 - 216, 700), folder, area);
+        assert_eq!(edge.x, 1920 - 720);
+        assert!((edge.anchor_x - (1920.0 - 108.0 - 1200.0) / 1.5).abs() < 0.01);
+        // Negative monitor coordinates.
+        let left = WorkArea { x: -1920, y: 0, width: 1920, height: 1040, scale: 1.0 };
+        let placed = search_placement((-1920, 500), 144.0, left);
+        assert_eq!(placed.x, -1920);
+        assert!((placed.anchor_x - 72.0).abs() < 0.01);
+    }
     #[test]
     fn smaller_folder_matches_config_and_upgrades_the_retired_hint_canvas() {
         let config: serde_json::Value =

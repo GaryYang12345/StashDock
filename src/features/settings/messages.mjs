@@ -150,7 +150,7 @@ export const zh = {
   'All': '全部', 'Recent': '最近', 'Web': '网页', 'Files': '文件', 'Favorites': '星标', 'Tags': '标签',
   'Collections': '分类', 'Library navigation': '收藏库导航', 'Tag filters': '标签筛选',
   'Context shelf': '收藏库', 'Collection': '分类', 'References': '收藏', 'Import references': '导入收藏',
-  'Search references': '搜索收藏', 'Refresh library': '刷新收藏库', 'Grid': '网格', 'List': '列表', 'Reference view': '收藏视图',
+  'Search references': '搜索收藏', 'Search': '搜索', 'Refresh library': '刷新收藏库', 'Grid': '网格', 'List': '列表', 'Reference view': '收藏视图',
   'Library could not be refreshed': '无法刷新收藏库', 'Retry connection': '重新连接', 'Delete reference?': '删除这条收藏？',
   'Remove “{title}” from StashDock.': '从 StashDock 中删除“{title}”。', 'Delete failed': '删除失败', 'Keep reference': '保留收藏', 'Delete reference': '删除收藏',
   'Minimize to folder': '收起为悬浮窗', 'Maximize window': '最大化', 'Restore window': '还原窗口', 'Hide StashDock': '隐藏 StashDock',

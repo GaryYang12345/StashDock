@@ -1,0 +1,15 @@
+/* The shelf card's border, radius and surface, flatter: cover plus one row.
+   The title is sized beside a reserved Copy slot and ends with an ellipsis. */
+.card { pointer-events: auto; box-sizing: border-box; width: 232px; height: 152px; display: flex; flex-direction: column; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-floating); cursor: pointer; user-select: none;
+  container-type: inline-size; container-name: desktop-card; transition: transform var(--duration-fast) var(--ease-standard); }
+.card[data-current] { cursor: grab; }
+.card[data-current]:active, .card[data-dragging] { cursor: grabbing; }
+@media (hover: hover) and (pointer: fine) { .card[data-current]:hover { transform: translateY(-3px); } }
+.cover { flex: 1; min-height: 0; overflow: hidden; border-radius: calc(var(--radius-panel) - var(--space-2)); background: var(--surface-muted); }
+.cover > * { height: 100%; aspect-ratio: auto; }
+.row { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: calc(var(--control-height-sm) + var(--space-2)); padding: var(--space-2) 0 0 var(--space-2); }
+.mark { display: grid; flex: none; place-items: center; width: 16px; height: 16px; }
+.row h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 500; letter-spacing: var(--tracking-body); }
+.copy { flex: none; opacity: 0; pointer-events: none; transition: opacity var(--duration-fast) var(--ease-standard); }
+.card[data-current]:hover .copy, .card[data-current]:focus-within .copy, .card[data-copied] .copy { opacity: 1; pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .card, .copy { transition: none; } .card[data-current]:hover { transform: none; } }

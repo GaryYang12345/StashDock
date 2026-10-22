@@ -48,6 +48,27 @@
         "skipTaskbar": true,
         "shadow": false,
         "visible": false
+      },
+      {
+        "label": "search",
+        "url": "index.html?surface=search",
+        "title": "StashDock search",
+        "width": 480,
+        "height": 300,
+        "resizable": false,
+        "dragDropEnabled": false,
+        "maximizable": false,
+        "minimizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "focusable": false,
+        "visible": false
       }
     ],
     "security": {

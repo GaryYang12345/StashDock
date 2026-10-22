@@ -12,7 +12,8 @@ import { primeDesktopAppearance } from './features/settings/preferences';
 // Set native host styles before the first render, avoiding an opaque folder flash.
 primeDesktopAppearance();
 if (isTauri()) {
-  const host = desktopSurface() === "folder" ? "desktop-folder" : "desktop-native";
+  const surface = desktopSurface();
+  const host = surface === "folder" ? "desktop-folder" : surface === "search" ? "desktop-search" : "desktop-native";
   document.documentElement.classList.add(host);
   document.body.classList.add(host);
 }

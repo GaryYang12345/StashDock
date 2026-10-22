@@ -9,7 +9,8 @@ pub async fn copy_reference_file(
     library: tauri::State<'_, crate::library::LibraryState>,
     item_ids: Vec<String>,
 ) -> Result<(), String> {
-    if window.label() != "main" {
+    // The library panel and the folder search are local desktop windows.
+    if !matches!(window.label(), "main" | "search") {
         return Err("Use the StashDock desktop window to copy a file.".into());
     }
     crate::reference_drag::validate_selection(&item_ids, 10_000)?;

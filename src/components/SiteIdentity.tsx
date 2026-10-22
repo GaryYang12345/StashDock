@@ -40,3 +40,10 @@ export function SiteIdentity({ item }: { item: StashItem }) {
     <span className={styles.label}>{label}</span>
   </span>;
 }
+
+/** The identity mark alone (site icon, or the file/note type), as in card footers. */
+export function ReferenceMark({ item }: { item: StashItem }) {
+  if (isFileReference(item)) return <ReferenceGlyph kind={fileReferenceType(item).visual} size={16} />;
+  if (item.kind === 'note') return <ReferenceGlyph kind={referenceVisual(item).visual} size={16} />;
+  return <SiteFavicon candidates={faviconCandidates(item)} label={siteLabel(item)} />;
+}

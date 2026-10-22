@@ -42,7 +42,7 @@ test('native copying shares drag export, main-thread Shell clipboard, durable fi
   const clipboard = await read('src-tauri/src/reference_clipboard.rs');
   const drag = await read('src-tauri/src/reference_drag.rs');
   const windows = await read('src-tauri/src/reference_drag_windows.rs');
-  assert.match(clipboard,/window.label\(\) != "main"/);
+  assert.match(clipboard,/!matches!\(window.label\(\), "main" \| "search"\)/);
   assert.match(clipboard,/validate_selection\(&item_ids, 10_000\)/);
   assert.match(clipboard,/export_reference_file/);
   assert.match(drag,/export_reference_file\(database, &request.item_ids/);
