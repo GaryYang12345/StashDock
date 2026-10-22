@@ -7,6 +7,7 @@ import styles from "./Toolbar.module.css";
 
 type ToolbarProps = {
   query: string;
+  searching?: boolean;
   refreshing: boolean;
   onRefresh: () => void;
   view: "grid" | "list";
@@ -20,7 +21,7 @@ type ToolbarProps = {
   tagControls?: React.ReactNode;
 };
 
-export function Toolbar({ query, refreshing, onRefresh, view, searchRef, onQueryChange, onViewChange, onAdd, onSettings, settingsDisabled, collectionControls, tagControls }: ToolbarProps) {
+export function Toolbar({ query, searching = false, refreshing, onRefresh, view, searchRef, onQueryChange, onViewChange, onAdd, onSettings, settingsDisabled, collectionControls, tagControls }: ToolbarProps) {
   const { t } = useI18n();
   return <header data-arc-ui className={styles.toolbar}>
     <div className={styles.headingRow}>
@@ -31,7 +32,7 @@ export function Toolbar({ query, refreshing, onRefresh, view, searchRef, onQuery
       </div>
     </div>
     <div className={styles.searchRow} data-no-drag>
-      <div className={styles.searchField}><SearchField ref={searchRef} label={t("Search references")} value={query} onValueChange={onQueryChange} placeholder={t("Search references")} aria-keyshortcuts="Control+k" /></div>
+      <div className={styles.searchField}><SearchField ref={searchRef} label={t("Search references")} value={query} busy={searching} onValueChange={onQueryChange} placeholder={t("Search references")} aria-keyshortcuts="Control+k" /></div>
       {collectionControls && <div className={styles.collectionControls}>{collectionControls}</div>}
       <div className={styles.viewActions}><ReferenceViewToggle value={view} onChange={onViewChange} /></div>
       {tagControls && <div className={styles.tagControls}>{tagControls}</div>}

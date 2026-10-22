@@ -1,5 +1,5 @@
 import { useI18n } from '../features/settings/locale';
-import { useRef, useState, type PointerEvent, type RefObject } from 'react';
+import { memo, useRef, useState, type PointerEvent, type RefObject } from 'react';
 import { Check, ChevronDown, Pin, PinOff, Tag } from 'lucide-react';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { Button } from './arc/button/button';
@@ -12,7 +12,7 @@ import type { TagOperation } from './TagEditor';
 import styles from './ShelfTagFilter.module.css';
 
 export type ShelfTag = { name: string; count: number };
-export function ShelfTagFilter({ tags, activeTag, disabled, busy, triggerRef, onFilter, onEdit, pinnedTags = [], onPin }: {
+export const ShelfTagFilter = memo(function ShelfTagFilter({ tags, activeTag, disabled, busy, triggerRef, onFilter, onEdit, pinnedTags = [], onPin }: {
   tags: ShelfTag[]; activeTag: string; disabled: boolean; busy: boolean;
   triggerRef: RefObject<HTMLElement | null>; onFilter: (name: string) => void; onEdit: (operation: TagOperation) => void;
   pinnedTags?: string[]; onPin?: (name: string, pinned: boolean) => void;
@@ -51,4 +51,4 @@ export function ShelfTagFilter({ tags, activeTag, disabled, busy, triggerRef, on
       </ScrollArea>
     </Dropdown.Content></Dropdown.Portal>
   </Dropdown.Root>;
-}
+});

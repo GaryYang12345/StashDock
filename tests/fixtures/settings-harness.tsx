@@ -12,6 +12,9 @@ import '@fontsource-variable/inter';
 import '@fontsource-variable/geist';
 const items = ['Settings', 'A saved reference'].map((title, i) => ({ id: String(i), title, kind: 'note', hasFile: true, source: 'Personal note', content: 'User content stays unchanged', excerpt: '', tags: ['Settings'], createdAt: '2026-10-15T00:00:00Z' }));
 items[0].tags.push(...Array.from({ length: 30 }, (_, i) => `Tag ${i + 1}`));
+// ?items=N adds N saved pages, for typing and rendering measurements.
+const extra = Number(new URLSearchParams(location.search).get('items') || 0);
+for (let i = 0; i < extra; i++) items.push({ id: `page-${i}`, title: `${['Project', 'Design', 'Research', 'Pricing'][i % 4]} page ${i}`, kind: 'link', url: `https://example.com/${i}`, source: 'example.com', content: '', excerpt: 'A saved page used to measure the shelf.', tags: [`Topic ${i % 7}`], createdAt: '2026-10-15T00:00:00Z' } as unknown as typeof items[number]);
 let preferences: DesktopPreferences = { floatingWindow: true, ...JSON.parse(sessionStorage.getItem('settings-fixture') || '{"language":"en","theme":"light","shortcut":"Ctrl+Shift+Space"}') };
 let startup = false;
 Object.defineProperty(globalThis, 'isTauri', { value: true, configurable: true });
@@ -40,7 +43,7 @@ mockIPC(async (command, raw) => {
     case 'restart_desktop': document.documentElement.dataset.fixtureRestarted = 'true'; return;
     case 'list_items': return items;
     case 'open_reference_file': document.documentElement.dataset.openedReference = String(args.id); return;
-    case 'search_items': return items.filter(item => item.title.toLowerCase().includes(String(args.query).toLowerCase())).map(item => item.id);
+    case 'search_items': await new Promise(resolve => setTimeout(resolve, Number(new URLSearchParams(location.search).get('search-delay') || 0))); return items.filter(item => item.title.toLowerCase().includes(String(args.query).toLowerCase())).map(item => item.id);
     case 'list_pinned_tags': case 'list_browser_sources': return [];
     case 'preview_link': return { title: 'Example page', content: 'Example page content' };
     default: return undefined;

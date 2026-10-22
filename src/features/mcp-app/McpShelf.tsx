@@ -73,6 +73,8 @@ export function McpShelf() {
   const [readError, setReadError] = useState('');
   const [addError, setAddError] = useState('');
   const [query, setQuery] = useState('');
+  // The query the shown cards answer; the field spins while a newer one is read.
+  const [answeredQuery, setAnsweredQuery] = useState('');
   const [destination, setDestination] = useState({ filter: 'all', activeTag: '' });
   const { filter, activeTag } = destination;
   const setFilter = (filter: string) => setDestination(previous => previous.filter === filter && !previous.activeTag ? previous : { filter, activeTag: '' });
@@ -144,8 +146,9 @@ export function McpShelf() {
       setHasMore(result.structuredContent?.hasMore === true);
       setReadError('');
       setReady(true);
+      if (!offset) setAnsweredQuery(text);
     } catch (error) {
-      if (alive.current && request === sequence.current) { setReadError(message(error)); setReady(true); }
+      if (alive.current && request === sequence.current) { setReadError(message(error)); setReady(true); setAnsweredQuery(text); }
     } finally {
       --readFlights.current;
       if (alive.current && request === sequence.current) { setRefreshing(false); setLoadingMore(false); }
@@ -339,7 +342,7 @@ export function McpShelf() {
     <h1 className={styles.srOnly} hidden={settingsOpen}>{t('StashDock references')}</h1>
     <header className={header.header} hidden={settingsOpen}>
       <div className={header.top}><BrandIcon className={styles.brand} /><Button ref={settingsTrigger} variant="ghost" size="sm" aria-label={t('Settings')} disabled={!connected || mutationBusy || pending.length > 0} onClick={() => { ++editorSequence.current; setSettingsOpen(true); }}><Settings size={16} strokeWidth={1.75} aria-hidden="true" /></Button><Button variant="secondary" size="sm" aria-haspopup="dialog" disabled={!connected || mutationBusy} onClick={() => importDialog.current?.open()}><Plus size={16} strokeWidth={1.75} aria-hidden="true" />{t('Import references')}</Button></div>
-      <div className={`${header.search} ${styles.searchRow}`}><SearchField ref={searchRef} label={t('Search references')} placeholder={t('Search references')} value={query} onValueChange={setQuery} aria-keyshortcuts="Control+k" /><div className={styles.viewToolbar}><ReferenceViewToggle value={view} onChange={setView} /></div></div>
+      <div className={`${header.search} ${styles.searchRow}`}><SearchField ref={searchRef} label={t('Search references')} placeholder={t('Search references')} value={query} busy={connected && ready && query !== answeredQuery} onValueChange={setQuery} aria-keyshortcuts="Control+k" /><div className={styles.viewToolbar}><ReferenceViewToggle value={view} onChange={setView} /></div></div>
       <div className={`${header.filters} ${styles.filters}`}>
         <div className={header.filterOptions}><SegmentedControl label={t('Collection')} options={shelfFilters.map(option => ({ ...option, label: t(option.label) }))} value={filter} onValueChange={value => { setFilter(value); setActiveTag(''); }} /></div>
       <div className={styles.tagToolbar}><TagFilter tags={tags} activeTag={activeTag} disabled={!connected} busy={mutationBusy} triggerRef={tagFocus} onFilter={setActiveTag} onEdit={setTagOperation} /></div>

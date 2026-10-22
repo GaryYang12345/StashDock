@@ -5,7 +5,7 @@ type Session = {
   selectedIds: string[]; view: "grid" | "list";
   copied: boolean; copiedItemId: string | null; refreshing: boolean;
   notice: string | null;
-  search: { query: string; items: StashItem[]; results: string[] } | null;
+  search: { query: string; items: StashItem[]; results: string[] | null } | null;
 };
 type Update<T> = T | ((current: T) => T);
 

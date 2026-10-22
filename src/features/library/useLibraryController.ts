@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { copyContext } from "../../lib/context";
 import { openExternalUrl } from "../../lib/external";
 import { searchItems } from "../../lib/storage";
@@ -50,7 +50,7 @@ export function useLibraryController(active: boolean, allowImport = true, editin
         })
         .catch(() => {
           // Keep the immediate in-memory result rather than emptying the shelf.
-          if (current) setNotice("Search could not read the local index.", 3200);
+          if (current) { setSearch({ query, items, results: null }); setNotice("Search could not read the local index.", 3200); }
         });
     }, 140);
 
@@ -62,8 +62,13 @@ export function useLibraryController(active: boolean, allowImport = true, editin
 
   const { counts, tags } = useMemo(() => summarizeItems(items), [items]);
   const searchIndex = useMemo(() => buildSearchIndex(items), [items]);
-  const resultIds = useMemo(() => search?.query === query && search.items === items ? new Set(search.results) : null, [search, query, items]);
-  const visibleItems = useMemo(() => filterItems(items, searchIndex, query, filter, activeTag, resultIds), [items, searchIndex, query, filter, activeTag, resultIds]);
+  // The field and navigation answer at once; the cards follow in an
+  // interruptible background render, so typing or deleting never waits for a
+  // large shelf to mount.
+  const shownQuery = useDeferredValue(query), shownFilter = useDeferredValue(filter), shownTag = useDeferredValue(activeTag);
+  const resultIds = useMemo(() => search?.query === shownQuery && search.items === items && search.results ? new Set(search.results) : null, [search, shownQuery, items]);
+  const visibleItems = useMemo(() => filterItems(items, searchIndex, shownQuery, shownFilter, shownTag, resultIds), [items, searchIndex, shownQuery, shownFilter, shownTag, resultIds]);
+  const searching = query !== shownQuery || Boolean(active && storageReady && query.trim() && !(search?.query === query && search.items === items));
   const selectedItems = useMemo(() => selectItems(items, selectedIds), [items, selectedIds]);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -149,5 +154,5 @@ export function useLibraryController(active: boolean, allowImport = true, editin
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [active, allowImport, editing, pendingDelete, handleCopy, selectedItems.length]);
 
-  return { storageReady, error, refresh, refreshing, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem };
+  return { storageReady, error, refresh, refreshing, searching, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem };
 }

@@ -2,7 +2,7 @@ import { useI18n } from '../features/settings/locale';
 import { Archive, History, FileText, Globe, Star, Tag, ChevronRight, Pin, PinOff, Settings } from "lucide-react";
 import { tagEditActions } from './referenceActions';
 import { DesktopMenu } from './DesktopMenu';
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { motion } from "motion/react";
 import { useReducedMotionPreference } from "../lib/useReducedMotionPreference";
 import { motionTokens } from "./arc/lib/motion-tokens";
@@ -71,7 +71,9 @@ type SidebarProps = {
   settingsDisabled?: boolean;
 };
 
-export function Sidebar({ active, counts, tags, activeTag, onSelect, onSelectTag, draggable = false, showBrand = true, onRenameTag, onRemoveTag, pinnedTags = [], onPinTag, onSettings, settingsOpen, settingsDisabled }: SidebarProps) {
+// Memoized: the shelf re-renders on every search keystroke; navigation and
+// its tag menus only change with their own props.
+export const Sidebar = memo(function Sidebar({ active, counts, tags, activeTag, onSelect, onSelectTag, draggable = false, showBrand = true, onRenameTag, onRemoveTag, pinnedTags = [], onPinTag, onSettings, settingsOpen, settingsDisabled }: SidebarProps) {
   const { t } = useI18n();
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const reduced = useReducedMotionPreference();
@@ -125,4 +127,4 @@ export function Sidebar({ active, counts, tags, activeTag, onSelect, onSelectTag
     </section>
     {onSettings && <div className={styles.settings} data-active={settingsOpen || undefined}><Button variant="ghost" className={styles.row} onClick={onSettings} disabled={settingsDisabled} aria-pressed={settingsOpen}><span className={styles.rowContent}><Settings size={16} strokeWidth={1.75} aria-hidden="true" /><span className={styles.label}>{t("Settings")}</span></span></Button></div>}
   </aside>;
-}
+});

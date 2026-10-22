@@ -27,6 +27,7 @@ import { Toolbar } from "../../components/Toolbar";
 import { hideStashDock } from "../../lib/desktopWindows";
 import { useLibraryController } from "./useLibraryController";
 import { usePinnedTags } from './usePinnedTags';
+import { useIncrementalList } from './useIncrementalList';
 import styles from "./LibraryView.module.css";
 import listStyles from '../../components/ReferenceList.module.css';
 import { ReferenceImportDialog } from '../../components/ReferenceImportDialog';
@@ -53,7 +54,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     setTagOperation({ name, action });
   }, []);
   useEffect(() => { if (!active) { setEditing(null); setContentEditing(null); setTagOperation(null); } }, [active]);
-  const { storageReady, error, refresh, refreshing, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
+  const { storageReady, error, refresh, refreshing, searching, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
   const editContent = useCallback((item: StashItem) => {
     returnFocus.current = document.querySelector<HTMLElement>(`article[data-reference-id="${CSS.escape(item.id)}"] button[aria-haspopup="menu"]`);
     // Desktop shelf rows carry no bodies: read this reference in full first.
@@ -63,7 +64,17 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     }).catch(error => setNotice(t(error instanceof Error ? error.message : String(error)), 5000));
   }, [setNotice, t]);
   const pinnedError = useCallback((message: string) => setNotice(message, 5000), [setNotice]);
+  const shownItems = useIncrementalList(visibleItems);
   const { pinnedTags, pinTag, reconcileTag } = usePinnedTags(pinnedError);
+  // Stable handlers let the memoized navigation and tag menus skip the
+  // re-render that every search keystroke causes here.
+  const selectFilter = useCallback((next: typeof filter) => { if (!settingsBusy) { setSettingsOpen(false); setFilter(next); } }, [settingsBusy, setFilter]);
+  const selectTag = useCallback((tag: string | null) => { if (!settingsBusy) { setSettingsOpen(false); setActiveTag(tag); } }, [settingsBusy, setActiveTag]);
+  const renameTag = useCallback((name: string) => editTag(name, 'rename'), [editTag]);
+  const removeTag = useCallback((name: string) => editTag(name, 'remove'), [editTag]);
+  const togglePin = useCallback((name: string, pinned: boolean) => { void pinTag(name, pinned).catch(() => pinnedError('Pinned tags could not be saved. Try again.')); }, [pinTag, pinnedError]);
+  const filterTag = useCallback((name: string) => setActiveTag(name || null), [setActiveTag]);
+  const editTagOperation = useCallback((operation: TagOperation) => editTag(operation.name, operation.action), [editTag]);
   return (
     <div data-arc-ui className={`fluid-ui ${styles.root} ${onCollapse ? styles.native : styles.browser}`}>
       <main
@@ -75,11 +86,12 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
         </header>
         <div className={styles.workspace} data-window-content data-shell-workspace>
         <div className={styles.desktopNavigation} data-shell-navigation onPointerDown={event => handleTitlebarDrag(event, Boolean(onCollapse))} onDoubleClick={event => handleTitlebarDoubleClick(event, Boolean(onCollapse))}>
-        <Sidebar active={filter} counts={counts} tags={tags} activeTag={activeTag} onSelect={filter => { if (!settingsBusy) { setSettingsOpen(false); setFilter(filter); } }} onSelectTag={tag => { if (!settingsBusy) { setSettingsOpen(false); setActiveTag(tag); } }} showBrand={false} onRenameTag={name => editTag(name, 'rename')} onRemoveTag={name => editTag(name, 'remove')} pinnedTags={pinnedTags} onPinTag={(name, pinned) => { void pinTag(name, pinned).catch(() => pinnedError('Pinned tags could not be saved. Try again.')); }} onSettings={openSettings} settingsOpen={settingsOpen} settingsDisabled={settingsBusy} />
+        <Sidebar active={filter} counts={counts} tags={tags} activeTag={activeTag} onSelect={selectFilter} onSelectTag={selectTag} showBrand={false} onRenameTag={renameTag} onRemoveTag={removeTag} pinnedTags={pinnedTags} onPinTag={togglePin} onSettings={openSettings} settingsOpen={settingsOpen} settingsDisabled={settingsBusy} />
         </div>
         <section className={styles.main} hidden={settingsOpen}>
           <Toolbar
             query={query}
+            searching={searching}
             refreshing={refreshing}
             onRefresh={() => void refresh()}
             view={view}
@@ -90,7 +102,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
             onSettings={openSettings}
             settingsDisabled={settingsBusy}
             collectionControls={<SegmentedControl label={t("Collection")} options={[...shelfFilters.map(option => ({ ...option, label: t(option.label) })), ...pinnedTags.filter(name => tags.some(tag => tag.name === name)).map(name => ({ value: `tag:${name}`, label: name }))]} value={activeTag ? `tag:${activeTag}` : filter} onValueChange={value => { if (value.startsWith('tag:')) setActiveTag(value.slice(4)); else { setFilter(value as typeof filter); setActiveTag(null); } }} />}
-            tagControls={<ShelfTagFilter tags={tags} activeTag={activeTag || ''} disabled={!storageReady} busy={false} triggerRef={tagFocus} onFilter={name => setActiveTag(name || null)} onEdit={operation => editTag(operation.name, operation.action)} pinnedTags={pinnedTags} onPin={(name, pinned) => { void pinTag(name, pinned).catch(() => pinnedError('Pinned tags could not be saved. Try again.')); }} />}
+            tagControls={<ShelfTagFilter tags={tags} activeTag={activeTag || ''} disabled={!storageReady} busy={false} triggerRef={tagFocus} onFilter={filterTag} onEdit={editTagOperation} pinnedTags={pinnedTags} onPin={togglePin} />}
           />
 
           <ScrollArea className={styles.scroller} viewportClassName={styles.content} label={t("References")} fade={0} aria-busy={!storageReady || refreshing} data-shell-scroller>
@@ -103,7 +115,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
               <LoadingReferences compact={view === "list"} className={view === 'grid' ? styles.grid : undefined} />
             ) : visibleItems.length ? (
                 <div className={view === "grid" ? styles.grid : listStyles.list}>
-                  {visibleItems.map(item => (
+                  {shownItems.map(item => (
                     <StashCard
                       key={item.id}
                       item={item}
