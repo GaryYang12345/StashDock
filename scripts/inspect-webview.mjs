@@ -54,7 +54,9 @@ import { existsSync, readFileSync } from 'node:fs';
 const outputDirectory = resolve(option('out', 'output/claude-review'));
 await mkdir(outputDirectory, { recursive: true });
 const probeFile = join(outputDirectory, 'probe.txt');
-const probe = option('probe') ?? (existsSync(probeFile) ? readFileSync(probeFile, 'utf8').trim() : undefined);
+// probe.txt: "<probe> [profile]". With profile, the probe runs under the CPU
+// profiler and the hottest functions (self time) are printed.
+const [probe, profileMode] = (option('probe') ?? (existsSync(probeFile) ? readFileSync(probeFile, 'utf8').trim() : '')).split(/\s+/);
 
 async function status(url) {
   try { const response = await fetch(url, { signal: AbortSignal.timeout(3000) }); return response.status; }
@@ -104,8 +106,22 @@ for (const [index, page] of pages.entries()) {
     if (event.method === 'Log.entryAdded') console.log(`log.${event.params.entry.level}:`, event.params.entry.text.slice(0, 600), event.params.entry.url || '');
   }
   if (probe && probes[probe] && page.url.includes('surface=folder') === false) {
+    if (profileMode === 'profile') { await devtools.send('Profiler.enable'); await devtools.send('Profiler.setSamplingInterval', { interval: 200 }); await devtools.send('Profiler.start'); }
     const result = await devtools.send('Runtime.evaluate', { expression: probes[probe], awaitPromise: true, returnByValue: true });
     console.log(`probe ${probe}:`, JSON.stringify(result.result?.result?.value ?? result.result, null, 1));
+    if (profileMode === 'profile') {
+      const { profile } = (await devtools.send('Profiler.stop')).result;
+      const self = new Map(), byId = new Map(profile.nodes.map(node => [node.id, node]));
+      const interval = (profile.endTime - profile.startTime) / Math.max(1, profile.samples.length) / 1000;
+      for (const id of profile.samples) { const { functionName, url, lineNumber } = byId.get(id).callFrame; const key = `${functionName || '(anonymous)'} ${url.replace(/^.*\/(?=[^/]+$)/, '').replace(/\?.*$/, '')}:${lineNumber + 1}`; self.set(key, (self.get(key) || 0) + interval); }
+      // Inclusive time per React component-ish function: walk parents.
+      const parent = new Map(); for (const node of profile.nodes) for (const child of node.children || []) parent.set(child, node.id);
+      const total = new Map();
+      for (const id of profile.samples) { const seen = new Set(); for (let at = id; at; at = parent.get(at)) { const { functionName, url, lineNumber } = byId.get(at).callFrame; if (!/\/src\//.test(url)) continue; const key = `${functionName || '(anonymous)'} ${url.replace(/^.*\/src\//, 'src/').replace(/\?.*$/, '')}:${lineNumber + 1}`; if (seen.has(key)) continue; seen.add(key); total.set(key, (total.get(key) || 0) + interval); } }
+      const top = map => [...map].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([key, ms]) => `${Math.round(ms).toString().padStart(6)} ms  ${key}`).join('\n');
+      console.log('Self time:\n' + top(self));
+      console.log('Inclusive time in project sources:\n' + top(total));
+    }
   }
   const shot = await devtools.send('Page.captureScreenshot', { format: 'png' });
   if (shot.result?.data) {
