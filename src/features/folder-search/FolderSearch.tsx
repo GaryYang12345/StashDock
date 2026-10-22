@@ -34,7 +34,7 @@ const cubic = (ease: readonly number[]) => [...ease] as [number, number, number,
 function place(d: number) {
   const a = Math.abs(d), s = Math.sign(d);
   const x = s * (a <= 1 ? a * CARD * 0.54 : CARD * 0.54 + (a - 1) * CARD * 0.22);
-  const opacity = a <= 1 ? 1 - a * 0.5 : Math.max(0, 0.5 - (a - 1) * 0.85);
+  const opacity = a <= 1 ? 1 - a * 0.25 : Math.max(0, 0.75 - (a - 1) * 1.1);
   return { transform: `translateX(${x}px) translateZ(${-Math.min(a, 1) * 150 - Math.max(0, a - 1) * 80}px) rotateY(${-clamp(d, -1, 1) * 48}deg)`, opacity, z: 100 - Math.round(a * 10) };
 }
 

@@ -50,6 +50,16 @@ html.desktop-folder, body.desktop-folder, body.desktop-folder #root {
 .desktop-folder-content { width: 144px; height: 144px; }
 /* The folder search: a transparent canvas whose native region shows
    only its floating field and cards. */
+/* One elevation for everything that floats out of the folder. Its key light
+   matches the folder artwork's own drop shadow (dy 11, deviation 10, #545454
+   at 18% in the 360 artwork = about 4px/8px at 144px); a soft ambient layer
+   lifts the field and cards a little further. It fits the 32px region margin. */
+html.desktop-search {
+  --folder-elevation: 0 4px 9px oklch(44% 0 0 / .18), 0 10px 22px oklch(44% 0 0 / .08);
+}
+html.desktop-search[data-theme="dark"] {
+  --folder-elevation: 0 4px 9px oklch(0% 0 0 / .36), 0 10px 22px oklch(0% 0 0 / .26), 0 0 0 1px oklch(100% 0 0 / .05);
+}
 html.desktop-search, body.desktop-search, body.desktop-search #root {
   min-width: 0;
   min-height: 0;
