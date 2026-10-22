@@ -123,47 +123,6 @@ fn seed(panel: Rect, folder: Rect) -> Rect {
     Rect::around(folder.centre(), width, height)
 }
 
-/// Where the shadow carrier sits while the panel is drawn at `dest`. The
-/// panel's window rect includes invisible resize borders (`insets`) that the
-/// thumbnail scales with it; the carrier keeps them at their real size so its
-/// visible edge (and so its DWM shadow) hugs the scaled visible content.
-pub fn shadow_rect(dest: Rect, window: Rect, insets: Rect) -> Rect {
-    let sx = dest.width() / window.width().max(1.0);
-    let sy = dest.height() / window.height().max(1.0);
-    let inset = |edge: i32, value: i32, scale: f64, sign: f64| {
-        (edge as f64 + sign * value as f64 * scale - sign * value as f64).round() as i32
-    };
-    Rect {
-        left: inset(dest.left, insets.left, sx, 1.0),
-        top: inset(dest.top, insets.top, sy, 1.0),
-        right: inset(dest.right, insets.right, sx, -1.0),
-        bottom: inset(dest.bottom, insets.bottom, sy, -1.0),
-    }
-}
-
-/// How far the shadow carrier is tucked under the opaque panel thumbnail
-/// (1 = fully hidden beneath it, 0 = at the panel's edge, the real shadow), or
-/// None while the panel is translucent and the carrier is not shown. The
-/// shadow then emerges from under the panel's edges as it lands, and slides
-/// back under them before the panel starts to fade: never popping, and never
-/// depending on DWM's own show/hide fades.
-pub fn tuck(direction: Direction, t: f64, panel_opacity: u8) -> Option<f64> {
-    if panel_opacity < 255 {
-        return None;
-    }
-    Some(match direction {
-        Direction::Expand => 1.0 - enter(ramp(t, 0.32, 1.0)),
-        Direction::Collapse => in_out(ramp(t, 0.0, 0.45)),
-    })
-}
-
-/// `rect` shrunk by `by` on every side, never below 1px.
-fn deflate(rect: Rect, by: f64) -> Rect {
-    let (cx, cy) = rect.centre();
-    let by = by.min(rect.width() / 2.0 - 1.0).min(rect.height() / 2.0 - 1.0).max(0.0);
-    Rect::around((cx, cy), rect.width() - 2.0 * by, rect.height() - 2.0 * by)
-}
-
 pub fn frame(direction: Direction, panel: Rect, folder: Rect, t: f64) -> Frame {
     let small = seed(panel, folder);
     let opacity = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -220,13 +179,86 @@ pub fn settle() {
 }
 
 
+/// The panel's own Windows drop shadow, which DWM thumbnails never include.
+/// Measured from the real (active) panel shadow at 150% scale and modelled as
+/// three soft rectangles relative to the panel's visible bounds; lengths scale
+/// with DPI. The transition draws it under the panel thumbnail with the
+/// panel's opacity, so it is already in place when the real panel (and its
+/// real shadow) is revealed, and still in place when it is cloaked.
+#[cfg_attr(not(windows), allow(dead_code))]
+mod shadow {
+    /// amplitude, blur x, blur y, inset x, offset y, inset y (px at 150%).
+    const LAYERS: [[f64; 6]; 3] = [
+        [0.15, 7.42, 19.22, 4.72, 1.43, 1.24],
+        [0.18, 17.73, 30.07, -13.35, 37.13, -12.19],
+        [0.20, 185.0, 48.76, 226.01, 281.04, 281.02],
+    ];
+    /// How far past the visible edge the shadow is drawn (px at 150%).
+    pub const REACH: f64 = 140.0;
+
+    /// Standard normal CDF (Abramowitz–Stegun 7.1.26, |error| < 1.5e-7).
+    fn phi(z: f64) -> f64 {
+        let x = z.abs() / std::f64::consts::SQRT_2;
+        let t = 1.0 / (1.0 + 0.3275911 * x);
+        let poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+        let erf = 1.0 - poly * (-x * x).exp();
+        if z >= 0.0 { 0.5 * (1.0 + erf) } else { 0.5 * (1.0 - erf) }
+    }
+
+    /// A blurred span [from, to] sampled at `at`; empty spans cast nothing.
+    fn span(at: f64, from: f64, to: f64, blur: f64) -> f64 {
+        if to <= from {
+            return 0.0;
+        }
+        (phi((at - from) / blur) - phi((at - to) / blur)).max(0.0)
+    }
+
+    /// Premultiplied BGRA pixels of the shadow around a `width` x `height`
+    /// visible panel, `margin` px on every side; nothing under the panel.
+    pub fn render(width: i32, height: i32, scale: f64) -> (i32, i32, i32, Vec<u8>) {
+        let margin = (REACH * scale).ceil() as i32;
+        let (w, h) = (width + 2 * margin, height + 2 * margin);
+        let (right, bottom) = ((width + margin) as f64, (height + margin) as f64);
+        let (left, top) = (margin as f64, margin as f64);
+        let mut columns = Vec::new();
+        let mut rows = Vec::new();
+        for [amp, bx, by, ix, oy, iy] in LAYERS {
+            let (bx, by, ix, oy, iy) = (bx * scale, by * scale, ix * scale, oy * scale, iy * scale);
+            columns.push((0..w).map(|x| span(x as f64 + 0.5, left + ix, right - ix, bx)).collect::<Vec<_>>());
+            rows.push((0..h).map(|y| amp * span(y as f64 + 0.5, top + oy + iy, bottom + oy - iy, by)).collect::<Vec<_>>());
+        }
+        let mut pixels = vec![0u8; (w * h * 4) as usize];
+        for y in 0..h {
+            let inside_rows = y >= margin && y < margin + height;
+            for x in 0..w {
+                if inside_rows && x >= margin && x < margin + width {
+                    continue;
+                }
+                let mut clear = 1.0;
+                for layer in 0..LAYERS.len() {
+                    clear *= 1.0 - columns[layer][x as usize] * rows[layer][y as usize];
+                }
+                let alpha = ((1.0 - clear) * 255.0).round().clamp(0.0, 255.0) as u8;
+                // Black, premultiplied: only the alpha channel is non-zero.
+                pixels[((y * w + x) * 4 + 3) as usize] = alpha;
+            }
+        }
+        (w, h, margin, pixels)
+    }
+
+    #[cfg(test)]
+    pub fn alpha_at(pixels: &(i32, i32, i32, Vec<u8>), x: i32, y: i32) -> f64 {
+        let (w, _, margin, data) = pixels;
+        data[(((y + margin) * w + x + margin) * 4 + 3) as usize] as f64 / 255.0
+    }
+}
+
 /// Development-only evidence for the handoff: when
-/// `output/claude-review/morph/capture` exists, each transition saves a few
-/// composed screen frames (shadows included) and a short log next to it.
+/// `output/claude-review/morph/capture` exists, each transition saves its
+/// last drawn frame and the revealed result (shadows included) next to it.
 #[cfg(all(windows, debug_assertions))]
 mod probe {
     use super::Rect;
-    use std::cell::RefCell;
     use std::path::PathBuf;
     use windows_sys::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
@@ -237,9 +269,6 @@ mod probe {
         dir: PathBuf,
         stamp: String,
         area: Rect,
-        shots: RefCell<Vec<(String, i32, i32, Vec<u8>)>>,
-        taken: RefCell<Vec<String>>,
-        log: RefCell<String>,
     }
 
     impl Probe {
@@ -250,24 +279,13 @@ mod probe {
             }
             let millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
             let stamp = format!("{millis}-{direction:?}").to_lowercase();
-            let pad = 80;
-            let area = Rect { left: area.left - pad, top: area.top - pad, right: area.right + pad, bottom: area.bottom + pad };
-            Some(Probe { dir, stamp, area, shots: RefCell::new(Vec::new()), taken: RefCell::new(Vec::new()), log: RefCell::new(String::new()) })
+            Some(Probe { dir, stamp, area })
         }
 
-        pub fn note(&self, text: impl AsRef<str>) {
-            let mut log = self.log.borrow_mut();
-            log.push_str(text.as_ref());
-            log.push('\n');
-        }
-
-        /// One capture per label.
+        /// Saves the composed screen under `area` as a 32-bit BMP.
         pub fn shot(&self, label: &str) {
-            if self.taken.borrow().iter().any(|l| l == label) {
-                return;
-            }
-            self.taken.borrow_mut().push(label.to_string());
             let (w, h) = (self.area.right - self.area.left, self.area.bottom - self.area.top);
+            let mut pixels = vec![0u8; (w * h * 4) as usize];
             unsafe {
                 let screen = GetDC(std::ptr::null_mut());
                 let memory = CreateCompatibleDC(screen);
@@ -285,35 +303,25 @@ mod probe {
                     biCompression: BI_RGB,
                     ..std::mem::zeroed()
                 };
-                let mut pixels = vec![0u8; (w * h * 4) as usize];
                 GetDIBits(memory, bitmap, 0, h as u32, pixels.as_mut_ptr().cast(), &mut info, DIB_RGB_COLORS);
                 DeleteObject(bitmap);
                 DeleteDC(memory);
                 ReleaseDC(std::ptr::null_mut(), screen);
-                self.shots.borrow_mut().push((label.to_string(), w, h, pixels));
             }
-        }
-
-        pub fn save(self) {
-            for (label, w, h, pixels) in self.shots.into_inner() {
-                let mut file = Vec::with_capacity(54 + pixels.len());
-                let size = 54 + pixels.len() as u32;
-                file.extend_from_slice(b"BM");
-                file.extend_from_slice(&size.to_le_bytes());
-                file.extend_from_slice(&0u32.to_le_bytes());
-                file.extend_from_slice(&54u32.to_le_bytes());
-                file.extend_from_slice(&40u32.to_le_bytes());
-                file.extend_from_slice(&w.to_le_bytes());
-                file.extend_from_slice(&(-h).to_le_bytes());
-                file.extend_from_slice(&1u16.to_le_bytes());
-                file.extend_from_slice(&32u16.to_le_bytes());
-                file.extend_from_slice(&[0u8; 24]);
-                file.extend_from_slice(&pixels);
-                let _ = std::fs::write(self.dir.join(format!("{}-{label}.bmp", self.stamp)), file);
-            }
-            let mut log = self.log.into_inner();
-            log.push_str(&format!("area {:?}\n", self.area));
-            let _ = std::fs::write(self.dir.join(format!("{}.txt", self.stamp)), log);
+            let mut file = Vec::with_capacity(54 + pixels.len());
+            file.extend_from_slice(b"BM");
+            file.extend_from_slice(&(54 + pixels.len() as u32).to_le_bytes());
+            file.extend_from_slice(&0u32.to_le_bytes());
+            file.extend_from_slice(&54u32.to_le_bytes());
+            file.extend_from_slice(&40u32.to_le_bytes());
+            file.extend_from_slice(&w.to_le_bytes());
+            file.extend_from_slice(&(-h).to_le_bytes());
+            file.extend_from_slice(&1u16.to_le_bytes());
+            file.extend_from_slice(&32u16.to_le_bytes());
+            file.extend_from_slice(&[0u8; 24]);
+            file.extend_from_slice(&pixels);
+            let _ = std::fs::write(self.dir.join(format!("{}-{label}.bmp", self.stamp)), file);
+            let _ = std::fs::write(self.dir.join(format!("{}.txt", self.stamp)), format!("area {:?}\n", self.area));
         }
     }
 }
@@ -324,29 +332,28 @@ pub use native::Morph;
 #[cfg(windows)]
 mod native {
     use super::*;
+    use std::sync::Mutex;
     use windows_sys::Win32::{
-        Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
-        Foundation::POINT,
+        Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM},
         Graphics::Dwm::{
-            DwmFlush, DwmRegisterThumbnail, DwmSetWindowAttribute, DwmUnregisterThumbnail,
-            DwmUpdateThumbnailProperties, DWMWA_TRANSITIONS_FORCEDISABLED,
-            DWM_THUMBNAIL_PROPERTIES, DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION,
-            DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
+            DwmFlush, DwmGetWindowAttribute, DwmRegisterThumbnail, DwmSetWindowAttribute,
+            DwmUnregisterThumbnail, DwmUpdateThumbnailProperties, DWMWA_CLOAK,
+            DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED, DWM_THUMBNAIL_PROPERTIES,
+            DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION, DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
         },
-        Graphics::Gdi::ClientToScreen,
+        Graphics::Gdi::{
+            CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, AC_SRC_ALPHA,
+            AC_SRC_OVER, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS,
+        },
         System::LibraryLoader::GetModuleHandleW,
+        UI::HiDpi::GetDpiForWindow,
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetForegroundWindow,
-            GetWindowLongPtrW, GetWindowRect, IsZoomed, RegisterClassExW, SendMessageW,
-            SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE,
-            HTTRANSPARENT, MA_NOACTIVATE, NCCALCSIZE_PARAMS, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-            SW_HIDE, SW_SHOWNOACTIVATE, WM_MOUSEACTIVATE, WM_NCACTIVATE, WM_NCCALCSIZE,
-            WM_NCCREATE, WM_NCHITTEST, WNDCLASSEXW, WS_CAPTION, WS_DISABLED, WS_EX_NOACTIVATE,
-            WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
-            WS_MAXIMIZE, WS_MINIMIZE, WS_POPUP, WS_THICKFRAME, WS_VISIBLE,
+            CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassExW, ShowWindow,
+            UpdateLayeredWindow, HTTRANSPARENT, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_NCHITTEST,
+            WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
+            WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
         },
     };
-    use std::cell::Cell;
 
     unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         // Never takes input: the pointer reaches whatever is underneath.
@@ -356,188 +363,11 @@ mod native {
         DefWindowProcW(hwnd, message, wparam, lparam)
     }
 
-    /// What the shadow carrier's procedure needs: the panel's real
-    /// non-client insets, and whether to draw as the active window.
-    struct Carrier {
-        insets: Rect,
-        active: bool,
-    }
-
-    unsafe extern "system" fn shadow_procedure(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if message == WM_NCCREATE {
-            let create = &*(lparam as *const CREATESTRUCTW);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
-            return DefWindowProcW(hwnd, message, wparam, lparam);
-        }
-        let carrier = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Carrier;
-        match message {
-            WM_NCHITTEST => return HTTRANSPARENT as LRESULT,
-            WM_MOUSEACTIVATE => return MA_NOACTIVATE as LRESULT,
-            // The panel's own borderless frame (tao's undecorated shadow):
-            // keep its insets as non-client so DWM draws the same edge and
-            // shadow around an empty client.
-            WM_NCCALCSIZE if !carrier.is_null() => {
-                let insets = (*carrier).insets;
-                let rect = if wparam != 0 {
-                    &mut (*(lparam as *mut NCCALCSIZE_PARAMS)).rgrc[0]
-                } else {
-                    &mut *(lparam as *mut RECT)
-                };
-                rect.left += insets.left;
-                rect.top += insets.top;
-                rect.right -= insets.right;
-                rect.bottom -= insets.bottom;
-                return 0;
-            }
-            // Drawn as active when the panel is (or is about to be), so its
-            // shadow is the one the real panel shows.
-            WM_NCACTIVATE if !carrier.is_null() && (*carrier).active => {
-                return DefWindowProcW(hwnd, message, 1, lparam);
-            }
-            _ => {}
-        }
-        DefWindowProcW(hwnd, message, wparam, lparam)
-    }
-
-    /// An empty window with the panel's own frame, moved under the panel's
-    /// thumbnail so the travelling panel keeps its real DWM shadow (thumbnails
-    /// never include shadows). It appears and leaves tucked under the opaque
-    /// panel (see `tuck`).
-    struct Shadow {
-        hwnd: HWND,
-        carrier: *mut Carrier,
-        insets: Rect,
-        /// How far the DWM shadow reaches past the window edge, generously:
-        /// tucked this far in, it is entirely under the opaque panel.
-        reach: f64,
-        shown: Cell<bool>,
-    }
-
-    impl Shadow {
-        fn new(panel_hwnd: HWND, owner: HWND, active: bool) -> Option<Shadow> {
-            unsafe {
-                // A maximized panel has no shadow.
-                if IsZoomed(panel_hwnd) != 0 {
-                    return None;
-                }
-                let style = GetWindowLongPtrW(panel_hwnd, GWL_STYLE) as u32;
-                if style & WS_CAPTION != WS_CAPTION || style & WS_THICKFRAME == 0 {
-                    return None;
-                }
-                let mut window = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-                let mut client = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-                let mut origin = POINT { x: 0, y: 0 };
-                if GetWindowRect(panel_hwnd, &mut window) == 0
-                    || GetClientRect(panel_hwnd, &mut client) == 0
-                    || ClientToScreen(panel_hwnd, &mut origin) == 0
-                {
-                    return None;
-                }
-                let insets = Rect {
-                    left: origin.x - window.left,
-                    top: origin.y - window.top,
-                    right: window.right - (origin.x + client.right),
-                    bottom: window.bottom - (origin.y + client.bottom),
-                };
-                if [insets.left, insets.top, insets.right, insets.bottom].iter().any(|v| !(0..=64).contains(v)) {
-                    return None;
-                }
-                let class = shadow_class().ok()?;
-                let carrier = Box::into_raw(Box::new(Carrier { insets, active }));
-                // Owned by the (topmost) folder: no taskbar button, no Alt+Tab.
-                let hwnd = CreateWindowExW(
-                    WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_NOREDIRECTIONBITMAP,
-                    class.as_ptr(),
-                    std::ptr::null(),
-                    style & !(WS_VISIBLE | WS_MAXIMIZE | WS_MINIMIZE | WS_DISABLED),
-                    window.left,
-                    window.top,
-                    (window.right - window.left).max(1),
-                    (window.bottom - window.top).max(1),
-                    owner,
-                    std::ptr::null_mut(),
-                    GetModuleHandleW(std::ptr::null()),
-                    carrier as *const core::ffi::c_void,
-                );
-                if hwnd.is_null() {
-                    drop(Box::from_raw(carrier));
-                    return None;
-                }
-                if active {
-                    SendMessageW(hwnd, WM_NCACTIVATE, 1, 0);
-                }
-                // The resize border is 8px at 100% scale: 48px at 100%.
-                let reach = if insets.left > 0 { insets.left as f64 * 6.0 } else { 48.0 };
-                let shadow = Shadow { hwnd, carrier, insets, reach, shown: Cell::new(false) };
-                // Never DWM's own show/hide fades: they snapshot and linger.
-                shadow.fades(false);
-                Some(shadow)
-            }
-        }
-
-        /// Whether DWM fades this window in and out as it shows and hides.
-        fn fades(&self, on: bool) {
-            let disabled: i32 = i32::from(!on);
-            unsafe {
-                DwmSetWindowAttribute(
-                    self.hwnd,
-                    DWMWA_TRANSITIONS_FORCEDISABLED as u32,
-                    (&disabled as *const i32).cast(),
-                    std::mem::size_of::<i32>() as u32,
-                );
-            }
-        }
-
-        /// Directly beneath the overlay, so it never covers either thumbnail.
-        fn place(&self, overlay: HWND, rect: Rect, show: bool) {
-            let flags = SWP_NOACTIVATE | if show { SWP_SHOWWINDOW } else { 0 };
-            unsafe {
-                SetWindowPos(self.hwnd, overlay, rect.left, rect.top, (rect.right - rect.left).max(1), (rect.bottom - rect.top).max(1), flags);
-            }
-            if show {
-                self.shown.set(true);
-            }
-        }
-
-        fn hide(&self) {
-            if self.shown.replace(false) {
-                unsafe {
-                    ShowWindow(self.hwnd, SW_HIDE);
-                }
-            }
-        }
-    }
-
-    impl Drop for Shadow {
-        fn drop(&mut self) {
-            // Removed at once: the real panel (or nothing) is already in place.
-            self.fades(false);
-            unsafe {
-                DestroyWindow(self.hwnd);
-                drop(Box::from_raw(self.carrier));
-            }
-        }
-    }
-
     fn class() -> Result<Vec<u16>, String> {
         use std::sync::OnceLock;
         static REGISTERED: OnceLock<bool> = OnceLock::new();
-        register(&REGISTERED, "StashDockHandoff", procedure)
-    }
-
-    fn shadow_class() -> Result<Vec<u16>, String> {
-        use std::sync::OnceLock;
-        static REGISTERED: OnceLock<bool> = OnceLock::new();
-        register(&REGISTERED, "StashDockHandoffShadow", shadow_procedure)
-    }
-
-    fn register(
-        registered: &std::sync::OnceLock<bool>,
-        name: &str,
-        procedure: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT,
-    ) -> Result<Vec<u16>, String> {
-        let name: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
-        let ok = *registered.get_or_init(|| unsafe {
+        let name: Vec<u16> = "StashDockHandoff\0".encode_utf16().collect();
+        let ok = *REGISTERED.get_or_init(|| unsafe {
             let class = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                 style: 0,
@@ -561,94 +391,187 @@ mod native {
         }
     }
 
+    fn window(ex_style: u32, area: Rect) -> Result<HWND, String> {
+        let class = class()?;
+        let hwnd = unsafe {
+            CreateWindowExW(
+                ex_style,
+                class.as_ptr(),
+                std::ptr::null(),
+                WS_POPUP,
+                area.left,
+                area.top,
+                (area.right - area.left).max(1),
+                (area.bottom - area.top).max(1),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                GetModuleHandleW(std::ptr::null()),
+                std::ptr::null(),
+            )
+        };
+        if hwnd.is_null() {
+            Err("Could not prepare the window transition.".into())
+        } else {
+            Ok(hwnd)
+        }
+    }
+
+    fn set_flag(hwnd: HWND, attribute: i32, on: bool) {
+        let value: i32 = i32::from(on);
+        unsafe {
+            DwmSetWindowAttribute(hwnd, attribute as u32, (&value as *const i32).cast(), 4);
+        }
+    }
+
+    /// What DWM draws (and thumbnails show) of a window: without the
+    /// invisible resize borders of a framed window.
+    fn visible_bounds(hwnd: HWND, fallback: Rect) -> Rect {
+        let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        let ok = unsafe {
+            DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS as u32, (&mut r as *mut RECT).cast(), std::mem::size_of::<RECT>() as u32)
+        } >= 0;
+        if ok && r.right > r.left && r.bottom > r.top {
+            Rect { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+        } else {
+            fallback
+        }
+    }
+
+    /// A cloaked layered window holding the panel's shadow, shown only through
+    /// its thumbnail. The pixels are kept for the next transition at the same
+    /// size and scale.
+    struct ShadowSource {
+        hwnd: HWND,
+        margin: i32,
+    }
+
+    impl ShadowSource {
+        fn new(panel: Rect, scale: f64) -> Result<ShadowSource, String> {
+            static CACHE: Mutex<Option<((i32, i32, u32), (i32, i32, i32, Vec<u8>))>> = Mutex::new(None);
+            let key = ((panel.right - panel.left), (panel.bottom - panel.top), (scale * 1000.0).round() as u32);
+            let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+            if cache.as_ref().map(|(k, _)| *k) != Some(key) {
+                *cache = Some((key, shadow::render(key.0, key.1, scale)));
+            }
+            let (_, (w, h, margin, pixels)) = cache.as_ref().ok_or("Could not draw the window transition.")?;
+            let (w, h, margin) = (*w, *h, *margin);
+            let area = Rect { left: panel.left - margin, top: panel.top - margin, right: panel.left - margin + w, bottom: panel.top - margin + h };
+            let hwnd = window(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT, area)?;
+            let source = ShadowSource { hwnd, margin };
+            set_flag(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, true);
+            set_flag(hwnd, DWMWA_CLOAK, true);
+            unsafe {
+                let mut info: BITMAPINFO = std::mem::zeroed();
+                info.bmiHeader = BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: w,
+                    biHeight: -h,
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB,
+                    ..std::mem::zeroed()
+                };
+                let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
+                let memory = CreateCompatibleDC(std::ptr::null_mut());
+                let bitmap = CreateDIBSection(memory, &info, DIB_RGB_COLORS, &mut bits, std::ptr::null_mut(), 0);
+                if bitmap.is_null() || bits.is_null() {
+                    DeleteDC(memory);
+                    return Err("Could not draw the window transition.".into());
+                }
+                std::ptr::copy_nonoverlapping(pixels.as_ptr(), bits.cast::<u8>(), pixels.len());
+                let old = SelectObject(memory, bitmap);
+                let origin = POINT { x: 0, y: 0 };
+                let at = POINT { x: area.left, y: area.top };
+                let size = SIZE { cx: w, cy: h };
+                let blend = BLENDFUNCTION { BlendOp: AC_SRC_OVER as u8, BlendFlags: 0, SourceConstantAlpha: 255, AlphaFormat: AC_SRC_ALPHA as u8 };
+                let ok = UpdateLayeredWindow(hwnd, std::ptr::null_mut(), &at, &size, memory, &origin, 0, &blend, ULW_ALPHA);
+                SelectObject(memory, old);
+                DeleteObject(bitmap);
+                DeleteDC(memory);
+                if ok == 0 {
+                    return Err("Could not draw the window transition.".into());
+                }
+                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            }
+            Ok(source)
+        }
+    }
+
+    impl Drop for ShadowSource {
+        fn drop(&mut self) {
+            unsafe {
+                DestroyWindow(self.hwnd);
+            }
+        }
+    }
+
     /// The live overlay. Must be created, finished and dropped on the UI thread.
     pub struct Morph {
         hwnd: HWND,
         origin: (i32, i32),
+        shadow: Option<(ShadowSource, isize)>,
         panel_thumb: isize,
         folder_thumb: isize,
         direction: Direction,
+        /// Visible bounds, which is what the thumbnails draw.
         panel: Rect,
         folder: Rect,
-        shadow: Option<Shadow>,
         #[cfg(debug_assertions)]
         probe: Option<super::probe::Probe>,
     }
 
     impl Morph {
         pub fn begin(panel_hwnd: isize, folder_hwnd: isize, panel: Rect, folder: Rect, direction: Direction) -> Result<Morph, String> {
-            let class = class()?;
-            // Cover both resting places plus the folder's grown/shrunk size.
+            let (panel_hwnd, folder_hwnd) = (panel_hwnd as HWND, folder_hwnd as HWND);
+            let panel = visible_bounds(panel_hwnd, panel);
+            let folder = visible_bounds(folder_hwnd, folder);
+            let scale = match unsafe { GetDpiForWindow(panel_hwnd) } {
+                0 => 1.0,
+                dpi => dpi as f64 / 144.0,
+            };
+            // Cover both resting places, the panel's shadow and the folder's
+            // grown/shrunk size.
+            let reach = (shadow::REACH * scale).ceil() as i32;
             let margin = (folder.width() * 0.3).round() as i32;
             let area = Rect::union(
-                panel,
+                Rect { left: panel.left - reach, top: panel.top - reach, right: panel.right + reach, bottom: panel.bottom + reach },
                 Rect { left: folder.left - margin, top: folder.top - margin, right: folder.right + margin, bottom: folder.bottom + margin },
             );
+            let hwnd = window(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP, area)?;
+            let mut morph = Morph {
+                hwnd,
+                origin: (area.left, area.top),
+                shadow: None,
+                panel_thumb: 0,
+                folder_thumb: 0,
+                direction,
+                panel,
+                folder,
+                #[cfg(debug_assertions)]
+                probe: super::probe::Probe::open(area, direction),
+            };
             unsafe {
-                let hwnd = CreateWindowExW(
-                    WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP,
-                    class.as_ptr(),
-                    std::ptr::null(),
-                    WS_POPUP,
-                    area.left,
-                    area.top,
-                    (area.right - area.left).max(1),
-                    (area.bottom - area.top).max(1),
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    GetModuleHandleW(std::ptr::null()),
-                    std::ptr::null(),
-                );
-                if hwnd.is_null() {
-                    return Err("Could not prepare the window transition.".into());
+                // Registration order is drawing order: shadow, panel, folder
+                // (the folder's real window is topmost).
+                match ShadowSource::new(panel, scale) {
+                    Ok(source) => {
+                        let mut thumb = 0;
+                        if DwmRegisterThumbnail(hwnd, source.hwnd, &mut thumb) >= 0 {
+                            morph.shadow = Some((source, thumb));
+                        }
+                    }
+                    Err(error) => eprintln!("StashDock transition without shadow: {error}"),
                 }
-                let mut morph = Morph { hwnd, origin: (area.left, area.top), panel_thumb: 0, folder_thumb: 0, direction, panel, folder, shadow: None,
-                    #[cfg(debug_assertions)]
-                    probe: super::probe::Probe::open(Rect::union(panel, folder), direction) };
-                if DwmRegisterThumbnail(hwnd, panel_hwnd as HWND, &mut morph.panel_thumb) < 0
-                    || DwmRegisterThumbnail(hwnd, folder_hwnd as HWND, &mut morph.folder_thumb) < 0
+                if DwmRegisterThumbnail(hwnd, panel_hwnd, &mut morph.panel_thumb) < 0
+                    || DwmRegisterThumbnail(hwnd, folder_hwnd, &mut morph.folder_thumb) < 0
                 {
                     return Err("Could not prepare the window transition.".into());
                 }
                 morph.show(0.0)?;
-                // The panel draws as active once it lands (it takes focus);
-                // a collapse starts from whatever state it is in.
-                let active = match direction {
-                    Direction::Expand => true,
-                    Direction::Collapse => GetForegroundWindow() == panel_hwnd as HWND,
-                };
-                morph.shadow = Shadow::new(panel_hwnd as HWND, folder_hwnd as HWND, active);
-                #[cfg(debug_assertions)]
-                if let Some(probe) = morph.probe.as_ref() {
-                    let bounds = |h: HWND| {
-                        let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-                        let hr = windows_sys::Win32::Graphics::Dwm::DwmGetWindowAttribute(
-                            h,
-                            windows_sys::Win32::Graphics::Dwm::DWMWA_EXTENDED_FRAME_BOUNDS as u32,
-                            (&mut r as *mut RECT).cast(),
-                            std::mem::size_of::<RECT>() as u32,
-                        );
-                        format!("hr={hr:#x} [{}, {}, {}, {}]", r.left, r.top, r.right, r.bottom)
-                    };
-                    probe.note(format!("panel {panel:?} folder {folder:?}"));
-                    probe.note(format!("panel style {:#x} ex {:#x} zoomed {} frame {}", GetWindowLongPtrW(panel_hwnd as HWND, GWL_STYLE), GetWindowLongPtrW(panel_hwnd as HWND, -20), IsZoomed(panel_hwnd as HWND), bounds(panel_hwnd as HWND)));
-                    probe.note(format!("active {active} foreground-is-panel {}", GetForegroundWindow() == panel_hwnd as HWND));
-                    match morph.shadow.as_ref() {
-                        Some(shadow) => probe.note(format!("carrier insets {:?} reach {} frame {}", shadow.insets, shadow.reach, bounds(shadow.hwnd))),
-                        None => probe.note("carrier: none"),
-                    }
-                }
-                if direction == Direction::Collapse {
-                    // Already in place, under the panel's own shadow, before
-                    // the panel is cloaked: no change at the first frame.
-                    if let Some(shadow) = morph.shadow.as_ref() {
-                        shadow.place(hwnd, panel, true);
-                    }
-                }
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 DwmFlush();
-                Ok(morph)
             }
+            Ok(morph)
         }
 
         fn place(&self, thumb: isize, rect: Rect, opacity: u8) -> Result<(), String> {
@@ -673,19 +596,21 @@ mod native {
 
         fn show(&self, t: f64) -> Result<(), String> {
             let frame = frame(self.direction, self.panel, self.folder, t);
-            // The folder is drawn over the panel, as its real window is topmost.
-            self.place(self.panel_thumb, frame.panel, frame.panel_opacity)?;
-            self.place(self.folder_thumb, frame.folder, frame.folder_opacity)?;
-            if let Some(shadow) = self.shadow.as_ref() {
-                match tuck(self.direction, t, frame.panel_opacity) {
-                    Some(tucked) => {
-                        let rect = shadow_rect(frame.panel, self.panel, shadow.insets);
-                        shadow.place(self.hwnd, deflate(rect, tucked * shadow.reach), true);
-                    }
-                    None => shadow.hide(),
-                }
+            if let Some((source, thumb)) = self.shadow.as_ref() {
+                // The shadow travels and fades with the panel.
+                let sx = frame.panel.width() / self.panel.width().max(1.0);
+                let sy = frame.panel.height() / self.panel.height().max(1.0);
+                let m = source.margin as f64;
+                let rect = Rect {
+                    left: (frame.panel.left as f64 - m * sx).round() as i32,
+                    top: (frame.panel.top as f64 - m * sy).round() as i32,
+                    right: (frame.panel.right as f64 + m * sx).round() as i32,
+                    bottom: (frame.panel.bottom as f64 + m * sy).round() as i32,
+                };
+                self.place(*thumb, rect, frame.panel_opacity)?;
             }
-            Ok(())
+            self.place(self.panel_thumb, frame.panel, frame.panel_opacity)?;
+            self.place(self.folder_thumb, frame.folder, frame.folder_opacity)
         }
 
         /// Plays the whole transition, one step per composed frame. Blocks the
@@ -697,16 +622,6 @@ mod native {
             for _ in 0..240 {
                 let t = start.elapsed().as_secs_f64() / duration.as_secs_f64();
                 self.show(t.min(1.0))?;
-                #[cfg(debug_assertions)]
-                if let Some(probe) = self.probe.as_ref() {
-                    for (at, label) in [(0.0, "a-start"), (0.3, "b-030"), (0.6, "c-060"), (0.9, "d-090"), (1.0, "e-end")] {
-                        if t >= at {
-                            if unsafe { DwmFlush() } >= 0 {
-                                probe.shot(label);
-                            }
-                        }
-                    }
-                }
                 if t >= 1.0 {
                     break;
                 }
@@ -714,13 +629,19 @@ mod native {
                     std::thread::sleep(Duration::from_millis(8));
                 }
             }
+            #[cfg(debug_assertions)]
+            if let Some(probe) = self.probe.as_ref() {
+                unsafe {
+                    DwmFlush();
+                }
+                probe.shot("drawn");
+            }
             Ok(())
         }
 
         /// Wait until the real windows' revealed state has been composed, so
         /// removing the overlay never leaves an empty frame. Called after the
-        /// destination took focus, so the panel's own (active) shadow is
-        /// already the one the carrier shows.
+        /// destination took focus, so the real shadow is its active one.
         #[allow(unused_mut)]
         pub fn finish(mut self) {
             unsafe {
@@ -728,13 +649,6 @@ mod native {
             }
             #[cfg(debug_assertions)]
             let probe = self.probe.take();
-            #[cfg(debug_assertions)]
-            if let Some(probe) = probe.as_ref() {
-                unsafe {
-                    DwmFlush();
-                }
-                probe.shot("f-revealed");
-            }
             drop(self);
             #[cfg(debug_assertions)]
             if let Some(probe) = probe {
@@ -743,15 +657,13 @@ mod native {
                     DwmFlush();
                 }
                 std::thread::sleep(Duration::from_millis(150));
-                probe.shot("g-settled");
-                probe.save();
+                probe.shot("real");
             }
         }
     }
 
     impl Drop for Morph {
         fn drop(&mut self) {
-            self.shadow.take();
             unsafe {
                 if self.panel_thumb != 0 {
                     DwmUnregisterThumbnail(self.panel_thumb);
@@ -759,6 +671,10 @@ mod native {
                 if self.folder_thumb != 0 {
                     DwmUnregisterThumbnail(self.folder_thumb);
                 }
+                if let Some((_, thumb)) = self.shadow.as_ref() {
+                    DwmUnregisterThumbnail(*thumb);
+                }
+                self.shadow.take();
                 DestroyWindow(self.hwnd);
             }
         }
@@ -803,33 +719,18 @@ mod tests {
     }
 
     #[test]
-    fn the_shadow_hugs_the_scaled_visible_panel() {
-        let insets = Rect { left: 8, top: 1, right: 8, bottom: 8 };
-        // At rest it is exactly the panel's window.
-        assert_eq!(shadow_rect(PANEL, PANEL, insets), PANEL);
-        // Half size: visible content is the scaled one; borders keep their size.
-        let half = Rect::around(PANEL.centre(), PANEL.width() / 2.0, PANEL.height() / 2.0);
-        let rect = shadow_rect(half, PANEL, insets);
-        assert_eq!(rect.left, half.left + 4 - 8);
-        assert_eq!(rect.right, half.right - 4 + 8);
-        assert_eq!(rect.bottom, half.bottom - 4 + 8);
-    }
-
-    #[test]
-    fn the_shadow_emerges_from_under_the_landing_panel_and_tucks_back() {
-        let at = |direction, t: f64| tuck(direction, t, frame(direction, PANEL, FOLDER, t).panel_opacity);
-        // Not shown while the panel is translucent.
-        assert_eq!(at(Direction::Expand, 0.1), None);
-        assert!((at(Direction::Expand, 0.32).unwrap() - 1.0).abs() < 1e-6);
-        assert!(at(Direction::Expand, 0.6).unwrap() < 1.0);
-        assert!(at(Direction::Expand, 1.0).unwrap().abs() < 1e-6);
-        assert!(at(Direction::Collapse, 0.0).unwrap().abs() < 1e-6);
-        assert!((at(Direction::Collapse, 0.45).unwrap() - 1.0).abs() < 1e-6);
-        // Fully tucked before the panel starts to fade.
-        assert!((at(Direction::Collapse, 0.5).unwrap() - 1.0).abs() < 1e-6);
-        assert_eq!(at(Direction::Collapse, 0.6), None);
-        let small = deflate(PANEL, 48.0);
-        assert_eq!(small, Rect { left: 448, top: 168, right: 1532, bottom: 832 });
+    fn the_shadow_matches_the_measured_panel_shadow_and_never_covers_it() {
+        // Measured at 150% around a 1608x1070 panel (alpha over white).
+        let image = shadow::render(1608, 1070, 1.0);
+        let at = |x, y| shadow::alpha_at(&image, x, y);
+        assert_eq!(at(800, 500), 0.0);
+        assert_eq!(at(0, 0), 0.0);
+        for (x, y, measured) in [(811, 1070 + 10, 0.270), (811, 1070 + 40, 0.149), (811, 1070 + 68, 0.062), (-10, 520, 0.110), (-40, 520, 0.017), (811, -1, 0.107)] {
+            assert!((at(x, y) - measured).abs() < 0.025, "({x}, {y}): {} vs {measured}", at(x, y));
+        }
+        // It scales with DPI.
+        let small = shadow::render(1072, 713, 2.0 / 3.0);
+        assert_eq!(small.2, 94);
     }
 
     #[test]
