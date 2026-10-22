@@ -40,6 +40,17 @@ const probes = {
     observer.disconnect();
     return { steps, longTasks };
   })()`,
+  // Development only: drives two collapse/expand round trips through the
+  // lifecycle authority (panel page only), for the native handoff capture.
+  'handoff': `(async () => {
+    if (location.search.includes('surface=')) return 'skipped: not the panel';
+    const invoke = window.__TAURI_INTERNALS__.invoke, wait = ms => new Promise(done => setTimeout(done, ms));
+    const modes = [];
+    for (let round = 0; round < 2; round++) {
+      for (const target of ['folder', 'panel']) { const status = await invoke('set_desktop_surface', { target }); modes.push(status?.mode ?? status); await wait(1600); }
+    }
+    return modes;
+  })()`,
   'import-dialog': `(async () => {
     let dialog = document.querySelector('[data-size="import"]');
     if (!dialog) { [...document.querySelectorAll('button')].find(button => /Import references|导入引用/.test(button.textContent))?.click(); await new Promise(done => setTimeout(done, 1500)); dialog = document.querySelector('[data-size="import"]'); }

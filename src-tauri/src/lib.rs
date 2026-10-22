@@ -31,6 +31,7 @@ mod web_images;
 mod web_preview;
 mod window_frame;
 mod window_geometry;
+mod window_morph;
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
