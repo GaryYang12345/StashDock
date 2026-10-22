@@ -136,7 +136,7 @@ pub fn anchored_folder(area: WorkArea, center: (f64, f64)) -> Geometry {
 /// The folder's quick search: a fixed transparent canvas beside the
 /// folder (above it, or below when the work area has no room above). Only its
 /// visible pieces take input, through a window region set by the search itself.
-pub const SEARCH_WIDTH: f64 = 480.0;
+pub const SEARCH_WIDTH: f64 = 520.0;
 pub const SEARCH_HEIGHT: f64 = 300.0;
 /// The search field sits on the folder artwork's transparent top margin; the
 /// window reaches a little further so the field's shadow is not cut off.
@@ -185,18 +185,18 @@ mod tests {
         // Room above: centred on the folder, overlapping its transparent top.
         let up = search_placement((900, 700), folder, area);
         assert!(up.upward);
-        assert_eq!((up.width, up.height), (720, 450));
+        assert_eq!((up.width, up.height), (780, 450));
         assert_eq!(up.y, 700 - 450 + 60);
-        assert_eq!(up.x, 900 + 108 - 360);
-        assert!((up.anchor_px - 360.0).abs() < 0.01);
+        assert_eq!(up.x, 900 + 108 - 390);
+        assert!((up.anchor_px - 390.0).abs() < 0.01);
         // No room above: mirrored below the folder.
         let down = search_placement((900, 40), folder, area);
         assert!(!down.upward);
         assert_eq!(down.y, 40 + 216 - 60);
         // Screen edge: the window is clamped, the anchor still points at the folder.
         let edge = search_placement((1920 - 216, 700), folder, area);
-        assert_eq!(edge.x, 1920 - 720);
-        assert!((edge.anchor_px - (1920.0 - 108.0 - 1200.0)).abs() < 0.01);
+        assert_eq!(edge.x, 1920 - 780);
+        assert!((edge.anchor_px - (1920.0 - 108.0 - 1140.0)).abs() < 0.01);
         // Negative monitor coordinates.
         let left = WorkArea { x: -1920, y: 0, width: 1920, height: 1040, scale: 1.0 };
         let placed = search_placement((-1920, 500), 144.0, left);

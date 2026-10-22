@@ -17,7 +17,7 @@ import styles from './FolderSearch.module.css';
 // wrapped in a panel. Native placement, hover intent and focus belong to
 // folder_search.rs; this view only reports what it shows and what the user does.
 type Status = { open: boolean; upward: boolean; anchorPx: number | null };
-const FIELD = 184, FLOW = 460, CARD = 232;
+const FIELD = 184, FLOW = 500, CARD = 248;
 /** Room around the field for its shadow, inside the window region. */
 const FIELD_SHADOW = 32;
 const RESULT_LIMIT = 24;
@@ -34,7 +34,7 @@ const cubic = (ease: readonly number[]) => [...ease] as [number, number, number,
 function place(d: number) {
   const a = Math.abs(d), s = Math.sign(d);
   const x = s * (a <= 1 ? a * CARD * 0.54 : CARD * 0.54 + (a - 1) * CARD * 0.22);
-  const opacity = a <= 1 ? 1 - a * 0.25 : Math.max(0, 0.75 - (a - 1) * 1.1);
+  const opacity = a <= 1 ? 1 - a * 0.1 : Math.max(0, 0.9 - (a - 1) * 1.2);
   return { transform: `translateX(${x}px) translateZ(${-Math.min(a, 1) * 150 - Math.max(0, a - 1) * 80}px) rotateY(${-clamp(d, -1, 1) * 48}deg)`, opacity, z: 100 - Math.round(a * 10) };
 }
 

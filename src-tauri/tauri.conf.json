@@ -53,7 +53,7 @@
         "label": "search",
         "url": "index.html?surface=search",
         "title": "StashDock search",
-        "width": 480,
+        "width": 520,
         "height": 300,
         "resizable": false,
         "dragDropEnabled": false,

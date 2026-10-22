@@ -32,6 +32,9 @@ struct Search {
     focused: bool,
     /// The window that had focus before the field took it.
     previous: Option<isize>,
+    /// Activation needed the non-activating style lifted; it is restored only
+    /// once nothing is visible, since a style change redraws the frame.
+    raised: bool,
     generation: u64,
     /// Counts closes, so an exit fallback only releases its own close.
     closes: u64,
@@ -212,7 +215,7 @@ fn close_now(app: &AppHandle, immediate: bool) {
             restore_focus(&window, previous);
         }
         if immediate {
-            let _ = set_region(&window, &[]);
+            release(app, &window);
         }
     }
     if was_open {
@@ -234,8 +237,21 @@ fn release_if_closed(app: &AppHandle, close: u64) {
     if !inner.open && inner.closes == close {
         drop(inner);
         if let Some(window) = search_window(app) {
-            let _ = set_region(&window, &[]);
+            release(app, &window);
         }
+    }
+}
+
+/// Nothing is visible any more: remove the region, then (invisibly) restore
+/// the non-activating style if the field had to lift it.
+fn release(app: &AppHandle, window: &WebviewWindow) {
+    let _ = set_region(window, &[]);
+    let raised = search_state(app).is_some_and(|s| {
+        let mut inner = s.0.lock().unwrap_or_else(|e| e.into_inner());
+        std::mem::take(&mut inner.raised)
+    });
+    if raised {
+        let _ = window.set_focusable(false);
     }
 }
 
@@ -253,8 +269,7 @@ fn restore_focus(window: &WebviewWindow, previous: Option<isize>) {
             }
         }
     }
-    let _ = previous;
-    let _ = window.set_focusable(false);
+    let _ = (window, previous);
 }
 
 /// Position, size and lift above the folder in one native call, without
@@ -426,8 +441,22 @@ pub async fn folder_search_focus(window: WebviewWindow) -> Result<(), String> {
                     }
                     inner.focused = true;
                 }
-                copy.set_focusable(true).map_err(|e| e.to_string())?;
-                copy.set_focus().map_err(|e| e.to_string())
+                // A non-activating window can still be activated on request;
+                // only if Windows refuses is the style lifted (until closed).
+                copy.set_focus().map_err(|e| e.to_string())?;
+                #[cfg(windows)]
+                let active = unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() as isize
+                        == copy.hwnd().map(|h| h.0 as isize).unwrap_or_default()
+                };
+                #[cfg(not(windows))]
+                let active = true;
+                if !active {
+                    state.0.lock().unwrap_or_else(|e| e.into_inner()).raised = true;
+                    copy.set_focusable(true).map_err(|e| e.to_string())?;
+                    copy.set_focus().map_err(|e| e.to_string())?;
+                }
+                Ok(())
             })();
             let _ = send.send(result);
         })
@@ -463,7 +492,7 @@ pub fn folder_search_closed(window: WebviewWindow) -> Result<(), String> {
     let app = window.app_handle();
     let open = search_state(app).is_some_and(|s| s.0.lock().unwrap_or_else(|e| e.into_inner()).open);
     if !open {
-        set_region(&window, &[])?;
+        release(app, &window);
     }
     Ok(())
 }
@@ -505,9 +534,6 @@ pub fn blurred(app: &AppHandle) {
         focused
     };
     if was_focused {
-        if let Some(window) = search_window(app) {
-            let _ = window.set_focusable(false);
-        }
         close_now(app, false);
     }
 }

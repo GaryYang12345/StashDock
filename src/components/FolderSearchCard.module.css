@@ -1,6 +1,6 @@
 /* The shelf card's border, radius and surface, flatter: cover plus one row.
    The title is sized beside a reserved Copy slot and ends with an ellipsis. */
-.card { pointer-events: auto; box-sizing: border-box; width: 232px; height: 152px; display: flex; flex-direction: column; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); color: var(--foreground); box-shadow: var(--folder-elevation); cursor: pointer; user-select: none;
+.card { pointer-events: auto; box-sizing: border-box; width: 248px; height: 152px; display: flex; flex-direction: column; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); color: var(--foreground); box-shadow: var(--folder-elevation); cursor: pointer; user-select: none;
   container-type: inline-size; container-name: desktop-card; transition: transform var(--duration-fast) var(--ease-standard); }
 .card[data-current] { cursor: grab; }
 .card[data-current]:active, .card[data-dragging] { cursor: grabbing; }
