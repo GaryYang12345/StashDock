@@ -17,7 +17,7 @@ import styles from './FolderSearch.module.css';
 // wrapped in a panel. Native placement, hover intent and focus belong to
 // folder_search.rs; this view only reports what it shows and what the user does.
 type Status = { open: boolean; upward: boolean; anchorPx: number | null };
-const FIELD = 184, FLOW = 500, CARD = 248;
+const FIELD = 184, FLOW = 460, CARD = 232;
 /** Room around the field for its shadow, inside the window region. */
 const FIELD_SHADOW = 32;
 const RESULT_LIMIT = 24;
@@ -32,10 +32,12 @@ const cubic = (ease: readonly number[]) => [...ease] as [number, number, number,
 // Cover flow: side cards tuck behind the current one, turned towards it, and
 // both ends dissolve. d is a card's continuous distance from the centre.
 function place(d: number) {
-  const a = Math.abs(d), s = Math.sign(d);
-  const x = s * (a <= 1 ? a * CARD * 0.54 : CARD * 0.54 + (a - 1) * CARD * 0.22);
-  const opacity = a <= 1 ? 1 - a * 0.1 : Math.max(0, 0.9 - (a - 1) * 1.2);
-  return { transform: `translateX(${x}px) translateZ(${-Math.min(a, 1) * 150 - Math.max(0, a - 1) * 80}px) rotateY(${-clamp(d, -1, 1) * 48}deg)`, opacity, z: 100 - Math.round(a * 10) };
+  const a = Math.abs(d), s = Math.sign(d), near = Math.min(a, 1);
+  // Side cards sit closer in and a little smaller than the current one, for depth.
+  const x = s * (a <= 1 ? a * CARD * 0.47 : CARD * 0.47 + (a - 1) * CARD * 0.2);
+  const scale = 1 - near * 0.06;
+  const opacity = a <= 1 ? 1 - a * 0.25 : Math.max(0, 0.75 - (a - 1) * 1.1);
+  return { transform: `translateX(${x}px) translateZ(${-near * 150 - Math.max(0, a - 1) * 80}px) rotateY(${-clamp(d, -1, 1) * 48}deg) scale(${scale})`, opacity, z: 100 - Math.round(a * 10) };
 }
 
 function Slot({ virtual, pos, children }: { virtual: number; pos: MotionValue<number>; children: ReactNode }) {
@@ -167,13 +169,12 @@ function SearchPanel({ status, onHeld }: { status: Status; onHeld: (held: boolea
     const watcher = new MutationObserver(() => { if (!card.dataset.dragging) { watcher.disconnect(); setDragging(false); window.dispatchEvent(new Event(POINTER_RESET)); } });
     watcher.observe(card, { attributes: true, attributeFilter: ['data-dragging'] });
   };
-  // Centre the field and the cards on the folder (the window is only offset
-  // from it at a screen edge), in this page's own CSS pixels.
-  const width = window.innerWidth;
-  const anchor = status.anchorPx == null ? width / 2 : status.anchorPx / window.devicePixelRatio;
-  const fieldCentre = clamp(anchor, FIELD / 2, width - FIELD / 2);
-  const fieldLeft = fieldCentre - FIELD / 2;
-  const flowLeft = clamp(anchor, FLOW / 2, width - FLOW / 2) - FLOW / 2;
+  // The field and the cards share the folder's axis, in this page's own CSS
+  // pixels (the window is centred on the folder, even past a screen edge).
+  const anchor = status.anchorPx == null ? window.innerWidth / 2 : status.anchorPx / window.devicePixelRatio;
+  const fieldCentre = anchor;
+  const fieldLeft = anchor - FIELD / 2;
+  const flowLeft = anchor - FLOW / 2;
   return <motion.div ref={surface} className={styles.surface} data-upward={status.upward || undefined} variants={panelMotion(reduced)} initial="hidden" animate="shown" exit="gone">
     {/* Keeps its size until leaving cards have sunk into the field, so they never flash past it. */}
     <motion.div ref={frame} className={styles.frame} style={{ left: flowLeft }} variants={frameMotion(reduced, status.upward)}

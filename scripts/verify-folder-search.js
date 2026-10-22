@@ -2,7 +2,7 @@
 async page => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.setViewportSize({ width: 520, height: 300 });
+  await page.setViewportSize({ width: 480, height: 316 });
   await page.goto('http://127.0.0.1:18749/tests/fixtures/folder-search.html');
   const field = page.getByRole('searchbox', { name: 'Search references' });
   await field.waitFor();
