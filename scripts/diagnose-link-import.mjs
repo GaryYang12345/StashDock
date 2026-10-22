@@ -104,6 +104,19 @@ try {
   }
   report.screenshots = { wallMs: Math.round(performance.now() - shotsStarted), summary: summarize(shots), rows: shots };
   console.log(`\nScreenshots: ${report.screenshots.wallMs} ms wall`, report.screenshots.summary);
+
+  // Pasted-link lookups (render-first) for URLs listed in output/claude-review/queue/sites.txt.
+  const sitesFile = resolve('output/claude-review/queue/sites.txt');
+  const sites = existsSync(sitesFile) ? (await readFile(sitesFile, 'utf8')).split(/\r?\n/).map(line => line.trim()).filter(line => /^https?:\/\//.test(line)) : [];
+  report.lookups = [];
+  for (const url of sites.slice(0, 10)) {
+    const started = performance.now();
+    try {
+      const value = await call(control, { url, lookup: true }, 95_000);
+      report.lookups.push({ url, ms: Math.round(performance.now() - started), title: value.title, characters: value.content?.length || 0, cover: Boolean(value.preview), start: (value.content || '').slice(0, 160) });
+    } catch (error) { report.lookups.push({ url, ms: Math.round(performance.now() - started), error: error.message }); }
+  }
+  if (report.lookups.length) console.log('Lookups:', report.lookups.map(row => `${row.url} ${row.ms}ms ${row.error || `${row.characters} chars, cover ${row.cover}`}`).join(' | '));
 } finally {
   await control.close();
   await writeFile(join(outputDirectory, 'report.json'), JSON.stringify(report, null, 2));
