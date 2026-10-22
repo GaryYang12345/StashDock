@@ -59,9 +59,11 @@ async fn preview_link(url: String) -> Result<link_metadata::LinkPreview, String>
     if url.len() > 8192 {
         return Err("This link is too long.".into());
     }
-    // Matches IMPORT_READERS in src/lib/linkImport.ts.
-    static WORK: blocking_work::WorkLimit = blocking_work::WorkLimit::new(8);
-    WORK.run(move || link_metadata::fetch_content(&url)).await
+    // A pasted link is rendered once for its text and cover (the renderer's own
+    // two-page admission applies); a direct read runs alongside as a fallback.
+    static WORK: blocking_work::WorkLimit = blocking_work::WorkLimit::new(4);
+    WORK.run(move || link_metadata::fetch_preview_inline(&url))
+        .await
 }
 
 pub fn run() {

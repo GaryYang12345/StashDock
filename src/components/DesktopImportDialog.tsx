@@ -22,7 +22,7 @@ import { chooseReferenceFiles, importChosenReferenceFiles, importReferenceFiles 
 import { isTauri } from '@tauri-apps/api/core';
 import { ReferenceFileImport } from './ReferenceFileImport';
 import type { ChosenFile, ChosenFileDraft, FileReferencePayload } from '../lib/fileReference';
-import { bookmarkCandidates, desktopLinkImport, makeBrowserLinks, makeLink, normalizeLink, prepareImportedLinks, settleImportedLink, readImportDetails, importCapacityError, type BrowserSource, type LinkImportService, type LinkPreview } from '../lib/linkImport';
+import { bookmarkCandidates, desktopLinkImport, makeBrowserLinks, makeLink, normalizeLink, settleImportedLink, readImportDetails, importCapacityError, type BrowserSource, type LinkImportService, type LinkPreview } from '../lib/linkImport';
 import { ImportProgress } from './ImportProgress';
 import type { StashItem } from '../types';
 import styles from './DesktopImportDialog.module.css';
@@ -48,6 +48,8 @@ type Candidate = ReturnType<typeof bookmarkCandidates>[number];
 function BrowserIcon({ browser }: {
     browser: string;
 }) { return <img className={styles.browserIcon} src={({ Chrome: chromeIcon, Edge: edgeIcon, Firefox: firefoxIcon } as Record<string, string>)[browser]} alt="" aria-hidden="true"/>; }
+// Shortest time the batch progress surface stays up, so an import is felt.
+const BATCH_PROGRESS_MIN_MS = 900;
 export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], existingItems = [], services = desktopLinkImport, onImportFiles = importReferenceFiles, onChooseFiles = services === desktopLinkImport && isTauri() ? chooseReferenceFiles : undefined, onImportChosenFiles = importChosenReferenceFiles }: Props) {
   const { t } = useI18n();
     const [mode, setMode] = useState('link');
@@ -188,24 +190,30 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         const canonical = availableTags.find(tag => tag.toLowerCase() === draft.toLowerCase()) ?? draft;
         return cleanReferenceTags(canonical && !currentTags.current.some(tag => tag.toLowerCase() === canonical.toLowerCase()) ? [...currentTags.current, canonical] : currentTags.current);
     };
-    const save = async (items: StashItem[], persisted = false, prepare?: (batch: StashItem[], offset: number) => Promise<StashItem[]>) => {
+    // `saved` reports real progress as chunks are written (batch imports).
+    const save = async (items: StashItem[], persisted = false, prepare?: (batch: StashItem[], offset: number) => Promise<StashItem[]>, saved?: (count: number) => void) => {
         if (flight.current) return;
         flight.current = true;
         const version = generation.current;
         setBusy(true);
         setError('');
+        const started = performance.now();
         try {
             // Bound retained bodies and each IPC payload, not just request count.
             // Already committed chunks survive a host close or later save error.
-            const batchSize = prepare ? 8 : Math.max(1, items.length);
+            const batchSize = prepare || saved ? 8 : Math.max(1, items.length);
             for (let offset = 0; offset < items.length; offset += batchSize) {
                 if (version !== generation.current) return;
                 const batch = items.slice(offset, offset + batchSize);
                 const prepared = prepare ? await prepare(batch, offset) : batch;
                 if (version !== generation.current) return;
                 await onAdd(prepared, persisted);
+                saved?.(Math.min(items.length, offset + batch.length));
             }
             setProgress(current => current ? { ...current, completed: current.total } : null);
+            // Saving is quick; let the completed bar be seen before closing.
+            if (saved) await new Promise(resolve => setTimeout(resolve, Math.max(0, BATCH_PROGRESS_MIN_MS - (performance.now() - started))));
+            if (version !== generation.current) return;
             onClose();
         }
         catch (reason) {
@@ -325,7 +333,10 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
           <div className={styles.actions}><Button variant="secondary" disabled={busy || reading} onClick={() => void readSource(source)}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Refresh bookmarks")}</Button><Button variant="primary" disabled={busy || reading || !selectedCount} onClick={() => { try {
             const items = makeBrowserLinks(available.filter(item => selected.has(item.key)), source);
             const version = generation.current;
-            void save(items, false, (batch, offset) => prepareImportedLinks(batch, services.preview, completed => setProgress({ completed: Math.min(offset + completed, items.length - 1), total: items.length }), () => generation.current === version));
+            // Links are saved at once; text and covers are read in the background
+            // from one render of each page. Progress follows the actual saves.
+            setProgress({ completed: 0, total: items.length });
+            void save(items, false, undefined, completed => { if (generation.current === version) setProgress({ completed, total: items.length }); });
         }
         catch (reason) {
             setError(reason instanceof Error ? reason.message : 'Links could not be imported.');

@@ -169,3 +169,24 @@ test('early screenshot is visible while icons are pending, and late results pres
     assert.equal((await library.read())[0].origin.previewKind, 'cover');
   } finally { queue.close(); db.close(); library.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('rendered text fills a bookmark once and never user text (same rules as merge_text)', async () => {
+  const { publishRenderedText } = await import('../plugins/stashdock/server/preview-worker.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'stashdock-rendered-text-'));
+  const library = createLocalLibrary({ dataDir: dir }); library.close();
+  const db = new DatabaseSync(join(dir, 'stashdock.sqlite3'));
+  try {
+    const insert = db.prepare("INSERT INTO stash_items(id,title,kind,source,url,excerpt,tags_json,created_at,content,origin_json,updated_at) VALUES(?,?,'web','e',?,'','[]','2026-10-22',?,?,'now')");
+    insert.run('blank', 'blank', 'https://example.org/blank', '', '{"importMethod":"browser_bookmarks"}');
+    insert.run('short', 'short', 'https://example.org/short', 'Tiny', '{"importMethod":"browser_bookmarks"}');
+    insert.run('edited', 'edited', 'https://example.org/edited', '', '{"importMethod":"browser_bookmarks","contentEdited":true}');
+    insert.run('note', 'note', 'https://example.org/note', '', '{"importMethod":"manual_note"}');
+    const result = { content: '  Rendered article body  ', title: 'Rendered title' };
+    const written = ['blank', 'short', 'edited', 'note'].filter(id => publishRenderedText(db, { id, url: `https://example.org/${id}` }, result));
+    assert.deepEqual(written, ['blank', 'short']);
+    assert.equal(publishRenderedText(db, { id: 'blank', url: 'https://example.org/blank' }, result), false, 'a settled reference is final');
+    const row = db.prepare("SELECT content,json_extract(origin_json,'$.contentSettled') AS settled,excerpt FROM stash_items WHERE id='blank'").get();
+    assert.deepEqual({ ...row }, { content: 'Rendered article body', settled: 1, excerpt: 'Rendered article body' });
+    assert.equal(db.prepare("SELECT content FROM stash_items WHERE id='edited'").get().content, '');
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+});

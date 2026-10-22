@@ -14,7 +14,11 @@ test('native preview work never rewrites the AI body or disables Chromium isolat
   const browser = await readFile('src-tauri/src/preview_browser.rs', 'utf8');
   const system = await readFile('src-tauri/src/preview_webview.rs', 'utf8');
   assert.match(worker, /WHERE id=\?3 AND url=\?4/);
-  assert.doesNotMatch(worker, /SET (?:title|content|context_override|tags_json|favorite)/);
+  // Only rendered text may fill a body, and never user text, edited context or a settled import.
+  assert.doesNotMatch(worker, /SET (?:context_override|tags_json|favorite)/);
+  const text = worker.slice(worker.indexOf('fn merge_text'), worker.indexOf('fn finish(db'));
+  assert.equal((worker.match(/SET content=/g) || []).length, 1);
+  for (const guard of ['context_override IS NULL', "'$.contentEdited'),0)!=1", "'$.contentSettled'),0)!=1", "status='working'"]) assert.ok(text.includes(guard), guard);
   assert.match(worker, /ON DELETE CASCADE/);
   assert.match(system, /CoreWebView2EnvironmentOptions/);
   assert.match(system, /BrowserJob::assign/);

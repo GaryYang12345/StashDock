@@ -37,7 +37,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
   const storageService = storageServices || createStorageService(library, htmlUrl);
   if (captureBridge) library.registerInstallation('codex', PLUGIN_VERSION, fileURLToPath(new URL('../.codex-plugin/plugin.json', htmlUrl)));
   const previewService = packagedPreviewService(htmlUrl, library.dataDir || dataDir);
-  importServices ??= { sources: previewService.sources, bookmarks: previewService.bookmarks, icons: previewService.icons, preview: previewService.content, openCaptureSite };
+  importServices ??= { sources: previewService.sources, bookmarks: previewService.bookmarks, icons: previewService.icons, preview: previewService.lookup, openCaptureSite };
   const prepareCover = importServices.prepareCover ?? previewService.prepareCover;
   const normalizeCover = async value => {
     if (typeof value !== 'string' || value.length > 750_000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) throw Error('Use a prepared PNG, JPG or WebP cover image.');

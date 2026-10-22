@@ -19,8 +19,8 @@ test('imports settle text independently while background image paths remove the 
   assert.match(source('src-tauri/src/preview_enrichment.rs'),/preview_cache::capture/);
   assert.match(source('src-tauri/src/preview_webview.rs'),/--hide-scrollbars/);
   assert.equal((source('src-tauri/src/preview_browser.rs').match(/"StashDock.captureViewport"/g)||[]).length,2);
-  assert.match(source('src-tauri/src/lib.rs'),/WORK.run\(move \|\| link_metadata::fetch_content\(&url\)\)/);
-  assert.match(source('plugins/stashdock/server/create-server.mjs'),/preview: previewService.content/);
+  assert.match(source('src-tauri/src/lib.rs'),/WORK.run\(move \|\| link_metadata::fetch_preview_inline\(&url\)\)/);
+  assert.match(source('plugins/stashdock/server/create-server.mjs'),/preview: previewService.lookup/);
   assert.match(source('plugins/stashdock/server/preview-worker.mjs'),/const data = await prior/);
 });
 test('cold startup opens the library and only the standalone executable is detached', () => {

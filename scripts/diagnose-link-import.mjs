@@ -92,7 +92,7 @@ try {
     const started = performance.now();
     try {
       const value = await call(control, { url, needPreview: true, faviconUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' }, 90_000);
-      const row = { url, ms: Math.round(performance.now() - started), kind: value.previewKind || null };
+      const row = { url, ms: Math.round(performance.now() - started), kind: value.previewKind || null, renderedCharacters: value.content?.length || 0, renderedTitle: Boolean(value.title) };
       if (value.preview?.startsWith('data:image/')) {
         const file = join(outputDirectory, `${String(index).padStart(2, '0')}-${new URL(url).hostname.replace(/[^\w.-]/g, '-')}.jpg`);
         await writeFile(file, Buffer.from(value.preview.split(',')[1], 'base64'));

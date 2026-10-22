@@ -120,45 +120,6 @@ export async function readImportDetails(url: string, read: LinkImportService['pr
     throw Error('Import cancelled.');
 }
 
-// One bounded preparation flow for both hosts. Failed reads still produce valid
-// links; completion freezes this import's result, never a promise of full text.
-// Reads are network-bound, so eight run at once, at most two per website.
-export const IMPORT_READERS = 8;
-const PER_HOST = 2;
-const hostOf = (item: StashItem) => { try { return new URL(item.url!).hostname; } catch { return item.url || ''; } };
-export async function prepareImportedLinks(items: StashItem[], read: LinkImportService['preview'], progress: (completed: number) => void, current = () => true): Promise<StashItem[]> {
-    const result = [...items];
-    const pending = items.map((_, index) => index);
-    const running = new Map<string, number>();
-    let completed = 0;
-    let capacityFailure: unknown;
-    let wake: (() => void) | undefined;
-    const settled = () => { const resolve = wake; wake = undefined; resolve?.(); };
-    progress(0);
-    await Promise.all(Array.from({ length: Math.min(IMPORT_READERS, items.length) }, async () => {
-        while (!capacityFailure && current()) {
-            if (!pending.length) return;
-            const position = pending.findIndex(index => (running.get(hostOf(items[index])) ?? 0) < PER_HOST);
-            if (position < 0) { await new Promise<void>(resolve => { const previous = wake; wake = () => { previous?.(); resolve(); }; }); continue; }
-            const [index] = pending.splice(position, 1);
-            const item = items[index], host = hostOf(item);
-            running.set(host, (running.get(host) ?? 0) + 1);
-            let details: LinkPreview | undefined;
-            // A previous debounced lookup can still own native admission. Busy
-            // means wait for capacity, not that this page has no readable text.
-            try { details = await readImportDetails(item.url!, read, () => current() && !capacityFailure); }
-            catch (error) { if (importCapacityError(error)) capacityFailure = error; }
-            finally { running.set(host, running.get(host)! - 1); settled(); }
-            if (!current()) return;
-            result[index] = settleImportedLink(item, details);
-            progress(++completed);
-        }
-    }));
-    if (!current()) throw Error('Import cancelled.');
-    if (capacityFailure) throw capacityFailure;
-    return result;
-}
-
 export function settleImportedLink(item: StashItem, details?: LinkPreview): StashItem {
     const content = details?.content?.trim() || '';
     return { ...item, content: content || undefined,

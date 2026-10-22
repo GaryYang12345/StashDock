@@ -16,6 +16,17 @@ use std::{
 };
 
 const SESSION_BYTES: usize = 24 * 1024 * 1024;
+/// Rendered HTML read from the page, bounded before it leaves the renderer.
+const PAGE_HTML_LIMIT: usize = 2_000_000;
+
+/// One rendered page: its screenshot and the text read from the same render,
+/// so scripted pages and pages behind a browser check get both from one load.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Rendered {
+    pub image: Option<String>,
+    pub title: String,
+    pub content: String,
+}
 #[cfg(windows)]
 #[path = "preview_admission.rs"]
 mod admission;
@@ -536,7 +547,7 @@ fn capture_page(
     url: &str,
     deadline: Instant,
     stop: &AtomicBool,
-) -> Result<String, String> {
+) -> Result<Rendered, String> {
     cdp.send("Page.enable", json!({}))?;
     // Session creation installs WebView2's native DownloadStarting cancellation
     // before any page runs. Chromium's download CDP method is not a WebView2 API.
@@ -580,6 +591,13 @@ fn capture_page(
     let mut stable: Option<(u64, Instant)> = None;
     let mut screenshot = None;
     let mut received = None;
+    // Text is read from the same render as the screenshot.
+    let mut page_request = None;
+    let mut page: Option<(String, String)> = None;
+    let mut image: Option<String> = None;
+    // A browser check (for example a 403 or 503 challenge page) may navigate to
+    // the real document after its script runs; wait a bounded time for that.
+    let mut challenged: Option<Instant> = None;
     while Instant::now() < deadline && !stop.load(Ordering::Relaxed) {
         let event = cdp.read()?.unwrap_or(Value::Null);
         cdp.paused(&event)?;
@@ -626,15 +644,24 @@ fn capture_page(
                 .is_some_and(|url| crate::public_web::web_url(url).is_ok());
             document_ok = (200..300).contains(&status) && public;
             if !document_ok {
-                return Err("The website requires access or returned an error.".into());
+                if public && matches!(status, 403 | 429 | 503) && challenged.is_none() {
+                    challenged = Some(Instant::now());
+                } else {
+                    return Err("The website requires access or returned an error.".into());
+                }
+            } else {
+                received = Some(Instant::now());
             }
-            received = Some(Instant::now());
         }
         if event["method"] == "Network.loadingFailed" && params["requestId"] == document_request {
             return Err("The website could not be loaded.".into());
         }
         if event["method"] == "Page.loadEventFired" {
             loaded = true;
+        }
+        if !document_ok && challenged.is_some_and(|since| since.elapsed() >= Duration::from_secs(8))
+        {
+            return Err("The website requires access or returned an error.".into());
         }
         let age = received
             .map(|time: Instant| time.elapsed())
@@ -678,23 +705,70 @@ fn capture_page(
                 eprintln!("Capture screenshot requested");
             }
             screenshot = Some(cdp.send("StashDock.captureViewport", json!({}))?);
+            page_request = Some(cdp.send(
+                "Runtime.evaluate",
+                json!({"expression":format!("[document.title, document.documentElement.outerHTML.slice(0, {PAGE_HTML_LIMIT})]"),"returnByValue":true}),
+            )?);
+        }
+        if page_request.is_some_and(|id| event["id"] == id) {
+            page_request = None;
+            let value = &event["result"]["result"]["value"];
+            page = Some((
+                value[0].as_str().unwrap_or_default().to_string(),
+                value[1]
+                    .as_str()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(PAGE_HTML_LIMIT)
+                    .collect(),
+            ));
         }
         if screenshot.is_some_and(|id| event["id"] == id) {
+            screenshot = Some(u64::MAX); // Answered; no CDP id reaches u64::MAX.
             let data = event["result"]["data"]
                 .as_str()
                 .ok_or("Screenshot could not be read.")?;
             if data.len() > 5_000_000 {
                 return Err("Screenshot is too large.".into());
             }
-            return crate::web_images::raster(
+            image = Some(crate::web_images::raster(
                 &STANDARD.decode(data).map_err(|_| "Invalid screenshot.")?,
                 false,
-            );
+            )?);
         }
+        if image.is_some() && page_request.is_none() {
+            return Ok(rendered(image, page, url));
+        }
+    }
+    // The text read is still useful when the screenshot never became ready.
+    if page.is_some() || image.is_some() {
+        return Ok(rendered(image, page, url));
     }
     Err("Screenshot timed out.".into())
 }
-pub fn capture(url: &str, stop: &AtomicBool) -> Result<String, String> {
+
+/// Title and body from rendered HTML, through the same extractor as direct reads.
+fn rendered(image: Option<String>, page: Option<(String, String)>, url: &str) -> Rendered {
+    let (title, content) = match (page, url::Url::parse(url)) {
+        (Some((title, html)), Ok(url)) if !html.is_empty() => {
+            let extracted = crate::link_metadata::extract_preview(&html, &url);
+            let title = if extracted.title.trim().is_empty() {
+                title
+            } else {
+                extracted.title
+            };
+            (title.trim().chars().take(500).collect(), extracted.content)
+        }
+        _ => (String::new(), String::new()),
+    };
+    Rendered {
+        image,
+        title,
+        content,
+    }
+}
+
+pub fn capture(url: &str, stop: &AtomicBool) -> Result<Rendered, String> {
     let url = crate::public_web::web_url(url)?;
     crate::public_web::resolve_public(
         url.host_str().unwrap(),
@@ -953,7 +1027,13 @@ mod tests {
         }
         let url = std::env::var("STASHDOCK_CAPTURE_SMOKE_URL")
             .unwrap_or_else(|_| "https://example.org".into());
-        let data = capture(&url, &AtomicBool::new(false)).expect("real public capture");
+        let rendered = capture(&url, &AtomicBool::new(false)).expect("real public capture");
+        eprintln!(
+            "Rendered title {:?}, {} characters of text.",
+            rendered.title,
+            rendered.content.chars().count()
+        );
+        let data = rendered.image.expect("a screenshot");
         let bytes = STANDARD.decode(data.split_once(',').unwrap().1).unwrap();
         let destination = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../output/playwright/native-web-preview.jpg");

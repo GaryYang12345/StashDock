@@ -10,6 +10,27 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LOCATION_KEY, resolveLibraryDirectory } from './library-location.mjs';
 
+// Text read from the same render as the screenshot fills a reference imported
+// without text (or replaces a shorter direct read), then settles it; never
+// user-edited text, edited context or a settled import. Mirrors merge_text in
+// src-tauri/src/web_preview.rs.
+const RENDERED_TEXT_SQL = `UPDATE stash_items SET content=?,
+  excerpt=CASE WHEN trim(excerpt)='' OR excerpt=substr(COALESCE(content,''),1,180) THEN ? ELSE excerpt END,
+  title=CASE WHEN ?!='' AND json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.pendingTitle')=title THEN ? ELSE title END,
+  origin_json=json_set(json_remove(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.pendingTitle'),'$.contentSettled',json('true')),
+  updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE id=? AND url=? AND context_override IS NULL AND length(COALESCE(trim(content),'')) < length(?)
+  AND COALESCE(json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
+  AND COALESCE(json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.contentEdited'),0)!=1
+  AND json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.importMethod') IN ('manual_url','browser_bookmarks')`;
+export function publishRenderedText(db, job, result) {
+  const content = typeof result?.content === 'string' ? Array.from(result.content.trim()).slice(0, 50_000).join('') : '';
+  if (!content) return false;
+  const excerpt = Array.from(content.split(/\s+/).join(' ')).slice(0, 180).join('');
+  const title = typeof result?.title === 'string' ? Array.from(result.title.trim()).slice(0, 500).join('') : '';
+  return db.prepare(RENDERED_TEXT_SQL).run(content, excerpt, title, title, job.id, job.url, content).changes > 0;
+}
+
 // Single owner across desktop and all MCP sessions. Expiry recovers a crashed owner.
 export function previewQueue(dataDir, { now = () => Math.floor(Date.now()/1000), owner = `mcp:${process.pid}:${randomUUID()}`, version } = {}) {
   const db = new DatabaseSync(join(dataDir, 'stashdock.sqlite3'));
@@ -66,8 +87,9 @@ export function previewQueue(dataDir, { now = () => Math.floor(Date.now()/1000),
       if (changed) origin.previewKind = result.previewKind;
       if (safeRaster(result?.faviconUrl, 32768) && (!origin.faviconUrl || origin.faviconUrl === job.faviconUrl)) origin.faviconUrl = result.faviconUrl;
       if (changed || JSON.stringify(origin) !== row.origin_json) db.prepare("UPDATE stash_items SET preview=COALESCE(NULLIF(preview,''),?),origin_json=? WHERE id=? AND url=?").run(image, JSON.stringify(origin), job.id, job.url);
+      const textChanged = publishRenderedText(db, job, result);
       if (final) db.prepare('UPDATE web_preview_jobs SET status=?,retry_at=0 WHERE id=? AND url=?').run((row.preview || image) && safeRaster(origin.faviconUrl,32768) ? 'done' : active.attempts < 2 ? 'queued' : 'failed', job.id, job.url);
-      return Boolean(changed);
+      return Boolean(changed || textChanged);
   });
   return {
     owner,

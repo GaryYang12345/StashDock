@@ -315,6 +315,47 @@ fn merge(
     tx.commit()?;
     Ok(icon_changed || preview_changed)
 }
+/// Text read from the same render as the screenshot. It fills a reference
+/// imported without text (or replaces a shorter direct read) and then settles
+/// it; never user-edited text, edited context or a settled import. Search
+/// follows through the index triggers. Mirrors `publishRenderedText` in
+/// plugins/stashdock/server/preview-worker.mjs.
+fn merge_text(
+    db: &Connection,
+    job: &Job,
+    content: Option<&str>,
+    title: Option<&str>,
+) -> rusqlite::Result<bool> {
+    let content: String = content.unwrap_or("").trim().chars().take(50_000).collect();
+    if content.is_empty() {
+        return Ok(false);
+    }
+    let excerpt: String = content
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(180)
+        .collect();
+    let title: String = title.unwrap_or("").trim().chars().take(500).collect();
+    let tx = rusqlite::Transaction::new_unchecked(db, rusqlite::TransactionBehavior::Immediate)?;
+    let changed = tx.execute(
+        "UPDATE stash_items SET content=?1,
+           excerpt=CASE WHEN trim(excerpt)='' OR excerpt=substr(COALESCE(content,''),1,180) THEN ?2 ELSE excerpt END,
+           title=CASE WHEN ?3!='' AND json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.pendingTitle')=title THEN ?3 ELSE title END,
+           origin_json=json_set(json_remove(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.pendingTitle'),'$.contentSettled',json('true')),
+           updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+         WHERE id=?4 AND url=?5 AND context_override IS NULL
+           AND length(COALESCE(trim(content),'')) < length(?1)
+           AND COALESCE(json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.contentSettled'),0)!=1
+           AND COALESCE(json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.contentEdited'),0)!=1
+           AND json_extract(CASE WHEN json_valid(origin_json) THEN origin_json ELSE '{}' END,'$.importMethod') IN ('manual_url','browser_bookmarks')
+           AND EXISTS(SELECT 1 FROM web_preview_jobs WHERE id=?4 AND url=?5 AND attempts=?6 AND status='working' AND retry_at>?7)",
+        params![content, excerpt, title, job.id, job.url, job.attempts, timestamp()],
+    )? > 0;
+    tx.commit()?;
+    Ok(changed)
+}
 fn finish(db: &Connection, job: &Job, success: bool) -> rusqlite::Result<()> {
     db.execute(
         "UPDATE web_preview_jobs SET status=?1,retry_at=0 WHERE id=?2 AND url=?3 AND attempts=?4 AND status='working' AND retry_at>?5",
@@ -334,15 +375,17 @@ fn enrich(db: &mut Connection, job: &Job, stop: &AtomicBool, changed: &impl Fn()
         job.favicon.as_deref(),
         stop,
         |images| {
-            if merge(
+            let pictured = merge(
                 db,
                 job,
                 images.preview.as_deref(),
                 images.preview_kind.as_deref(),
                 images.favicon_url.as_deref(),
             )
-            .unwrap_or(false)
-            {
+            .unwrap_or(false);
+            let written = merge_text(db, job, images.content.as_deref(), images.title.as_deref())
+                .unwrap_or(false);
+            if pictured || written {
                 changed();
             }
         },
@@ -483,6 +526,58 @@ mod tests {
         schema(&db).unwrap();
         db.execute("INSERT INTO stash_items(id,title,kind,source,url,excerpt,created_at,updated_at,tags_json,favorite,content,context_override,origin_json) VALUES('one','User title','web','example.org','https://example.org/','Kept', '2026-10-11','original','[\"My tag\"]',1,'Original content','My AI context','{\"platform\":\"Chrome\",\"faviconUrl\":\"https://example.org/icon.png\"}')", []).unwrap();
         db
+    }
+    #[test]
+    fn rendered_text_fills_a_bookmark_once_and_never_user_text() {
+        let db = database();
+        db.execute("DELETE FROM stash_items", []).unwrap();
+        for (id, origin, content) in [
+            ("blank", r#"{"importMethod":"browser_bookmarks"}"#, ""),
+            ("short", r#"{"importMethod":"browser_bookmarks"}"#, "Tiny"),
+            (
+                "edited",
+                r#"{"importMethod":"browser_bookmarks","contentEdited":true}"#,
+                "",
+            ),
+            ("note", r#"{"importMethod":"manual_note"}"#, ""),
+        ] {
+            db.execute("INSERT INTO stash_items(id,title,kind,source,url,excerpt,created_at,updated_at,tags_json,content,origin_json) VALUES(?1,?1,'web','e','https://example.org/'||?1,'','2026-10-22T00:00:00Z','now','[]',?2,?3)", params![id, content, origin]).unwrap();
+        }
+        assert!(heartbeat(&db, "me").unwrap());
+        let mut written = Vec::new();
+        while let Some(job) = next_job(&db).unwrap() {
+            claim(&db, &job).unwrap();
+            if merge_text(
+                &db,
+                &job,
+                Some("  Rendered article body  "),
+                Some("Rendered title"),
+            )
+            .unwrap()
+            {
+                written.push(job.id.clone());
+            }
+            assert!(
+                !merge_text(&db, &job, Some("Rendered article body"), None).unwrap(),
+                "a settled reference is final"
+            );
+            db.execute(
+                "UPDATE web_preview_jobs SET status='done' WHERE id=?1",
+                [&job.id],
+            )
+            .unwrap();
+        }
+        written.sort();
+        assert_eq!(written, ["blank", "short"]);
+        let row = |id: &str| {
+            db.query_row("SELECT content,json_extract(origin_json,'$.contentSettled') FROM stash_items WHERE id=?1", [id], |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<i64>>(1)?))).unwrap()
+        };
+        assert_eq!(
+            row("blank"),
+            (Some("Rendered article body".into()), Some(1))
+        );
+        assert_eq!(row("edited").0.as_deref(), Some(""));
+        assert_eq!(row("note").1, None);
     }
     #[test]
     fn a_batch_imported_together_gets_covers_in_shelf_order() {

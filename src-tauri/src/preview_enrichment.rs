@@ -13,6 +13,12 @@ pub struct Images {
     pub preview: Option<String>,
     pub preview_kind: Option<String>,
     pub favicon_url: Option<String>,
+    /// Title and body read from the same render as the screenshot; the queue
+    /// uses them only to fill a reference whose text is still missing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
 }
 #[derive(Default)]
 struct Metadata {
@@ -20,16 +26,16 @@ struct Metadata {
     pdf: Option<Vec<u8>>,
 }
 trait Source {
-    fn capture(&self, url: &str, stop: &AtomicBool) -> Option<String>;
+    fn capture(&self, url: &str, stop: &AtomicBool) -> Option<crate::preview_browser::Rendered>;
     fn metadata(&self, url: &str) -> Metadata;
     fn icon(&self, url: &str, deadline: Instant) -> Option<String>;
     fn pdf(&self, bytes: &[u8], stop: &AtomicBool) -> Option<String>;
 }
 struct PublicSource<F>(F);
 impl<F: Fn(&str, Instant) -> Option<String>> Source for PublicSource<F> {
-    fn capture(&self, url: &str, stop: &AtomicBool) -> Option<String> {
+    fn capture(&self, url: &str, stop: &AtomicBool) -> Option<crate::preview_browser::Rendered> {
         match crate::preview_cache::capture(url, stop) {
-            Ok(image) => Some(image),
+            Ok(rendered) => Some(rendered),
             Err(error) => {
                 if std::env::var_os("STASHDOCK_PREVIEW_DIAGNOSTICS").is_some() {
                     eprintln!("Capture failure: {error}");
@@ -112,9 +118,15 @@ fn acquire(
     let pdf_path =
         parsed.path().to_ascii_lowercase().ends_with(".pdf") || parsed.path().starts_with("/pdf/");
     if needs_preview && !pdf_path {
-        images.preview = source.capture(url, stop);
+        if let Some(rendered) = source.capture(url, stop) {
+            images.preview = rendered.image;
+            images.title = Some(rendered.title).filter(|title| !title.trim().is_empty());
+            images.content = Some(rendered.content).filter(|content| !content.trim().is_empty());
+        }
         if images.preview.is_some() {
             images.preview_kind = Some("screenshot".into());
+        }
+        if images.preview.is_some() || images.content.is_some() {
             changed(&images); // Do not hold the visible screenshot behind icon work.
         }
     }
@@ -187,9 +199,13 @@ mod tests {
         success: bool,
     }
     impl Source for Fake {
-        fn capture(&self, _: &str, _: &AtomicBool) -> Option<String> {
+        fn capture(&self, _: &str, _: &AtomicBool) -> Option<crate::preview_browser::Rendered> {
             self.events.borrow_mut().push("capture");
-            self.success.then(|| "image".into())
+            self.success.then(|| crate::preview_browser::Rendered {
+                image: Some("image".into()),
+                title: "Rendered title".into(),
+                content: "Rendered body".into(),
+            })
         }
         fn metadata(&self, _: &str) -> Metadata {
             self.events.borrow_mut().push("metadata");

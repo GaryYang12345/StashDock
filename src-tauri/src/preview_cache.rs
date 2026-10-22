@@ -1,4 +1,5 @@
 //! Small, bounded single-flight cache. Pasting then saving a URL must not render twice.
+use crate::preview_browser::Rendered;
 use std::{
     collections::HashMap,
     sync::{
@@ -8,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 struct Capture {
-    result: Mutex<Option<Result<String, String>>>,
+    result: Mutex<Option<Result<Rendered, String>>>,
     ready: Condvar,
     created: Instant,
 }
@@ -63,7 +64,7 @@ fn reserve(entries: &mut Entries, url: &str, now: Instant) -> Option<Arc<Capture
 }
 fn complete(
     job: &Capture,
-    render: impl FnOnce() -> Result<String, String> + std::panic::UnwindSafe,
+    render: impl FnOnce() -> Result<Rendered, String> + std::panic::UnwindSafe,
 ) {
     let result = std::panic::catch_unwind(render)
         .unwrap_or_else(|_| Err("The screenshot renderer failed. Retry the lookup.".into()));
@@ -90,7 +91,7 @@ pub fn start(url: &str) {
         });
     });
 }
-pub fn capture(url: &str, stop: &AtomicBool) -> Result<String, String> {
+pub fn capture(url: &str, stop: &AtomicBool) -> Result<Rendered, String> {
     if stop.load(Ordering::Relaxed) {
         return Err("Screenshot cancelled".into());
     }
@@ -124,7 +125,7 @@ pub fn capture(url: &str, stop: &AtomicBool) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn finish(job: &Capture, result: Result<String, String>) {
+    fn finish(job: &Capture, result: Result<Rendered, String>) {
         *job.result.lock().unwrap() = Some(result);
     }
     #[test]
@@ -145,7 +146,7 @@ mod tests {
         finish(&failed, Err("offline".into()));
         let retried = reserve(&mut entries, "retry", now).unwrap();
         assert!(!Arc::ptr_eq(&failed, &retried));
-        finish(&retried, Ok("image".into()));
+        finish(&retried, Ok(Rendered::default()));
         assert!(reserve(&mut entries, "retry", now).is_none());
         assert!(reserve(&mut entries, "retry", now + TTL).is_some());
     }
@@ -156,7 +157,7 @@ mod tests {
         let pending = reserve(&mut entries, "pending", now).unwrap();
         for n in 0..MAX_ENTRIES - 1 {
             let job = reserve(&mut entries, &format!("done-{n}"), now).unwrap();
-            finish(&job, Ok("image".into()));
+            finish(&job, Ok(Rendered::default()));
         }
         assert!(reserve(&mut entries, "next", now).is_some());
         assert_eq!(entries.len(), MAX_ENTRIES);

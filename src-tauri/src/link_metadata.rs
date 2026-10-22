@@ -19,9 +19,7 @@ pub struct LinkPreview {
     pub preview_kind: Option<String>,
 }
 
-// Full image lookup remains available to the native helper; import forms use
-// fetch_content instead so screenshots never hold their completion open.
-#[allow(dead_code)]
+// A pasted link's lookup in both hosts: rendered text, cover and an inline icon.
 pub(crate) fn fetch_preview_inline(url: &str) -> Result<LinkPreview, String> {
     let mut preview = fetch_preview(url)?;
     preview.favicon_url = preview.favicon_url.and_then(|value| {
@@ -265,8 +263,7 @@ mod extraction_tests {
     }
 }
 
-// The desktop library uses only fetch_content; the stashdock-preview helper
-// (bin/preview-helper.rs) includes this module and uses the full lookup.
+// Direct document read without images; the render-first lookup is below.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn fetch_preview(value: &str) -> Result<LinkPreview, String> {
     fetch_preview_with_images(value, true)
@@ -314,15 +311,45 @@ fn pdf_link(url: &Url) -> LinkPreview {
     }
 }
 
-#[allow(dead_code)]
+/// One link lookup: the page is rendered once (screenshot plus the text read
+/// from that render) while a direct read runs alongside as a fallback.
+/// Rendered text is preferred; it also covers scripted pages and pages behind
+/// a browser check that refuse direct reads.
 pub fn fetch_preview_with_images(value: &str, images: bool) -> Result<LinkPreview, String> {
     let url = crate::public_web::web_url(value)?;
     let pdf_path =
         url.path().to_ascii_lowercase().ends_with(".pdf") || url.path().starts_with("/pdf/");
-    if images && !pdf_path {
+    let render = images && !pdf_path;
+    if render {
         crate::preview_cache::start(value);
     }
-    let mut data = fetch_content(value)?;
+    let direct = fetch_content(value);
+    let rendered = render
+        .then(|| crate::preview_cache::capture(value, &AtomicBool::new(false)).ok())
+        .flatten();
+    let rendered_text = rendered
+        .as_ref()
+        .filter(|page| !page.content.trim().is_empty() || !page.title.trim().is_empty());
+    let mut data = match (direct, rendered_text) {
+        (Ok(data), _) => data,
+        (Err(_), Some(page)) => LinkPreview {
+            title: page.title.clone(),
+            content: String::new(),
+            favicon_url: url.join("/favicon.ico").ok().map(String::from),
+            cover_url: None,
+            preview: None,
+            preview_kind: None,
+        },
+        (Err(error), None) => return Err(error),
+    };
+    if let Some(page) = rendered_text {
+        if !page.content.trim().is_empty() {
+            data.content = page.content.clone();
+        }
+        if data.title.trim().is_empty() {
+            data.title = page.title.clone();
+        }
+    }
     let icon_deadline = Instant::now() + Duration::from_secs(6);
     let candidates = data.favicon_url.iter().cloned().chain(
         [
@@ -337,13 +364,9 @@ pub fn fetch_preview_with_images(value: &str, images: bool) -> Result<LinkPrevie
     data.favicon_url = candidates
         .take(6)
         .find_map(|icon| crate::web_images::download(&icon, true, icon_deadline).ok());
-    data.preview = if data.preview.is_some() {
-        data.preview
-    } else if images {
-        crate::preview_cache::capture(value, &AtomicBool::new(false)).ok()
-    } else {
-        None
-    };
+    if data.preview.is_none() {
+        data.preview = rendered.and_then(|page| page.image);
+    }
     data.preview_kind = data.preview.as_ref().map(|_| "screenshot".into());
     if images && data.preview.is_none() {
         data.preview = data.cover_url.as_ref().and_then(|url| {
