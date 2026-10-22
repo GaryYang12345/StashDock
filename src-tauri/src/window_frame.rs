@@ -4,13 +4,19 @@ use tauri::WebviewWindow;
 /// Apply the same policy before SHOW as before HIDE. Setting this only when
 /// hiding leaves the folder's first reveal subject to the OS entrance fade.
 fn disable_transitions(window: &WebviewWindow) -> Result<(), String> {
+    set_transitions(window, false)
+}
+
+/// Windows' own window animations (minimize/restore), which the panel uses
+/// for its handoffs with the folder.
+fn set_transitions(window: &WebviewWindow, enabled: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::Graphics::Dwm::{
             DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
         };
         let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as _;
-        let disabled: i32 = 1;
+        let disabled: i32 = i32::from(!enabled);
         unsafe {
             let result = DwmSetWindowAttribute(
                 hwnd,
@@ -19,17 +25,25 @@ fn disable_transitions(window: &WebviewWindow) -> Result<(), String> {
                 std::mem::size_of_val(&disabled) as u32,
             );
             if result < 0 {
-                eprintln!("Could not disable the native window transition: {result:#x}");
+                eprintln!("Could not set the native window transition: {result:#x}");
             }
         }
     }
-    let _ = window;
+    let _ = (window, enabled);
     Ok(())
 }
 
 pub fn show_immediately(window: &WebviewWindow) -> Result<(), String> {
     disable_transitions(window)?;
     window.show().map_err(|e| e.to_string())
+}
+
+/// The panel goes down to its taskbar button with Windows' own minimize
+/// animation, exactly as a native Minimize does (none if the user turned
+/// Windows animations off).
+pub fn minimize_animated(window: &WebviewWindow) -> Result<(), String> {
+    set_transitions(window, true)?;
+    window.minimize().map_err(|e| e.to_string())
 }
 
 pub fn minimize_immediately(window: &WebviewWindow) -> Result<(), String> {
@@ -61,22 +75,28 @@ impl PreparedRestore {
         }
         Ok(restore)
     }
-    /// Keep the destination invisible even if it was not minimized, so a
-    /// transition can draw it before it is revealed.
-    pub fn ensure_cloaked(&mut self) -> Result<(), String> {
-        #[cfg(windows)]
-        if !self.cloaked {
-            set_cloaked(&self.window, true)?;
-            self.cloaked = true;
-        }
-        Ok(())
-    }
     pub fn reveal(&mut self) -> Result<(), String> {
         if self.cloaked {
             set_cloaked(&self.window, false)?;
             self.cloaked = false;
         }
         Ok(())
+    }
+    /// Reveal a panel that was restored (and placed) out of sight with
+    /// Windows' own restore animation from its taskbar button: minimize it
+    /// again while still cloaked, so its restore position is the placed one,
+    /// then restore it visibly. The animation, shadow included, is the
+    /// system's; nothing is drawn by StashDock.
+    pub fn reveal_restoring(&mut self) -> Result<(), String> {
+        if !self.cloaked {
+            return Ok(());
+        }
+        disable_transitions(&self.window)?;
+        self.window.minimize().map_err(|e| e.to_string())?;
+        set_cloaked(&self.window, false)?;
+        self.cloaked = false;
+        set_transitions(&self.window, true)?;
+        self.window.unminimize().map_err(|e| e.to_string())
     }
 }
 impl Drop for PreparedRestore {
@@ -88,29 +108,6 @@ impl Drop for PreparedRestore {
             if let Err(error) = set_cloaked(&self.window, false) {
                 eprintln!("Could not reset the panel's preparation state: {error}");
             }
-        }
-    }
-}
-/// A window kept invisible (still composed by DWM) until released; dropping
-/// it without releasing also uncloaks, so failures never strand a window.
-pub struct Cloak {
-    window: WebviewWindow,
-    active: bool,
-}
-impl Cloak {
-    pub fn new(window: &WebviewWindow) -> Result<Self, String> {
-        set_cloaked(window, true)?;
-        Ok(Self { window: window.clone(), active: true })
-    }
-    pub fn release(mut self) -> Result<(), String> {
-        self.active = false;
-        set_cloaked(&self.window, false)
-    }
-}
-impl Drop for Cloak {
-    fn drop(&mut self) {
-        if self.active {
-            let _ = set_cloaked(&self.window, false);
         }
     }
 }

@@ -35,7 +35,8 @@ test('both reveals and hides disable OS fades before framework visibility change
   const frame = await read('src-tauri/src/window_frame.rs');
   const policy = frame.slice(frame.indexOf('fn disable_transitions'), frame.indexOf('pub fn show_immediately'));
   assert.match(policy, /DWMWA_TRANSITIONS_FORCEDISABLED/);
-  assert.match(policy, /let disabled: i32 = 1/);
+  assert.match(policy, /fn disable_transitions[\s\S]*set_transitions\(window, false\)/);
+  assert.match(policy, /let disabled: i32 = i32::from\(!enabled\)/);
   const show = frame.slice(frame.indexOf('pub fn show_immediately'), frame.indexOf('pub fn hide_immediately'));
   assert.ok(show.indexOf('disable_transitions(window)?') < show.indexOf('window.show()'));
   const hide = frame.slice(frame.indexOf('pub fn hide_immediately'), frame.indexOf('pub fn client_frame_size'));
@@ -44,6 +45,22 @@ test('both reveals and hides disable OS fades before framework visibility change
   assert.doesNotMatch(hide, /ShowWindow\(hwnd|\bSW_HIDE\b/);
   assert.match(hide, /IsWindowVisible\(hwnd\)/);
   assert.doesNotMatch(hide, /sleep|spawn|SetWindowPos|DwmRegisterThumbnail/);
+});
+
+test('the panel leaves and returns with Windows own minimize/restore animation only', async () => {
+  const native = await read('src-tauri/src/desktop_windows.rs');
+  const frame = await read('src-tauri/src/window_frame.rs');
+  const conceal = native.slice(native.indexOf('fn conceal('), native.indexOf('fn apply('));
+  assert.match(conceal, /window_frame::minimize_animated\(window\)/);
+  const animated = frame.slice(frame.indexOf('pub fn minimize_animated'), frame.indexOf('pub fn minimize_immediately'));
+  assert.ok(animated.indexOf('set_transitions(window, true)?') < animated.indexOf('window.minimize()'));
+  const restoring = frame.slice(frame.indexOf('pub fn reveal_restoring'), frame.indexOf('impl Drop for PreparedRestore'));
+  // Re-minimized while still cloaked, then restored visibly with transitions on.
+  const order = ['disable_transitions(&self.window)?', 'self.window.minimize()', 'set_cloaked(&self.window, false)?', 'set_transitions(&self.window, true)?', 'self.window.unminimize()'];
+  order.reduce((last, step) => { const at = restoring.indexOf(step); assert.ok(at > last, step); return at; }, -1);
+  const apply = native.slice(native.indexOf('fn apply('), native.indexOf('fn prepare_placement('));
+  assert.match(apply, /old == Some\(Surface::Folder\) && target == Some\(Surface::Panel\)[\s\S]*restore\.reveal_restoring\(\)\?/);
+  assert.doesNotMatch(native + frame, /DwmRegisterThumbnail|UpdateLayeredWindow|window_morph/);
 });
 
 test('folder is the monitor/placement anchor, with no delayed completions', async () => {
