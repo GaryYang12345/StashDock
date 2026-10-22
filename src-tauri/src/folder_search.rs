@@ -58,7 +58,7 @@ pub struct RegionRect {
     pub height: f64,
 }
 
-fn state(app: &AppHandle) -> Option<tauri::State<'_, FolderSearchState>> {
+fn search_state(app: &AppHandle) -> Option<tauri::State<'_, FolderSearchState>> {
     app.try_state::<FolderSearchState>()
 }
 fn search_window(app: &AppHandle) -> Option<WebviewWindow> {
@@ -74,7 +74,7 @@ fn status_of(inner: &Search) -> FolderSearchStatus {
     }
 }
 fn publish(app: &AppHandle) {
-    let Some(state) = state(app) else { return };
+    let Some(state) = search_state(app) else { return };
     let status = status_of(&state.0.lock().unwrap_or_else(|e| e.into_inner()));
     let _ = app.emit("folder-search-state", status);
 }
@@ -88,7 +88,7 @@ pub fn attach(app: &AppHandle) -> Result<(), String> {
     if !window.is_visible().map_err(|e| e.to_string())? {
         crate::window_frame::show_immediately(&window)?;
     }
-    if let Some(state) = state(app) {
+    if let Some(state) = search_state(app) {
         state.0.lock().unwrap_or_else(|e| e.into_inner()).attached = true;
     }
     Ok(())
@@ -97,7 +97,7 @@ pub fn attach(app: &AppHandle) -> Result<(), String> {
 /// Called when the folder stops being the visible surface (or starts moving).
 pub fn detach(app: &AppHandle, hide: bool) {
     close_now(app, true);
-    if let Some(state) = state(app) {
+    if let Some(state) = search_state(app) {
         let mut inner = state.0.lock().unwrap_or_else(|e| e.into_inner());
         inner.attached = !hide && inner.attached;
         inner.folder_hover = false;
@@ -115,7 +115,7 @@ pub fn detach(app: &AppHandle, hide: bool) {
 }
 
 fn evaluate(app: &AppHandle) {
-    let Some(state) = state(app) else { return };
+    let Some(state) = search_state(app) else { return };
     let (want, generation) = {
         let mut inner = state.0.lock().unwrap_or_else(|e| e.into_inner());
         inner.generation += 1;
@@ -130,7 +130,7 @@ fn evaluate(app: &AppHandle) {
         std::thread::sleep(INTENT);
         let copy = app.clone();
         let _ = app.run_on_main_thread(move || {
-            let Some(state) = state(&copy) else { return };
+            let Some(state) = search_state(&copy) else { return };
             let current = state.0.lock().unwrap_or_else(|e| e.into_inner()).generation;
             if current != generation {
                 return;
@@ -186,7 +186,7 @@ fn open_now(app: &AppHandle) -> Result<(), String> {
         },
     );
     place(&window, placement)?;
-    if let Some(state) = state(app) {
+    if let Some(state) = search_state(app) {
         let mut inner = state.0.lock().unwrap_or_else(|e| e.into_inner());
         inner.open = true;
         inner.placement = Some(placement);
@@ -198,7 +198,7 @@ fn open_now(app: &AppHandle) -> Result<(), String> {
 /// Starts closing. The search plays its exit, then reports `folder_search_closed`, which
 /// removes its region; `immediate` (mode changes, folder drags) skips that.
 fn close_now(app: &AppHandle, immediate: bool) {
-    let Some(state) = state(app) else { return };
+    let Some(state) = search_state(app) else { return };
     let (was_open, focused, previous, close) = {
         let mut inner = state.0.lock().unwrap_or_else(|e| e.into_inner());
         inner.closes += 1;
@@ -230,7 +230,7 @@ fn close_now(app: &AppHandle, immediate: bool) {
 }
 
 fn release_if_closed(app: &AppHandle, close: u64) {
-    let Some(state) = state(app) else { return };
+    let Some(state) = search_state(app) else { return };
     let inner = state.0.lock().unwrap_or_else(|e| e.into_inner());
     if !inner.open && inner.closes == close {
         drop(inner);
@@ -355,7 +355,7 @@ fn require(window: &WebviewWindow, labels: &[&str]) -> Result<(), String> {
 pub fn folder_search_pointer(window: WebviewWindow, inside: bool) -> Result<(), String> {
     require(&window, &["folder", LABEL])?;
     let app = window.app_handle();
-    if let Some(state) = state(app) {
+    if let Some(state) = search_state(app) {
         let mut inner = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if window.label() == LABEL {
             inner.search_hover = inside;
@@ -372,7 +372,7 @@ pub fn folder_search_pointer(window: WebviewWindow, inside: bool) -> Result<(), 
 pub fn folder_search_hold(window: WebviewWindow, held: bool) -> Result<(), String> {
     require(&window, &[LABEL])?;
     let app = window.app_handle();
-    if let Some(state) = state(app) {
+    if let Some(state) = search_state(app) {
         state.0.lock().unwrap_or_else(|e| e.into_inner()).held = held;
     }
     evaluate(app);
@@ -386,7 +386,7 @@ pub fn folder_search_close(window: WebviewWindow) -> Result<(), String> {
     let app = window.app_handle().clone();
     let copy = app.clone();
     app.run_on_main_thread(move || {
-        if let Some(state) = state(&copy) {
+        if let Some(state) = search_state(&copy) {
             let mut inner = state.0.lock().unwrap_or_else(|e| e.into_inner());
             inner.generation += 1;
             inner.search_hover = false;
@@ -407,7 +407,7 @@ pub async fn folder_search_focus(window: WebviewWindow) -> Result<(), String> {
         .run_on_main_thread(move || {
             let app = copy.app_handle();
             let result = (|| {
-                let state = state(app).ok_or("The folder search is unavailable")?;
+                let state = search_state(app).ok_or("The folder search is unavailable")?;
                 if !state.0.lock().unwrap_or_else(|e| e.into_inner()).open {
                     return Ok(());
                 }
@@ -451,7 +451,7 @@ pub fn folder_search_region(window: WebviewWindow, rects: Vec<RegionRect>) -> Re
     {
         return Err("Invalid search area.".into());
     }
-    let open = state(window.app_handle())
+    let open = search_state(window.app_handle())
         .is_some_and(|s| s.0.lock().unwrap_or_else(|e| e.into_inner()).open);
     // A late report from a closing search must not give it input again.
     set_region(&window, if open { &rects } else { &[] })
@@ -462,7 +462,7 @@ pub fn folder_search_region(window: WebviewWindow, rects: Vec<RegionRect>) -> Re
 pub fn folder_search_closed(window: WebviewWindow) -> Result<(), String> {
     require(&window, &[LABEL])?;
     let app = window.app_handle();
-    let open = state(app).is_some_and(|s| s.0.lock().unwrap_or_else(|e| e.into_inner()).open);
+    let open = search_state(app).is_some_and(|s| s.0.lock().unwrap_or_else(|e| e.into_inner()).open);
     if !open {
         set_region(&window, &[])?;
     }
@@ -472,7 +472,7 @@ pub fn folder_search_closed(window: WebviewWindow) -> Result<(), String> {
 #[tauri::command]
 pub fn folder_search_status(window: WebviewWindow) -> Result<FolderSearchStatus, String> {
     require(&window, &["folder", LABEL])?;
-    let state = state(window.app_handle()).ok_or("The folder search is unavailable")?;
+    let state = search_state(window.app_handle()).ok_or("The folder search is unavailable")?;
     let status = status_of(&state.0.lock().unwrap_or_else(|e| e.into_inner()));
     Ok(status)
 }
@@ -491,7 +491,7 @@ pub async fn folder_search_open_library(window: WebviewWindow, query: String) ->
 
 /// Focus left the search (the user clicked elsewhere): put it away.
 pub fn blurred(app: &AppHandle) {
-    let Some(state) = state(app) else { return };
+    let Some(state) = search_state(app) else { return };
     let was_focused = {
         let mut inner = state.0.lock().unwrap_or_else(|e| e.into_inner());
         let focused = inner.focused;
