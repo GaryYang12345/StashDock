@@ -25,7 +25,7 @@ mockIPC(async (command, raw) => {
   switch (command) {
     case 'desktop_runtime_ready': return;
     case 'get_desktop_settings': return { preferences: { language: 'en', theme: params.get('theme') || 'light', shortcut: 'Ctrl+Shift+Space', floatingWindow: true }, launchAtLogin: false, version: '0.2.5', githubUrl: null };
-    case 'folder_search_status': return { open: params.get('open') !== '0', upward: params.get('down') === null, anchorX: Number(params.get('anchor') || 240) };
+    case 'folder_search_status': return { open: params.get('open') !== '0', upward: params.get('down') === null, anchorPx: params.get('anchor') ? Number(params.get('anchor')) * devicePixelRatio : null };
     case 'search_items': return items.filter(item => item.title.toLowerCase().includes(String(args.query).toLowerCase())).map(item => item.id);
     case 'get_items': return (args.ids as string[]).map(id => items.find(item => item.id === id)).filter(Boolean);
     case 'copy_reference_file': document.documentElement.dataset.copied = String(args.itemIds); return;

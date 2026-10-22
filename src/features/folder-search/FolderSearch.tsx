@@ -16,8 +16,10 @@ import styles from './FolderSearch.module.css';
 // cover flow of matching references above it. Everything floats; nothing is
 // wrapped in a panel. Native placement, hover intent and focus belong to
 // folder_search.rs; this view only reports what it shows and what the user does.
-type Status = { open: boolean; upward: boolean; anchorX: number };
-const WIDTH = 480, FIELD = 184, FLOW = 460, CARD = 232;
+type Status = { open: boolean; upward: boolean; anchorPx: number | null };
+const FIELD = 184, FLOW = 460, CARD = 232;
+/** Room around the field for its shadow, inside the window region. */
+const FIELD_SHADOW = 32;
 const RESULT_LIMIT = 24;
 const SEARCH_DELAY = 140;
 const COPIED_MS = 1800;
@@ -121,12 +123,12 @@ function SearchPanel({ status, onHeld }: { status: Status; onHeld: (held: boolea
   const empty = Boolean(query.trim()) && !results.length && !holdFrame && settledQuery === query.trim();
   useLayoutEffect(() => {
     const rects = [];
-    const pad = 24;
-    if (field.current) { const { offsetLeft: x, offsetTop: y, offsetWidth: w, offsetHeight: h } = field.current; rects.push({ x: x - pad, y: y - pad, width: w + pad * 2, height: h + pad * 2 }); }
-    if (filled && frame.current) { const { offsetTop: y, offsetHeight: h } = frame.current; rects.push({ x: 0, y: y - 40, width: WIDTH, height: h + 64 }); }
-    if (empty && note.current) { const { offsetLeft: x, offsetTop: y, offsetWidth: w, offsetHeight: h } = note.current; rects.push({ x: x - 8, y: y - 8, width: w + 16, height: h + 16 }); }
+    // Layout boxes, not animated ones: the region covers where things settle.
+    if (field.current) { const { offsetLeft: x, offsetTop: y, offsetWidth: w, offsetHeight: h } = field.current; rects.push({ x: x - FIELD_SHADOW, y: y - FIELD_SHADOW, width: w + FIELD_SHADOW * 2, height: h + FIELD_SHADOW * 2 }); }
+    if (filled && frame.current) { const { offsetTop: y, offsetHeight: h } = frame.current; rects.push({ x: 0, y: y - 40, width: window.innerWidth, height: h + 64 }); }
+    if (empty && note.current) { const box = note.current.getBoundingClientRect(); rects.push({ x: box.left - 8, y: box.top - 8, width: box.width + 16, height: box.height + 16 }); }
     void invoke('folder_search_region', { rects }).catch(() => {});
-  }, [filled, empty, status.upward, status.anchorX]);
+  }, [filled, empty, status.upward, status.anchorPx]);
 
   const go = (next: number) => {
     if (!results.length) return;
@@ -150,7 +152,6 @@ function SearchPanel({ status, onHeld }: { status: Status; onHeld: (held: boolea
     return () => node.removeEventListener('wheel', wheel);
   }, []);
 
-  const current = results.length ? results[mod(index, results.length)] : null;
   const copy = useCallback(async (item: StashItem) => {
     setCopiedId('');
     try { await copyContext([item]); setCopiedId(item.id); } catch { /* the button returns to Copy */ }
@@ -166,8 +167,13 @@ function SearchPanel({ status, onHeld }: { status: Status; onHeld: (held: boolea
     const watcher = new MutationObserver(() => { if (!card.dataset.dragging) { watcher.disconnect(); setDragging(false); window.dispatchEvent(new Event(POINTER_RESET)); } });
     watcher.observe(card, { attributes: true, attributeFilter: ['data-dragging'] });
   };
-  const fieldLeft = clamp(status.anchorX, FIELD / 2, WIDTH - FIELD / 2);
-  const flowLeft = clamp(status.anchorX, FLOW / 2, WIDTH - FLOW / 2);
+  // Centre the field and the cards on the folder (the window is only offset
+  // from it at a screen edge), in this page's own CSS pixels.
+  const width = window.innerWidth;
+  const anchor = status.anchorPx == null ? width / 2 : status.anchorPx / window.devicePixelRatio;
+  const fieldCentre = clamp(anchor, FIELD / 2, width - FIELD / 2);
+  const fieldLeft = fieldCentre - FIELD / 2;
+  const flowLeft = clamp(anchor, FLOW / 2, width - FLOW / 2) - FLOW / 2;
   return <motion.div ref={surface} className={styles.surface} data-upward={status.upward || undefined} variants={panelMotion(reduced)} initial="hidden" animate="shown" exit="gone">
     {/* Keeps its size until leaving cards have sunk into the field, so they never flash past it. */}
     <motion.div ref={frame} className={styles.frame} style={{ left: flowLeft }} variants={frameMotion(reduced, status.upward)}
@@ -184,19 +190,18 @@ function SearchPanel({ status, onHeld }: { status: Status; onHeld: (held: boolea
       <SearchField ref={input} label={t('Search references')} placeholder={t('Search')} value={query} onValueChange={setQuery} autoComplete="off" spellCheck={false}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         onKeyDown={event => {
-          // Up/Down turn the flow so Left/Right keep moving the caret.
+          // Up/Down turn the flow so Left/Right keep moving the caret. Only Copy copies.
           if (event.key === 'ArrowDown') { event.preventDefault(); go(target.current + 1); }
           if (event.key === 'ArrowUp') { event.preventDefault(); go(target.current - 1); }
-          if (event.key === 'Enter' && current) { event.preventDefault(); void copy(current); }
           if (event.key === 'Escape') { event.preventDefault(); void invoke('folder_search_close').catch(() => {}); }
         }} />
     </motion.div>
-    {empty && <p ref={note} className={styles.empty} style={{ left: fieldLeft }} role="status">{t('No matching references')}</p>}
+    {empty && <p ref={note} className={styles.empty} style={{ left: fieldCentre }} role="status">{t('No matching references')}</p>}
   </motion.div>;
 }
 
 export function FolderSearch() {
-  const [status, setStatus] = useState<Status>({ open: false, upward: true, anchorX: WIDTH / 2 });
+  const [status, setStatus] = useState<Status>({ open: false, upward: true, anchorPx: null });
   // Each opening is a fresh search: a new query, no leftover cards.
   const [session, setSession] = useState(0);
   useEffect(() => {

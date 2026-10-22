@@ -46,7 +46,8 @@ pub struct FolderSearchState(Mutex<Search>);
 pub struct FolderSearchStatus {
     pub open: bool,
     pub upward: bool,
-    pub anchor_x: f64,
+    /// Physical pixels from the window's left edge; None before the first placement.
+    pub anchor_px: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -68,9 +69,7 @@ fn status_of(inner: &Search) -> FolderSearchStatus {
     FolderSearchStatus {
         open: inner.open,
         upward: inner.placement.is_none_or(|p| p.upward),
-        anchor_x: inner
-            .placement
-            .map_or(window_geometry::SEARCH_WIDTH / 2.0, |p| p.anchor_x),
+        anchor_px: inner.placement.map(|p| p.anchor_px),
     }
 }
 fn publish(app: &AppHandle) {

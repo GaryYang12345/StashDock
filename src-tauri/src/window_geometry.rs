@@ -140,7 +140,7 @@ pub const SEARCH_WIDTH: f64 = 480.0;
 pub const SEARCH_HEIGHT: f64 = 300.0;
 /// The search field sits on the folder artwork's transparent top margin; the
 /// window reaches a little further so the field's shadow is not cut off.
-pub const SEARCH_OVERLAP: f64 = 24.0;
+pub const SEARCH_OVERLAP: f64 = 40.0;
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchPlacement {
@@ -150,8 +150,9 @@ pub struct SearchPlacement {
     pub height: u32,
     /// Cards grow upward from a field below them; false mirrors the layout.
     pub upward: bool,
-    /// The folder's centre in the search window's own CSS pixels.
-    pub anchor_x: f64,
+    /// The folder's centre from the window's left edge, in physical pixels
+    /// (the page divides by its own device pixel ratio).
+    pub anchor_px: f64,
 }
 pub fn search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) -> SearchPlacement {
     let scale = area.scale;
@@ -171,7 +172,7 @@ pub fn search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) ->
         width: w as u32,
         height: h as u32,
         upward,
-        anchor_x: ((centre - x) / scale).clamp(0.0, SEARCH_WIDTH),
+        anchor_px: (centre - x).clamp(0.0, w),
     }
 }
 #[cfg(test)]
@@ -185,22 +186,22 @@ mod tests {
         let up = search_placement((900, 700), folder, area);
         assert!(up.upward);
         assert_eq!((up.width, up.height), (720, 450));
-        assert_eq!(up.y, 700 - 450 + 36);
+        assert_eq!(up.y, 700 - 450 + 60);
         assert_eq!(up.x, 900 + 108 - 360);
-        assert!((up.anchor_x - 240.0).abs() < 0.01);
+        assert!((up.anchor_px - 360.0).abs() < 0.01);
         // No room above: mirrored below the folder.
         let down = search_placement((900, 40), folder, area);
         assert!(!down.upward);
-        assert_eq!(down.y, 40 + 216 - 36);
+        assert_eq!(down.y, 40 + 216 - 60);
         // Screen edge: the window is clamped, the anchor still points at the folder.
         let edge = search_placement((1920 - 216, 700), folder, area);
         assert_eq!(edge.x, 1920 - 720);
-        assert!((edge.anchor_x - (1920.0 - 108.0 - 1200.0) / 1.5).abs() < 0.01);
+        assert!((edge.anchor_px - (1920.0 - 108.0 - 1200.0)).abs() < 0.01);
         // Negative monitor coordinates.
         let left = WorkArea { x: -1920, y: 0, width: 1920, height: 1040, scale: 1.0 };
         let placed = search_placement((-1920, 500), 144.0, left);
         assert_eq!(placed.x, -1920);
-        assert!((placed.anchor_x - 72.0).abs() < 0.01);
+        assert!((placed.anchor_px - 72.0).abs() < 0.01);
     }
     #[test]
     fn smaller_folder_matches_config_and_upgrades_the_retired_hint_canvas() {

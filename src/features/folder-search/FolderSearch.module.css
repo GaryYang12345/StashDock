@@ -1,12 +1,16 @@
 /* The whole transparent search window; its native region exposes only the
    field and, while shown, the cards. */
-.surface { --edge: 16px; --above-field: calc(var(--edge) + 44px + var(--space-3)); position: fixed; inset: 0; overflow: hidden; color: var(--foreground); font-family: var(--font-body); }
-.field, .frame, .empty { position: absolute; translate: -50% 0; }
+.surface { --edge: 32px; --above-field: calc(var(--edge) + 44px + var(--space-3)); position: fixed; inset: 0; overflow: hidden; color: var(--foreground); font-family: var(--font-body); }
+.field, .frame, .empty { position: absolute; }
+.empty { translate: -50% 0; }
 .field { width: 184px; transform-origin: 50% 100%; bottom: var(--edge); }
 .surface:not([data-upward]) .field { bottom: auto; top: var(--edge); transform-origin: 50% 0; }
 .field { --search-border: transparent; --search-border-active: transparent; }
 .field label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.field > div > div { min-height: 44px; border-radius: var(--radius-pill); padding-inline: var(--space-4); background: var(--surface-raised); box-shadow: var(--shadow-floating); }
+/* A compact floating shadow that stays inside the field's 32px region margin. */
+.field { --field-shadow: 0 8px 22px oklch(0% 0 0 / .11), 0 1px 4px oklch(0% 0 0 / .06); }
+:global([data-theme="dark"]) .field { --field-shadow: 0 8px 22px oklch(0% 0 0 / .4), 0 0 0 1px oklch(100% 0 0 / .06); }
+.field > div > div { min-height: 44px; border-radius: var(--radius-pill); padding-inline: var(--space-4); background: var(--surface-raised); box-shadow: var(--field-shadow); }
 
 /* Cards sit above the field (below it when it opens downwards). */
 .frame { width: 460px; height: 0; bottom: var(--above-field); transform-origin: 50% 100%; }

@@ -15,8 +15,17 @@ async page => {
   await page.screenshot({ path: 'output/playwright/folder-search-results.png' });
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  if (await page.evaluate(() => document.documentElement.dataset.copied)) throw Error('Enter copied; only Copy copies');
+  const current = page.locator('article[data-current]').first();
+  await current.hover();
+  await current.getByRole('button', { name: /^Copy .* for AI$/ }).click();
   await page.waitForFunction(() => document.documentElement.dataset.copied);
   await page.locator('article[data-copied]').waitFor();
+  // The field's region is centred on it, with room for its shadow.
+  const box = await page.getByRole('searchbox').evaluate(node => node.closest('[class*="field"]').getBoundingClientRect().toJSON());
+  const rect = await page.evaluate(() => window.__calls.filter(([name]) => name === 'folder_search_region').at(-1)[1].rects[0]);
+  if (Math.abs((rect.x + rect.width / 2) - (box.left + box.width / 2)) > 1) throw Error('The field region is not centred on the field');
   await field.fill('');
   await page.waitForFunction(() => !document.querySelector('article'));
   const cleared = await page.evaluate(() => window.__calls.filter(([name]) => name === 'folder_search_region').at(-1)[1].rects.length);
@@ -26,5 +35,5 @@ async page => {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__calls.some(([name]) => name === 'folder_search_close'));
   if (errors.length) throw Error(errors.join('\n'));
-  console.log('Folder search: field first, one result swap, region follows the cards, Up/Down + Enter copy, empty state and Escape passed. All IPC was mocked.');
+  console.log('Folder search: field first, one result swap, centred regions that follow the cards, Up/Down turning, Copy-only copying, empty state and Escape passed. All IPC was mocked.');
 }
