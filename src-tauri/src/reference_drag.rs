@@ -140,11 +140,9 @@ pub(crate) fn export_filename(context: &str, count: usize) -> String {
         .filter(|c| !c.is_control() && !"<>:\"/\\|?*".contains(*c))
         .take(64)
         .collect();
-    format!(
-        "StashDock - {} - {}.md",
-        title.trim_matches([' ', '.']),
-        uuid::Uuid::new_v4()
-    )
+    // Each transfer has its own folder, so the name needs no unique suffix.
+    let title = title.trim_matches([' ', '.']);
+    format!("StashDock - {}.md", if title.is_empty() { "Reference" } else { title })
 }
 
 #[cfg(windows)]
@@ -282,7 +280,8 @@ pub(crate) fn prune_exports(keep: &std::path::Path) {
         return;
     };
     crate::reference_transfer::prune(folder, keep);
-    // Flat, generated names only. Never delete a directory or an original asset.
+    // Flat names from older versions (title plus a UUID) only. Never delete a
+    // directory or an original asset.
     let Ok(entries) = std::fs::read_dir(folder) else {
         return;
     };
@@ -341,9 +340,9 @@ mod tests {
     #[test]
     fn exported_names_are_recognizable_without_becoming_file_paths() {
         let name = export_filename("# StashDock context\n\n## CON: / example <test>", 1);
-        assert!(name.starts_with("StashDock - CON  example test - "));
-        assert!(!name.contains('/') && !name.contains(':') && name.ends_with(".md"));
-        assert!(export_filename("## First", 2).starts_with("StashDock - Selected references - "));
+        assert_eq!(name, "StashDock - CON  example test.md");
+        assert_eq!(export_filename("## First", 2), "StashDock - Selected references.md");
+        assert_eq!(export_filename("## ...", 1), "StashDock - Reference.md");
     }
     #[test]
     fn preview_requires_a_small_png() {

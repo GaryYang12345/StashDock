@@ -155,7 +155,7 @@ pub struct SearchPlacement {
     pub anchor_px: f64,
 }
 /// How far left of the folder's geometric centre the search axis sits (CSS px).
-pub const SEARCH_OPTICAL_SHIFT: f64 = 6.0;
+pub const SEARCH_OPTICAL_SHIFT: f64 = 4.0;
 pub fn search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) -> SearchPlacement {
     let scale = area.scale;
     let (w, h) = ((SEARCH_WIDTH * scale).round(), (SEARCH_HEIGHT * scale).round());
@@ -190,7 +190,7 @@ mod tests {
         assert!(up.upward);
         assert_eq!((up.width, up.height), (720, 474));
         assert_eq!(up.y, 700 - 474 + 60);
-        assert_eq!(up.x, 900 + 108 - 9 - 360);
+        assert_eq!(up.x, 900 + 108 - 6 - 360);
         assert!((up.anchor_px - 360.0).abs() < 0.01);
         // No room above: mirrored below the folder.
         let down = search_placement((900, 40), folder, area);
@@ -198,12 +198,12 @@ mod tests {
         assert_eq!(down.y, 40 + 216 - 60);
         // Screen edge: still centred on the folder, reaching past the edge.
         let edge = search_placement((1920 - 216, 700), folder, area);
-        assert_eq!(edge.x, 1920 - 108 - 9 - 360);
+        assert_eq!(edge.x, 1920 - 108 - 6 - 360);
         assert!((edge.anchor_px - 360.0).abs() < 0.01);
         // Negative monitor coordinates.
         let left = WorkArea { x: -1920, y: 0, width: 1920, height: 1040, scale: 1.0 };
         let placed = search_placement((-1920, 500), 144.0, left);
-        assert_eq!(placed.x, -1920 + 72 - 6 - 240);
+        assert_eq!(placed.x, -1920 + 72 - 4 - 240);
         assert!((placed.anchor_px - 240.0).abs() < 0.01);
     }
 

@@ -8,7 +8,7 @@ import { SearchField } from '../../components/arc/search-field/search-field';
 import SegmentedControl from '../../components/arc/segmented-control/segmented-control';
 import { ScrollArea } from '../../components/arc/scroll-area/scroll-area';
 import { Alert } from '../../components/arc/alert/alert';
-import { EmptyState } from '../../components/EmptyState';
+import { EmptyState, type EmptyScope } from '../../components/EmptyState';
 import { LoadingReferences } from '../../components/LoadingReferences';
 import { BrandIcon } from '../../components/BrandIcon';
 import { shelfFilters } from '../../components/ReferenceShelf';
@@ -372,7 +372,7 @@ export function McpShelf() {
                 {acknowledgedIds.has(item.id) ? <Check size={16} strokeWidth={1.75} aria-hidden="true" /> : <Plus size={16} strokeWidth={1.75} aria-hidden="true" />}<CardActionLabel compact={t(acknowledgedIds.has(item.id) ? 'Added' : 'Add')}>{t(acknowledgedIds.has(item.id) ? 'Added' : 'Add to chat')}</CardActionLabel>
               </Button>} />)}
             {hasMore && <Button variant="secondary" loading={loadingMore} onClick={() => { if (appRef.current) void load(appRef.current, query, filter, items.length); }}>{t('Load more references')}</Button>}
-          </div> : !readError && <EmptyState hasQuery={Boolean(query || activeTag || filter !== 'all')} onAdd={() => importDialog.current?.open()} onClear={() => { setQuery(''); setFilter('all'); setActiveTag(''); }} />}
+          </div> : !readError && <EmptyState query={query} scope={activeTag ? 'tag' : filter as EmptyScope} onAdd={() => importDialog.current?.open()} onClearSearch={() => setQuery('')} onShowAll={() => { setFilter('all'); setActiveTag(''); }} />}
         </>}
     </ScrollArea>
     <span className={styles.srOnly} role="status">{pending.length ? t('Adding to draft') : acknowledged.length ? t('Added to draft') : t('{count} selected', { count: selected.length })}</span>

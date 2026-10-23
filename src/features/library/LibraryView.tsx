@@ -145,7 +145,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
                   )}
                 </VirtualShelf>
             ) : (
-              <EmptyState hasQuery={Boolean(query || activeTag || filter !== "all")} onAdd={() => importDialog.current?.open()} onClear={() => { setQuery(""); setActiveTag(null); setFilter("all"); }} />
+              <EmptyState query={query} scope={activeTag ? "tag" : filter} onAdd={() => importDialog.current?.open()} onClearSearch={() => setQuery("")} onShowAll={() => { setActiveTag(null); setFilter("all"); }} />
             )}
           </ScrollArea>
 
