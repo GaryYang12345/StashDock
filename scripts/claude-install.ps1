@@ -83,17 +83,18 @@ switch ($Target) {
     if (-not $package) { throw 'No built plugin package. Run the plugin-package task first.' }
     $source = Join-Path $package.FullName 'plugins\stashdock'
     $version = (Get-Content -Raw (Join-Path $source '.codex-plugin\plugin.json') | ConvertFrom-Json).version
-    $targets = @(Installed-Plugins)
-    if (-not $targets.Count) { throw "StashDock is not installed in $codexHome. Install it once from $($package.FullName) in ChatGPT." }
-    foreach ($target in $targets) {
-      Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -like "$($target.FullName)*" } |
+    # Not $target: PowerShell names are case-insensitive, and $Target is the validated parameter.
+    $installs = @(Installed-Plugins)
+    if (-not $installs.Count) { throw "StashDock is not installed in $codexHome. Install it once from $($package.FullName) in ChatGPT." }
+    foreach ($install in $installs) {
+      Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -like "$($install.FullName)*" } |
         ForEach-Object { "Stopping $($_.ProcessName) $($_.Id) $($_.Path)"; Stop-Process -Id $_.Id -Force }
       Start-Sleep -Seconds 1
-      "Replacing $($target.FullName) with $version"
-      & robocopy.exe $source $target.FullName /MIR /R:2 /W:1 /NJH /NJS /NP /NFL /NDL | Out-Null
+      "Replacing $($install.FullName) with $version"
+      & robocopy.exe $source $install.FullName /MIR /R:2 /W:1 /NJH /NJS /NP /NFL /NDL | Out-Null
       if ($LASTEXITCODE -ge 8) { throw "Copy failed (robocopy $LASTEXITCODE)." }
       $global:LASTEXITCODE = 0
-      $now = (Get-Content -Raw (Join-Path $target.FullName '.codex-plugin\plugin.json') | ConvertFrom-Json).version
+      $now = (Get-Content -Raw (Join-Path $install.FullName '.codex-plugin\plugin.json') | ConvertFrom-Json).version
       "  now version $now"
     }
     "Restart ChatGPT (or start a new conversation) so it starts the new plugin."
