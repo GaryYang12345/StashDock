@@ -2,7 +2,7 @@
 
 Read and follow @AGENTS.md (product and engineering rules) before changing anything.
 Current direction and decisions also live in `docs/product-principles.md` and
-`docs/architecture.md`; dated `docs/*-2026*.md` files are history, not rules.
+`docs/architecture.md`; dated records in `docs/history/` are history, not rules.
 
 ## Layout
 

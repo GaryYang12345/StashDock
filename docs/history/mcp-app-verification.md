@@ -5,7 +5,7 @@
 This section describes the current release. Sections below are historical
 verification records; their desktop dependency, read-only App, single-column
 layout and older version numbers no longer describe the current implementation.
-See [product surfaces](product-surfaces.md) for the current architecture.
+See [product surfaces](../product-surfaces.md) for the current architecture.
 
 - The plugin opens the shared SQLite database directly using built-in Node SQLite
   (Node >=22.13); the desktop process and port 17863 are not required. Windows

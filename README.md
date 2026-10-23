@@ -44,8 +44,11 @@ browser security protections to install StashDock.
 - Use the ChatGPT panel to manage references and add context to a conversation.
 - Ask AI to recommend saved references, use a tag as a context group, save a useful
   note/link, or preview and apply a tag organization plan with your approval.
+- On Desktop, minimize the library to a small floating folder. Hover it to search
+  and copy or drag references without opening the library; click it to open the
+  library, which grows out of the folder.
 - Choose English/简体中文, light/dark/system appearance, and a shared storage location.
-  Desktop also supports a floating folder, tray, startup and a global shortcut.
+  Desktop also has a tray, launch at login and a global shortcut.
 
 File understanding belongs to the receiving AI. The plugin's Skill instructs it to
 resolve and read selected originals rather than treat a path as file contents.
@@ -93,16 +96,18 @@ extension/                Shared Chrome / Edge / Firefox Save-page extension
 scripts/                  Asset generation, builds, packaging and verification
 tests/                    Isolated regressions and rendered UI fixtures
 docs/                     Architecture, product principles, installation and handoff
+docs/history/             Dated design and verification records (not current rules)
 ```
 
 One repository owns shared behavior and platform adapters. Release assets carry
 platform-specific binaries; generated runtimes, personal data, profiles,
 screenshots and recovery packages do not belong in Git.
 
-Read [AGENTS.md](AGENTS.md) before changes, then
-[architecture](docs/architecture.md), [product principles](docs/product-principles.md)
-and [release process](docs/RELEASING.md). Dated verification reports describe their
-historical baseline, not necessarily the current product. Broad stage reviews run
+Read [AGENTS.md](AGENTS.md) before changes, then [design overview](design.md),
+[architecture](docs/architecture.md), [product surfaces](docs/product-surfaces.md),
+[window lifecycle](docs/WINDOW_LIFECYCLE.md), [product principles](docs/product-principles.md)
+and [release process](docs/RELEASING.md). Dated reports in [docs/history](docs/history/README.md)
+describe their own baseline, not the current product. Broad stage reviews run
 only when requested.
 
 ## License

@@ -4,102 +4,94 @@
 
 | Surface | Primary role | Data access |
 | --- | --- | --- |
-| AI-host MCP App | A complete basic reference library inside Codex; reusable for other MCP Apps hosts | Plugin-owned, headless Node SQLite service. No desktop application dependency. |
-| Windows desktop | Visual desktop bookmark/library manager; file drag and Copy for AI for any AI application | Rust SQLite service, native file imports and Windows drag integration. |
-| Browser companion | Save current page only: editable title/content/tags, capture and screenshot | One-page writes to either local service; session drafts and names-only tag cache. No shelf or bookmark import UI. |
+| StashDock Desktop (Windows) | Visual library panel, floating folder with hover search, original-file Copy for AI and native drag into any AI app | Rust SQLite service, native file imports and Windows Shell transfer |
+| ChatGPT MCP App (plugin) | The same library inside ChatGPT/Codex; AI search, reading, explicit saving and approved tag organization | Plugin-owned Node SQLite service; no Desktop dependency |
+| Browser extension | Save the current page only: editable title, content and tags, with capture and screenshot | One-page writes to whichever local provider is running; names-only tag cache |
 
-Chrome and Edge use their native side panel; Firefox uses its native sidebar.
-All three share the same form, capture/session lifecycle and save transport.
-Generated manifests and the sidebar API adapter are the only browser-specific
-extension layers. Settings in Desktop/MCP include each supported browser; Safari
-remains a planned placeholder. See [browser acceptance](browser-extensions-20261016.md).
+Desktop is not the parent of the other products. Each entry point works on its own
+and all of them use the same per-user library.
 
-The desktop app is not the parent of the other products. Both local services open
-the same `stashdock.sqlite3` and managed `assets` directory. `STASHDOCK_DATA_DIR`
-overrides the platform's application-data directory for **both** services. With no
-override in a stale Windows host environment, the plugin launcher also checks
-the existing Windows user environment setting, matching the desktop launcher.
-This does not copy, move or merge library records. With no configured
-override, the identifier is `app.stashdock.desktop`. SQLite WAL, a five-second busy
-timeout, explicit transactions and record-level changes prevent whole-library
-snapshot overwrites. Both implementations use the same base SQL schema and keep
-the desktop FTS index updated.
+## One library
 
-Only Windows desktop packaging is supported in this phase. The portable data-path
-resolver includes macOS/Linux conventions, but that is not a tested Mac desktop
-release. A future Mac native adapter must preserve the same product functions.
+Desktop and the plugin open the same `stashdock.sqlite3` and managed `assets`
+folder, located through one per-user anchor (default application-data identifier
+`app.stashdock.desktop`). `STASHDOCK_DATA_DIR` seeds the location for first setup.
+Change location in either Settings moves the library for every entry point; a
+missing registered library fails closed instead of creating a second one. A library
+copied to another drive or computer keeps working because missing backups are
+repointed to the same files under its `assets` folder.
 
-## Why the old plugins required a running desktop
+The browser cannot open SQLite. It saves through a local provider: the plugin's
+capture bridge (`127.0.0.1:17864`, running while the MCP server runs) or Desktop's
+(`127.0.0.1:17863`). With neither running, the Save form shows an inline prompt
+with Check again; it never shows a library or claims an unsaved draft was saved.
+There is no background Windows service or login task.
 
-Local data alone does not give every process access to it. The old plugin called
-the desktop's HTTP API on port 17863. Closing the desktop removed that API. Browser
-extensions cannot open arbitrary local SQLite files, so they still need a local
-service to synchronize the shared collection, even though they can save captures
-and cached references in their own local storage independently.
+## Desktop
 
-The MCP plugin now uses `node:sqlite` directly (Node 22.13 or newer). It starts a
-restricted capture bridge on `127.0.0.1:17864` while the MCP server is running.
-Browser requests try that bridge first and the desktop bridge second. With
-neither service running, the Save form shows an inline connection prompt and
-Check again. It does not expose a library or Settings screen, open a setup tab,
-or claim a pending browser draft is saved. Unfinished legacy operations are
-retained for recovery without fetching the library. Current saves use a compact
-acknowledgement; uncertain responses keep the form open for an explicit retry,
-with a shared bounded receipt preventing duplicate replacement.
-Opening or refocusing the sidebar resumes bounded connection checks and reads.
-There is no hidden Windows service, login task or network daemon installation.
-Browser quota errors are shown, never silently resolved by evicting captures.
+- **Panel** (Context library): collections, pinned tags and a collapsible Tags list
+  in the sidebar; search; grid (three columns, stepping down to two and one) or list
+  view; import of links, notes, files and browser bookmarks; card menu (Edit card for title,
+  tags and cover; Edit content for AI context); Settings. Narrow windows use the three-row
+  compact header.
+- **Folder**: a small topmost folder when the panel is minimized (Floating window
+  On, the default). Click opens the panel; drag moves the folder; × hides StashDock.
+  The panel grows out of the folder and shrinks back into it.
+- **Folder search**: hovering the folder floats a search field out of it; results
+  appear as a cover flow. Copy copies a reference for AI; the current card drags
+  natively; clicking a card opens the library on the same search.
+- Tray, global shortcut (Show or hide StashDock), Launch at login and Check for
+  updates are Desktop-only.
+- Copy for AI and drag deliver Markdown context plus the current original files as
+  a real file group through the Windows Shell.
 
-The retired browser shelf and HTTP MCP adapter have been removed. The plugin
-always uses its independent local-library adapter and the authoritative shared
-library anchor. No legacy desktop HTTP override selects a second data source.
+## ChatGPT MCP App
 
-The visual App advertises both global-sidebar and conversation-panel entrypoints
-with the same brand icon/resource. Users can open it without a model call. The
-host owns navigation placement and pinning; the plugin does not modify host UI.
+- Opened from the host's global navigation or a conversation panel without a model
+  call; the host owns placement and pinning.
+- Same library panel: collections, tags, search, grid/list, imports (links, notes,
+  browser bookmarks, files chosen in the system dialog), editing, link replacement
+  after confirmation, deletion and tag management, Settings.
+- Add to chat adds a read-only context snapshot to the visible draft (black, then
+  temporary green Added, then black). It is not a native file upload; the receiving
+  AI reads file references through `get_stashdock_file` and the use-stashdock Skill.
+- Model-visible tools are read-only except `save_stashdock_reference` (new notes and
+  links) and `apply_stashdock_tag_changes` (exactly requested or approved tag
+  additions/removals). All other mutations are App-only.
 
-## MCP App functionality and boundaries
+## Browser extension
 
-- Import bookmark HTML, links and notes; import managed file copies through
-  explicitly selected files (up to 10, 5 MB each, 10 MB total).
-- Filter by collection, text and tag; favorite, confirm deletion, assign tags to
-  one reference or a selected group, rename and remove library tags.
-- A short Arc DropdownMenu shows common tags. Browse all tags opens a scrollable
-  management dialog, rather than an unbounded offscreen menu.
-- Responsive dashboard cards: two columns at 600 px and wider, one below it.
-- Add to chat retains the existing visible-draft contract and capability guard.
-  No automatic message, hidden context update or pasted reference ID.
+Chrome and Edge use their native side panel; Firefox uses its native sidebar. All
+three share one form, capture/session lifecycle and save transport.
 
-Search/retrieval tools visible to the model remain read-only. Tags are reusable
-context groups, with tag discovery, paginated search and bounded batch reads.
-`save_stashdock_reference` creates a user-requested context note or link without
-fetching URLs or editing existing assets. `apply_stashdock_tag_changes` applies
-only explicitly requested or approved add/remove patches, preserves unmentioned
-tags and skips stale revisions. Both are bounded and validated. Other management mutators remain
-`ui.visibility: ["app"]` and `readOnlyHint: false`; destructive tools also mark
-`destructiveHint: true`. User actions stay separate from model retrieval. The
-capture bridge accepts only the extension contract, validates Host/Origin,
-limits bodies, and provides no SQL, arbitrary path or shell route.
+- Clicking the toolbar button opens the Save sidebar, which follows the current tab
+  and reloads on navigation while open. Save confirms in place and keeps the
+  sidebar open. A saved URL asks Replace or Keep; replacement keeps the card's
+  identity, favorite and edited AI context.
+- No library view, bookmark import, AI actions, Settings screen or setup tab.
+  Configuration lives in Desktop and the AI-hosted Settings.
+- Packages are generated from `extension/` per browser. Store listings do not exist
+  yet; Firefox builds are unsigned development packages.
 
-File imports retain actual bytes; text-like files also store searchable text.
-Other files (including PDFs) retain a managed original, not a fabricated body
-extraction. Adding a file includes reading requirements and its reference ID
-outside editable annotations. The model resolves it through `get_stashdock_file`,
-then reads the original using permitted host tools and the appropriate file skill.
-Resolving a path explicitly reports `contentRead: false`; it is neither parsing
-nor a native upload. Missing/inaccessible/unsupported originals must be disclosed.
-The App rejects Add preparation if the selected original is missing or outside
-managed assets. Deleting a record leaves its managed file copy recoverable and does
-not delete its original. Plugin/native reads are fresh on Refresh and window
-focus. Simultaneous inactive views are not a live collaboration session.
+## Settings
 
-The desktop Tags navigation is collapsed by default, with a chevron, count and
-nested rail when expanded. Pinned sits above Tags and shows pinned tags without
-removing them from Tags. Left click filters; right click offers pin/unpin,
-rename/remove. Desktop pins persist and follow tag rename/remove atomically.
-The native compact Dock and browser shelf are retired: clicking the folder opens the dashboard
-directly. Desktop cards default to three columns, stepping down to two/one in
-narrow content areas, with tags on the image and an edit menu for title/tags.
-These layouts compose shared Arc controls and host-specific adapters, not a second
-design system. The MCP shelf uses the same reference cards, with one/two/three
-columns according to host width. The browser companion contains only its Save page form.
+Desktop shows Browser extensions (Chrome, Edge, Firefox, Safari) and AI plugins
+(ChatGPT, Claude). The AI-hosted panel shows Browser extensions and the Desktop app.
+Safari and Claude are shown as Coming soon. Detected means a confirmed StashDock
+registration, not a guess from cached packages or past handshakes. Both hosts share
+the language, appearance and storage sections; only Desktop has startup, shortcut,
+Floating window and update settings.
+
+## Platform status
+
+The released product is Windows x64 only. The data-path resolver knows macOS and
+Linux conventions, but there is no tested Mac desktop, plugin runtime or renderer.
+See the [Mac migration handoff](MAC_MIGRATION_HANDOFF.zh-CN.md).
+
+## Retired — do not reintroduce
+
+The compact Dock/small panel, the browser shelf (library cards inside the
+extension), the plugin's HTTP adapter to a running Desktop, and the browser drag
+broker were removed. The plugin always uses its own local-library adapter over the
+shared library. Earlier records: [history](history/README.md), for example the
+[browser extension acceptance](history/browser-extensions-20261016.md).
