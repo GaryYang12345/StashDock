@@ -70,7 +70,7 @@ impl Direction {
     fn duration(self) -> Duration {
         match self {
             Direction::Expand => Duration::from_millis(340),
-            Direction::Collapse => Duration::from_millis(270),
+            Direction::Collapse => Duration::from_millis(230),
         }
     }
 }
@@ -141,9 +141,11 @@ pub fn frame(direction: Direction, panel: Rect, folder: Rect, t: f64) -> Frame {
             let e = in_out(t);
             Frame {
                 panel: Rect::lerp(panel, small, e),
-                panel_opacity: opacity(1.0 - ramp(t, 0.5, 1.0)),
-                folder: scaled(0.86 + 0.14 * enter(ramp(t, 0.35, 1.0))),
-                folder_opacity: opacity(enter(ramp(t, 0.55, 1.0))),
+                // Gone before it reaches its smallest size, so the last frames
+                // show only the folder, never a small panel-shaped card.
+                panel_opacity: opacity(1.0 - ramp(t, 0.35, 0.75)),
+                folder: scaled(0.86 + 0.14 * enter(ramp(t, 0.3, 1.0))),
+                folder_opacity: opacity(enter(ramp(t, 0.35, 0.85))),
             }
         }
     }
@@ -910,6 +912,8 @@ mod tests {
         assert_eq!(first.panel, PANEL);
         assert_eq!(first.panel_opacity, 255);
         assert_eq!(first.folder_opacity, 0);
+        // The last quarter shows only the folder, never a small panel card.
+        assert_eq!(frame(Direction::Collapse, PANEL, FOLDER, 0.76).panel_opacity, 0);
         let last = frame(Direction::Collapse, PANEL, FOLDER, 1.0);
         assert_eq!(last.panel, seed(PANEL, FOLDER));
         assert_eq!(last.panel_opacity, 0);
