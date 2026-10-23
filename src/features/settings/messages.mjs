@@ -20,7 +20,7 @@ export const zh = {
   'Browse your library and use references as context in conversations.': '浏览收藏库，并将收藏作为对话的上下文。',
   'Presentation': '演示文稿', 'Markdown': 'Markdown', 'Structured data': '结构化数据',
   'Copy GitHub link': '复制 GitHub 链接', 'GitHub link coming soon.': 'GitHub 链接即将提供。',
-  'Desktop download link coming soon.': '桌面应用下载链接即将提供。', 'Claude support is coming soon.': 'Claude 支持即将推出。',
+  'Desktop download link coming soon.': '桌面应用下载链接即将提供。',
   'Copy the GitHub link below.': '复制下方的 GitHub 链接。',
   'Open {name} and ask it to install StashDock from that link.': '打开 {name}，提供该链接并让它安装 StashDock。',
   'Open the installation page below.': '打开下方的安装页面。', 'Install StashDock, then open {name}.': '安装 StashDock，然后打开 {name}。',

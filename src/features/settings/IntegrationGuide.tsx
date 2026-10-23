@@ -9,7 +9,6 @@ import { IntegrationIcon } from './IntegrationIcon';
 import { applicationWebsite, githubUrl, installationUrl, integrationCatalog, integrationGuides, referencePurpose, type IntegrationId, type IntegrationInfo } from './integrations';
 import { useI18n } from './locale';
 import styles from './IntegrationSections.module.css';
-import settings from './SettingsView.module.css';
 
 export function IntegrationGuide({ id, kind, info, openApp, openLink }: { id: IntegrationId; kind: 'usage' | 'setup'; info: IntegrationInfo | null; openApp?: (id: IntegrationId) => Promise<unknown>; openLink: (url: string) => Promise<unknown> }) {
   const { t } = useI18n();
@@ -34,7 +33,6 @@ export function IntegrationGuide({ id, kind, info, openApp, openLink }: { id: In
   }
   return <div className={styles.guide}>
     <p>{usage ? t(usage.description) : t(ai || id === 'desktop' ? referencePurpose : 'Install the extension to save pages from {name}.', { name: entry.name })}</p>
-    {entry.setupPreview && <p className={settings.description}>{t('Claude support is coming soon.')}</p>}
     <ol className={styles.steps}>{steps.map(step => <li key={step}>{t(step, { name: entry.name })}</li>)}</ol>
     <Alert tone="danger" title={t('Try again.')} open={Boolean(error) || copy.state === 'error'}>{t(error || 'Clipboard access was blocked. Try again from the active window.')}</Alert>
     <div className={styles.footer}>

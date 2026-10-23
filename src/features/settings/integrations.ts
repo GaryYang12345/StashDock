@@ -6,13 +6,13 @@ export const agents: IntegrationId[] = ['codex', 'claude'];
 const browserPurpose = 'Save pages while you browse.';
 export const referencePurpose = 'Browse your library and use references as context in conversations.';
 const agentPurpose = referencePurpose;
-export const integrationCatalog: Record<IntegrationId, { name: string; ready: boolean; purpose: string; setupPreview?: boolean }> = {
+export const integrationCatalog: Record<IntegrationId, { name: string; ready: boolean; purpose: string }> = {
   chrome: { name: 'Chrome', ready: true, purpose: browserPurpose },
   edge: { name: 'Edge', ready: true, purpose: browserPurpose },
   firefox: { name: 'Firefox', ready: true, purpose: browserPurpose },
   safari: { name: 'Safari', ready: false, purpose: browserPurpose },
   codex: { name: 'ChatGPT', ready: true, purpose: agentPurpose },
-  claude: { name: 'Claude', ready: false, purpose: agentPurpose, setupPreview: true },
+  claude: { name: 'Claude', ready: false, purpose: agentPurpose },
   desktop: { name: 'StashDock Desktop', ready: true, purpose: 'Browse and manage your references visually in a standalone desktop app. Bring them into any AI app.' },
 };
 export function applicationWebsite(id: IntegrationId): string | null {

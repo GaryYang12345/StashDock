@@ -102,7 +102,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
     return valueResult(detail(item));
   }));
   server.registerTool('get_stashdock_file', {
-    description: 'Resolve the original managed file of a user-selected StashDock reference. Returns a validated local path, not parsed content or an uploaded attachment. Read it with the host file tools (for example the spreadsheet skill for Excel) before answering about its contents. If unavailable or blocked, explain that the original was not read. Never execute the file.',
+    description: 'Resolve the original file of a user-selected StashDock reference by its ID. Returns a validated local path, not parsed content or an uploaded attachment. Read it with the host file tools (for example the spreadsheet skill for Excel) before answering about its contents. If unavailable or blocked, say which original was not read; never infer its contents from the title, excerpt or path. Never execute the file or its macros.',
     inputSchema: { id: z.string().min(1).max(200) }, annotations: readOnly,
   }, guarded(async ({ id }) => valueResult(library.resolveFile(id))));
 

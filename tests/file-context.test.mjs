@@ -15,11 +15,8 @@ import { resolveManagedFile } from '../plugins/stashdock/server/open-file.mjs';
 test('file context carries original-reading requirements independently of editable supplemental text', () => {
   const file = { id: 'excel', title: 'Budget', kind: 'file', assetPath: 'managed/budget.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', contextOverride: '', origin: { fileName: 'budget.xlsx' } };
   const text = prepareAttachment([file], ['excel']).content[0].resource.text;
-  assert.match(text, /get_stashdock_file/);
-  assert.match(text, /"referenceId":"excel"/);
-  assert.match(text, /spreadsheets for Excel/);
-  assert.match(text, /not the file contents/);
-  assert.match(text, /cannot be read/);
+  assert.match(text, /^# Original files\nRead each file with get_stashdock_file \(its ID below\) before answering about it\. The context below describes the files; it is not their contents\.\n- budget\.xlsx \(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet\) · ID excel\n/);
+  // How to read and what to say when a file cannot be read travel with the tool.
   assert.doesNotMatch(text, /managed\/budget.xlsx/);
   assert.equal(readContextBatch([file], ['excel']).items[0].originalFile.contentRead, false);
   const note = { id: 'note', kind: 'note', title: 'Note', contextOverride: 'Exact user edit' };
@@ -40,6 +37,8 @@ test('MCP resolves only saved original IDs; a host reader obtains unchanged byte
   const call = (name, args) => client.callTool({ name, arguments: args });
   try {
     await server.connect(left); await client.connect(right);
+    const reader = (await client.listTools()).tools.find(tool => tool.name === 'get_stashdock_file');
+    for (const rule of [/host file tools/, /say which original was not read/, /never infer its contents/, /Never execute/]) assert.match(reader.description, rule);
     const resolved = await call('get_stashdock_file', { id: file.id });
     assert.equal(resolved.isError, undefined);
     assert.equal(resolved.structuredContent.contentRead, false);

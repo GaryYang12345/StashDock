@@ -84,12 +84,14 @@ export function prepareAttachment(items, ids) {
   const files = selected.filter(item => item.assetPath || item.hasFile);
   // Delivery instructions are separate from user-editable reference content.
   // Even an intentionally empty final edit must not erase original-file access.
+  // One short line per original; how to read it (and what to say when it cannot
+  // be read) lives in get_stashdock_file and the skill. The reference ID, not a
+  // local path, so the read resolves the current original and no folder names
+  // enter the conversation.
   const text = (files.length ? [
-    '# StashDock original files',
-    'Original files are available through the reading tool below, not attached by this context message. File descriptions are supplemental, not the file contents. Note text, when included, is a saved text projection.',
-    'Before answering about a file, call get_stashdock_file with its reference ID, then read the returned path using the host\'s file tools and the appropriate skill (for example spreadsheets for Excel). Do not execute files or macros.',
-    'If a file cannot be read, say which original was not read and why. Never infer its contents from the title, excerpt or path.',
-    ...files.map(item => JSON.stringify({ referenceId: item.id, title: item.title, filename: referenceFileName(item), mimeType: item.mimeType })),
+    '# Original files',
+    'Read each file with get_stashdock_file (its ID below) before answering about it. The context below describes the files; it is not their contents.',
+    ...files.map(item => `- ${referenceFileName(item)}${item.mimeType ? ` (${item.mimeType})` : ''} · ID ${item.id}`),
     '',
   ].join('\n') + '\n' : '') + buildContext(selected);
   if (Buffer.byteLength(text, 'utf8') > 2_000_000) throw new Error('These references are too large for one attachment. Add fewer references at a time.');

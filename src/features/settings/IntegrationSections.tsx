@@ -41,7 +41,7 @@ export function IntegrationSections({ host, load, openLink, openApp, disabled }:
         const entry = integrationCatalog[id], state = info?.items.find(item => item.id === id);
         return <div className={styles.row} key={id} data-integration-row={id}>
           <IntegrationIcon id={id} /><div className={styles.identity}><span className={settings.label}>{entry.name}</span></div>
-          <div className={styles.actions}>{entry.ready && state?.detected && <span className={styles.status} data-detected>{t('Detected')}</span>}{!entry.ready && <span className={styles.status}>{t('Coming soon')}</span>}{(entry.ready || entry.setupPreview) &&
+          <div className={styles.actions}>{entry.ready && state?.detected && <span className={styles.status} data-detected>{t('Detected')}</span>}{!entry.ready && <span className={styles.status}>{t('Coming soon')}</span>}{entry.ready &&
             <Button variant="secondary" size="sm" loading={loading} disabled={disabled} aria-haspopup="dialog" aria-label={t(entry.ready && state?.detected ? 'View guide for {name}' : 'Set up {name}', { name: entry.name })} onClick={event => { returnFocus.current = event.currentTarget; setGuide({ id, kind: entry.ready && state?.detected ? 'usage' : 'setup' }); }}>{t(entry.ready && state?.detected ? 'View guide' : 'Set up')}</Button>
           }</div>
         </div>;

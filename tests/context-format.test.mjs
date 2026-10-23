@@ -51,7 +51,7 @@ test('file delivery instructions survive empty overrides and never leak managed 
   const file = { ...item, kind: 'file', hasFile: true, assetPath: 'C:/private/assets/report.xlsx', origin: { fileName: 'C:\\private\\report.xlsx' }, contextOverride: '' };
   const result = prepareAttachment([file], ['a']).content[0].resource.text;
   assert.match(result, /get_stashdock_file/);
-  assert.match(result, /"filename":"report.xlsx"/);
+  assert.match(result, /^- report\.xlsx · ID a$/m);
   assert.doesNotMatch(result, /C:[/\\]|private/);
   assert.equal(buildContext([file], { originalFilesDelivered: true }), '');
 });
