@@ -26,7 +26,7 @@ foreach ($taskBinary in @('node.exe','stashdock-preview.exe','stashdock-storage.
 }
 Copy-Item -LiteralPath (Join-Path $taskPlugin '.mcp.json') -Destination (Join-Path $taskTarget '.mcp.json')
 [void][IO.Directory]::CreateDirectory((Join-Path $taskTarget 'server'))
-foreach ($taskSql in @('schema.sql','search-index.sql')) {
+foreach ($taskSql in @('schema.sql','search-index.sql','preview-version.sql')) {
   Copy-Item -LiteralPath (Join-Path $taskPlugin ('server\'+$taskSql)) -Destination (Join-Path $taskTarget ('server\'+$taskSql))
 }
 [void][IO.Directory]::CreateDirectory((Join-Path $taskStage '.agents\plugins'))
