@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS stash_items (
   url TEXT, excerpt TEXT NOT NULL, tags_json TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL, favorite INTEGER NOT NULL DEFAULT 0, preview TEXT,
   asset_path TEXT, original_path TEXT, mime_type TEXT, size_bytes INTEGER,
-  content TEXT, origin_json TEXT, context_override TEXT, updated_at TEXT NOT NULL
+  content TEXT, origin_json TEXT, context_override TEXT, updated_at TEXT NOT NULL,
+  preview_version INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_stash_items_created_at ON stash_items(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stash_items_kind ON stash_items(kind);

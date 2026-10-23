@@ -146,6 +146,13 @@ fn initialize_schema(connection: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    if !columns.iter().any(|column| column == "preview_version") {
+        connection.execute(
+            "ALTER TABLE stash_items ADD COLUMN preview_version INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    connection.execute_batch(include_str!("../../plugins/stashdock/server/preview-version.sql"))?;
 
     // One transaction: an interrupted upgrade must not leave the index half-built.
     let transaction = connection.unchecked_transaction()?;
@@ -294,9 +301,15 @@ const ITEM_COLUMNS: &str = "id, title, kind, source, url, excerpt, tags_json,
     created_at, favorite, preview, asset_path, original_path,
     mime_type, size_bytes, content, origin_json, context_override";
 // The shelf shows titles, covers and tags. Bodies and edited context are read
-// by ID when the user opens, copies or edits a reference.
+// by ID when the user opens, copies or edits a reference. Stored screenshots
+// (often 100 KB or more) are not read either: only a version marker, which
+// preview_protocol turns into the cover's URL.
 const SHELF_COLUMNS: &str = "id, title, kind, source, url, excerpt, tags_json,
-    created_at, favorite, preview, asset_path, original_path,
+    created_at, favorite,
+    CASE WHEN octet_length(preview) > 4096
+      THEN 'stashdock-cover:' || preview_version || '-' || octet_length(preview)
+      ELSE preview END,
+    asset_path, original_path,
     mime_type, size_bytes, NULL, origin_json, NULL";
 
 fn read_all(connection: &Connection, columns: &str) -> Result<Vec<StashItem>, String> {

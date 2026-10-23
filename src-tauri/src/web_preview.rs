@@ -76,6 +76,7 @@ fn timestamp() -> i64 {
 struct ExternalChanges {
     version: Option<i64>,
     expired: Option<i64>,
+    digest: Option<String>,
 }
 impl ExternalChanges {
     fn changed(&mut self, db: &Connection) -> rusqlite::Result<bool> {
@@ -85,11 +86,39 @@ impl ExternalChanges {
             [timestamp()],
             |r| r.get::<_, Option<i64>>(0),
         )?;
-        let changed = self.version != Some(version) || self.expired != expired;
+        let mut changed = self.expired != expired;
+        if self.version != Some(version) {
+            // Any commit moves data_version, including another provider's
+            // lease renewals (about every 30 s while idle). Only references or
+            // job progress the shelf shows count as a change.
+            let digest = content_digest(db)?;
+            changed |= self.digest.as_ref() != Some(&digest);
+            self.digest = Some(digest);
+        }
         self.version = Some(version);
         self.expired = expired;
         Ok(changed)
     }
+}
+
+/// What the shelf can show: references (count, last edit) and the progress of
+/// cover and text jobs (published covers finish their job).
+fn content_digest(db: &Connection) -> rusqlite::Result<String> {
+    let items = db.query_row(
+        "SELECT count(*) || ':' || COALESCE(max(updated_at),'') FROM stash_items",
+        [],
+        |r| r.get::<_, String>(0),
+    )?;
+    let jobs = |table: &str| {
+        db.query_row(
+            &format!("SELECT COALESCE(group_concat(status || '=' || n, ','), '') FROM (SELECT status, count(*) AS n FROM {table} GROUP BY status ORDER BY status)"),
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .map(Option::unwrap_or_default)
+    };
+    Ok(format!("{items}|{}|{}", jobs("web_preview_jobs")?, jobs("web_content_jobs").unwrap_or_default()))
 }
 // Read-time metadata only. Never persist transient UI state into user records.
 pub(crate) fn annotate(
@@ -444,9 +473,7 @@ pub fn start(app: AppHandle, database_path: PathBuf) {
         database_path.clone(),
         owner.clone(),
         stop.clone(),
-        move || {
-            let _ = content_app.emit("reference-preview-updated", ());
-        },
+        move |id: &str| changed(&content_app, id),
     );
     for lane in 0..2 {
         let database_path = database_path.clone();
@@ -705,7 +732,8 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         let db = Connection::open(root.join("test.sqlite3")).unwrap();
         db.execute_batch(
-            "PRAGMA journal_mode=WAL; CREATE TABLE web_preview_jobs(status TEXT,retry_at INTEGER)",
+            "PRAGMA journal_mode=WAL; CREATE TABLE web_preview_jobs(status TEXT,retry_at INTEGER);
+             CREATE TABLE stash_items(id TEXT,updated_at TEXT); CREATE TABLE app_meta(key TEXT PRIMARY KEY,value TEXT)",
         )
         .unwrap();
         let other = Connection::open(root.join("test.sqlite3")).unwrap();
@@ -723,6 +751,15 @@ mod tests {
             .unwrap();
         assert!(observer.changed(&db).unwrap());
         assert!(!observer.changed(&db).unwrap());
+        // Another provider's lease renewal is a commit, but nothing to show.
+        other
+            .execute("INSERT OR REPLACE INTO app_meta VALUES('web_preview_worker_until','1')", [])
+            .unwrap();
+        assert!(!observer.changed(&db).unwrap());
+        other
+            .execute("INSERT INTO stash_items VALUES('a','2026-10-23')", [])
+            .unwrap();
+        assert!(observer.changed(&db).unwrap());
         other
             .execute("UPDATE web_preview_jobs SET retry_at=?1", [timestamp() - 1])
             .unwrap();

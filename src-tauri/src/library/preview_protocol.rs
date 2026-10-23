@@ -28,9 +28,16 @@ fn url(id: &str, version: &str) -> String {
     }
 }
 
+/// The shelf's stand-in for a stored image it did not read (SHELF_COLUMNS).
+const COVER_MARKER: &str = "stashdock-cover:";
+
 /// Replace inline image data with a protocol URL before items cross IPC.
 pub(crate) fn for_webview(mut items: Vec<StashItem>) -> Vec<StashItem> {
     for item in &mut items {
+        if let Some(version) = item.preview.as_deref().and_then(|value| value.strip_prefix(COVER_MARKER)) {
+            item.preview = Some(url(&item.id, &format!("c{version}")));
+            continue;
+        }
         if let Some(preview) = item
             .preview
             .as_deref()
@@ -109,6 +116,32 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_shelf_versions_large_covers_without_reading_them() {
+        let root = std::env::temp_dir().join(format!("stashdock-shelf-cover-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let connection = Connection::open(root.join("stashdock.sqlite3")).unwrap();
+        initialize_schema(&connection).unwrap();
+        let image = |byte: u8| format!("data:image/jpeg;base64,{}", STANDARD.encode(vec![byte; 9000]));
+        connection
+            .execute(
+                "INSERT INTO stash_items(id,title,kind,source,excerpt,tags_json,created_at,preview,updated_at) VALUES('a','t','web','s','','[]','now',?1,'now')",
+                [&image(1)],
+            )
+            .unwrap();
+        let shelf = |c: &Connection| for_webview(read_shelf(c).unwrap())[0].preview.clone().unwrap();
+        let first = shelf(&connection);
+        assert!(first.contains("/a?v=c0-"), "{first}");
+        // A new cover of exactly the same size still gets a new URL.
+        connection.execute("UPDATE stash_items SET preview=?1", [&image(2)]).unwrap();
+        let second = shelf(&connection);
+        assert!(second.contains("/a?v=c1-"), "{second}");
+        // Unrelated edits keep the cover's URL (and the WebView's cached image).
+        connection.execute("UPDATE stash_items SET title='renamed'", []).unwrap();
+        assert_eq!(shelf(&connection), second);
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn covers_cross_ipc_as_versioned_urls_and_are_served_from_the_library() {

@@ -148,7 +148,7 @@ pub fn start(
     path: PathBuf,
     owner: String,
     stop: Arc<AtomicBool>,
-    changed: impl Fn() + Send + 'static,
+    changed: impl Fn(&str) + Send + 'static,
 ) {
     thread::spawn(move || {
         let Ok(mut db) = Connection::open(path) else {
@@ -194,7 +194,8 @@ pub fn start(
                         )
                         .unwrap_or(false)
                     {
-                        changed();
+                        // Name the reference, so the shelf re-reads just it.
+                        changed(&job.id);
                     }
                 }
                 _ => {

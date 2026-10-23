@@ -175,7 +175,7 @@ pub fn open_reference_file(id: String, app: AppHandle, state: &LibraryState) -> 
     let path = openable(&resolved.open)?;
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
-        .map_err(|_| "The file could not be opened. Check its default app is installed.".into())
+        .map_err(|_| "This file could not be opened. Check that its app is installed and the file still exists.".into())
 }
 
 #[cfg(test)]

@@ -34,13 +34,18 @@ test('SQLite core works with no desktop, preserves concurrent changes, and updat
     assert.equal(row.url, 'https://example.test/page');
     assert.equal(a.importItems([{ ...fixture, title: 'Do not overwrite', tags: ['Bad'], url: row.url }]).skipped, 1);
     assert.equal((await a.read())[0].title, fixture.title); assert.equal((await a.read())[0].favorite, true);
-    a.changeTag('research', 'Ideas'); assert.deepEqual((await b.read())[0].tags, ['Ideas']);
     const db = new DatabaseSync(join(dataDir, 'stashdock.sqlite3'));
+    // Desktop's pinned tags follow a rename or removal made from the AI plugin.
+    db.prepare("INSERT OR REPLACE INTO app_meta(key,value) VALUES ('desktop_pinned_tags_v1', ?)").run(JSON.stringify(['Research', 'Other']));
+    a.changeTag('research', 'Ideas'); assert.deepEqual((await b.read())[0].tags, ['Ideas']);
+    assert.deepEqual(JSON.parse(db.prepare("SELECT value FROM app_meta WHERE key='desktop_pinned_tags_v1'").get().value), ['Ideas', 'Other']);
     assert.equal(db.prepare("SELECT count(*) AS n FROM stash_fts WHERE stash_fts MATCH 'Ideas'").get().n, 1);
-    assert.equal(db.prepare("SELECT value FROM app_meta WHERE key='library_initialized_v1'").get().value, '1'); db.close();
+    assert.equal(db.prepare("SELECT value FROM app_meta WHERE key='library_initialized_v1'").get().value, '1');
     a.changeTag('Ideas', null); assert.deepEqual((await b.read())[0].tags, []);
+    assert.deepEqual(JSON.parse(db.prepare("SELECT value FROM app_meta WHERE key='desktop_pinned_tags_v1'").get().value), ['Other']);
     assert.throws(() => a.setTags([item.id, 'missing'], ['Fail']), /no longer/); assert.deepEqual((await b.read())[0].tags, []);
     a.remove(item.id); assert.equal((await b.read()).length, 0);
+    db.close();
   } finally { b.close(); a.close(); }
 });
 test('bulk deletion is atomic, idempotent and removes the deleted references\' library copies', async t => {

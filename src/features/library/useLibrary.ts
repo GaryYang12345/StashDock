@@ -35,6 +35,8 @@ function connect() {
   if (consumers++ === 0) {
     let cancelled = false;
     const stops: UnlistenFn[] = [];
+    // A hidden panel (folder mode, minimized) does not reload for external
+    // changes; it reloads once when it is shown or focused again.
     const refresh = () => { if (!document.hidden) void libraryStore.invalidate(); };
     if (isTauri()) {
       // Background cover/icon work names the references it changed. Coalesce a
@@ -50,7 +52,7 @@ function connect() {
           if (cancelled) return;
           const ids = (event.payload as { ids?: unknown } | null)?.ids;
           if (name === "reference-preview-updated" && Array.isArray(ids) && ids.every(id => typeof id === "string")) patch(ids);
-          else void libraryStore.invalidate();
+          else refresh();
           if (name === "extension-imported") libraryStore.announceImport(event.payload as ImportSummary);
         }).then(stop => {
           if (cancelled) stop(); else stops.push(stop);

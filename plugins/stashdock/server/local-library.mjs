@@ -21,6 +21,9 @@ import { createShelfReader } from './shelf-read.mjs';
 import { tagRevision } from './library.mjs';
 import { prepareSearchIndex, searchReferenceIds } from './search-index.mjs';
 
+/** Desktop's pinned tag list (library.rs PINNED_TAGS_KEY). */
+const PINNED_TAGS_KEY = 'desktop_pinned_tags_v1';
+
 export function dataDirectory(env = process.env, platform = process.platform, home = homedir()) {
   if (env.STASHDOCK_DATA_DIR) return resolve(env.STASHDOCK_DATA_DIR);
   const base = platform === 'win32' ? env.APPDATA || join(home, 'AppData', 'Roaming')
@@ -80,6 +83,8 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   db.exec(readFileSync(new URL('../server/schema.sql', import.meta.url), 'utf8'));
   const columns = new Set(db.prepare('PRAGMA table_info(stash_items)').all().map(row => row.name));
   for (const column of ['content', 'origin_json', 'context_override']) if (!columns.has(column)) db.exec(`ALTER TABLE stash_items ADD COLUMN ${column} TEXT`);
+  if (!columns.has('preview_version')) db.exec('ALTER TABLE stash_items ADD COLUMN preview_version INTEGER NOT NULL DEFAULT 0');
+  db.exec(readFileSync(new URL('../server/preview-version.sql', import.meta.url), 'utf8'));
   function transaction(callback) {
     db.exec('BEGIN IMMEDIATE');
     try { const result = callback(); db.exec('COMMIT'); return result; }
@@ -292,7 +297,7 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   };
   const editMetadata = (id, title, values, cover) => transaction(() => {
     const current = get(id);
-    if (typeof title !== 'string' || !title.trim() || title.trim().length > 500) throw new Error('Enter a title up to 500 characters.');
+    if (typeof title !== 'string' || !title.trim() || title.trim().length > 500) throw new Error('Use a title between 1 and 500 characters.');
     const value = tags(values);
     if (current.origin?.pendingTitle !== undefined) {
       delete current.origin.pendingTitle;
@@ -322,18 +327,29 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
   };
   const editContext = (id, context) => transaction(() => {
     get(id);
-    if (typeof context !== 'string' || context.length > 200_000) throw new Error('Context must be at most 200,000 characters.');
+    if (typeof context !== 'string' || context.length > 200_000) throw new Error('Use at most 200,000 characters.');
     db.prepare('UPDATE stash_items SET context_override=?,updated_at=? WHERE id=?').run(context, new Date().toISOString(), id);
     return get(id);
   });
   const changeTag = (name, replacement) => transaction(() => {
     const normalized = tags([name])[0], next = replacement === null ? null : tags([replacement])[0];
-    if (!normalized || (replacement !== null && !next)) throw new Error('Enter a nonempty tag name.');
+    if (!normalized || (replacement !== null && !next)) throw new Error('Enter a tag name.');
     for (const row of db.prepare('SELECT id,tags_json FROM stash_items').all()) {
       const before = JSON.parse(row.tags_json);
       if (!before.some(tag => tag.toLowerCase() === normalized.toLowerCase())) continue;
       const after = tags(before.flatMap(tag => tag.toLowerCase() === normalized.toLowerCase() ? next ? [next] : [] : [tag]));
       db.prepare('UPDATE stash_items SET tags_json=?,updated_at=? WHERE id=?').run(JSON.stringify(after), new Date().toISOString(), row.id);
+    }
+    // Desktop's pinned tags follow the rename/removal in the same transaction
+    // (library.rs change_tag), so they never point at a tag that is gone.
+    const pinned = db.prepare('SELECT value FROM app_meta WHERE key=?').get(PINNED_TAGS_KEY)?.value;
+    if (pinned) {
+      let list = [];
+      try { list = JSON.parse(pinned); } catch { list = []; }
+      const seen = new Set();
+      const updated = (Array.isArray(list) ? list : []).flatMap(tag => typeof tag !== 'string' ? [] : tag.toLowerCase() === normalized.toLowerCase() ? next ? [next] : [] : [tag])
+        .filter(tag => !seen.has(tag.toLowerCase()) && seen.add(tag.toLowerCase()));
+      db.prepare('INSERT OR REPLACE INTO app_meta(key,value) VALUES (?,?)').run(PINNED_TAGS_KEY, JSON.stringify(updated));
     }
     return { changed: true };
   });

@@ -24,7 +24,7 @@ export async function openFilePath(path, { launch = spawn, platform = process.pl
   const [command, args] = platform === 'win32' ? ['explorer.exe', [path]] : platform === 'darwin' ? ['open', [path]] : ['xdg-open', [path]];
   await new Promise((resolve, reject) => {
     const child = launch(command, args, { shell: false, windowsHide: true, detached: true, stdio: 'ignore' });
-    child.once('error', () => reject(Error('The file could not be opened. Check its default app is installed.')));
+    child.once('error', () => reject(Error('This file could not be opened. Check that its app is installed and the file still exists.')));
     child.once('spawn', () => { child.unref(); resolve(); });
   });
   return { opened: true };

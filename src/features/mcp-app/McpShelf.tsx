@@ -47,7 +47,7 @@ function message(error: unknown) { return error instanceof Error ? error.message
 function readRows(raw: unknown): StashItem[] {
   if (!Array.isArray(raw) || raw.some(item => !item || typeof item !== 'object' || typeof item.id !== 'string' ||
     typeof item.title !== 'string' || !kinds.includes(item.kind) || typeof item.source !== 'string' || !Array.isArray(item.tags) || item.tags.some((tag: unknown) => typeof tag !== 'string'))) {
-    throw new Error('The shelf data is invalid. Refresh the shelf and retry.');
+    throw new Error('The library data is invalid. Refresh and retry.');
   }
   return raw;
 }
@@ -63,7 +63,9 @@ export function McpShelf() {
   const importServices = useMemo(() => mcpLinkImport(() => appRef.current), []);
   const sequence = useRef(0);
   const readFlights = useRef(0);
-  const faviconPolling = useRef({ key: '', until: 0 });
+  // Icons still missing after one 90 s wait are not waited for again: many
+  // sites have none, and a new search must not restart the polling for them.
+  const faviconPolling = useRef({ key: '', until: 0, given: new Set<string>() });
   const flight = useRef(false);
   const alive = useRef(true);
   const [attempt, setAttempt] = useState(0);
@@ -91,6 +93,13 @@ export function McpShelf() {
   const [tagOperation, setTagOperation] = useState<TagOperation | null>(null);
   const tagFocus = useRef<HTMLElement | null>(null);
   const [deleting, setDeleting] = useState<ReferenceDeletion | null>(null);
+  // Short confirmations, as on desktop (Reference deleted., open failures).
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(''), 3200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const [editing, setEditing] = useState<StashItem | null>(null);
   const [contentEditing, setContentEditing] = useState<StashItem | null>(null);
   const editorSequence = useRef(0);
@@ -192,16 +201,18 @@ export function McpShelf() {
     setSelectedAll(false);
     setHasMore(false);
     const app = appRef.current;
-    const timer = setTimeout(() => { void load(app, query, filter); }, 240);
+    const timer = setTimeout(() => { void load(app, query, filter); }, 140);
     return () => { clearTimeout(timer); ++sequence.current; };
   }, [connected, query, filter, activeTag]);
   useEffect(() => {
-    if (!connected || settingsOpen || mutationBusy || deleting || editing || contentEditing || tagOperation || !items.some(item => item.contentStatus === 'queued' || item.contentStatus === 'working' || item.previewStatus === 'queued' || item.previewStatus === 'working' || (['web', 'repo'].includes(item.kind) && !item.origin?.faviconUrl?.startsWith('data:image/')))) return;
+    if (!connected || settingsOpen || mutationBusy || deleting || editing || contentEditing || tagOperation || !items.some(item => item.contentStatus === 'queued' || item.contentStatus === 'working' || item.previewStatus === 'queued' || item.previewStatus === 'working' || (['web', 'repo'].includes(item.kind) && !item.origin?.faviconUrl?.startsWith('data:image/') && !faviconPolling.current.given.has(item.id)))) return;
     let disposed = false, running = false;
-    const missing = items.filter(item => ['web', 'repo'].includes(item.kind) && !item.origin?.faviconUrl?.startsWith('data:image/')).map(item => item.id).join('|');
-    if (faviconPolling.current.key !== missing) faviconPolling.current = { key: missing, until: Date.now() + 90_000 };
+    const polling = faviconPolling.current;
+    const missing = items.filter(item => ['web', 'repo'].includes(item.kind) && !item.origin?.faviconUrl?.startsWith('data:image/') && !polling.given.has(item.id)).map(item => item.id).join('|');
+    if (polling.key !== missing) { polling.key = missing; polling.until = Date.now() + 90_000; }
     const timer = setInterval(async () => {
-      if (Date.now() > faviconPolling.current.until && !items.some(item => item.contentStatus === 'queued' || item.contentStatus === 'working' || item.previewStatus === 'queued' || item.previewStatus === 'working')) { clearInterval(timer); return; }
+      if (Date.now() > polling.until) for (const id of missing.split('|')) if (id) polling.given.add(id);
+      if (Date.now() > polling.until && !items.some(item => item.contentStatus === 'queued' || item.contentStatus === 'working' || item.previewStatus === 'queued' || item.previewStatus === 'working')) { clearInterval(timer); return; }
       const app = appRef.current, request = sequence.current;
       if (disposed || running || readFlights.current || document.hidden || importDialog.current?.isOpen() || !app) return;
       running = true;
@@ -360,6 +371,7 @@ export function McpShelf() {
           {readError && <Alert tone="danger" className={styles.notice} title={t('References could not be refreshed')}><span className={styles.retry}><span>{t(readError)}</span><Button variant="secondary" onClick={refresh} loading={refreshing}>{t('Retry connection')}</Button></span></Alert>}
           {addError && <Alert tone="danger" className={styles.notice} title={t('Could not confirm the reference was added')} onDismiss={() => setAddError('')}>{t(addError)} {t('Check the input box before trying again.')}</Alert>}
           {managementError && <Alert tone="danger" className={styles.notice} title={t('The library change could not be saved')} onDismiss={() => setManagementError('')}>{t(managementError)}</Alert>}
+          <Alert tone="info" className={styles.notice} title={t(notice)} open={Boolean(notice)} onDismiss={() => setNotice('')} />
           {!ready ? <LoadingReferences compact={view === 'list'} className={view === 'grid' ? styles.list : undefined} /> : items.length ? <div className={view === 'grid' ? styles.list : listStyles.list} aria-busy={refreshing}>
             {items.map(item => <ReferenceCardView key={item.id} item={item} view={view} className={styles.card}
               cardRef={node => { if (node) cards.current.set(item.id, node); else cards.current.delete(item.id); }}
@@ -369,7 +381,12 @@ export function McpShelf() {
               onDelete={reference => { setDeleting({ ids: [reference.id], title: reference.title }); setMutationError(''); }}
               onEdit={openEditor} onEditContent={reference => void openContent(reference)}
               onOpen={reference => {
-                void (async () => { if (referenceOpenTarget(reference) === 'link') await appRef.current?.openLink({ url: reference.url! }); else await mutate('open_stashdock_file', { id: reference.id }); })().catch(reason => setManagementError(message(reason)));
+                void (async () => {
+                  if (referenceOpenTarget(reference) === 'link') {
+                    const result = await appRef.current?.openLink({ url: reference.url! });
+                    if (!result || result.isError) setNotice('This page could not be opened in your default browser.');
+                  } else await mutate('open_stashdock_file', { id: reference.id });
+                })().catch(() => setNotice(referenceOpenTarget(reference) === 'link' ? 'This page could not be opened in your default browser.' : 'This file could not be opened. Check that its app is installed and the file still exists.'));
               }}
               action={<Button variant="primary" size="sm" className={`${action.button} ${card.copyAction} ${acknowledgedIds.has(item.id) && !pendingIds.has(item.id) ? action.success : ''}`} loading={pendingIds.has(item.id)} disabled={!draftSupported} aria-disabled={pending.length > 0 || undefined} data-add-state={pendingIds.has(item.id) ? 'pending' : acknowledgedIds.has(item.id) ? 'success' : 'ready'} onClick={() => void add([item.id])} aria-label={t('Add {title} to chat', { title: item.title })} aria-description={acknowledgedIds.has(item.id) ? t('Added') : undefined}>
                 {acknowledgedIds.has(item.id) ? <Check size={16} strokeWidth={1.75} aria-hidden="true" /> : <Plus size={16} strokeWidth={1.75} aria-hidden="true" />}<CardActionLabel compact={t(acknowledgedIds.has(item.id) ? 'Added' : 'Add')}>{t(acknowledgedIds.has(item.id) ? 'Added' : 'Add to chat')}</CardActionLabel>
@@ -403,7 +420,8 @@ export function McpShelf() {
         // Browser collections can exceed one tool request. Keep batches bounded.
         for (let offset = 0; offset < items.length; offset += 200) await mutate('import_stashdock_references', { items: items.slice(offset, offset + 200) });
       }
-      refresh();
+      // As on desktop, new references are shown in All: a filtered view could hide them.
+      if (filter !== 'all' || activeTag) { setFilter('all'); setActiveTag(''); } else refresh();
     }} />
     <TagEditor operation={tagOperation} returnFocus={tagFocus} onClose={() => setTagOperation(null)} onSave={async (name, replacement) => {
       if (replacement === null) { await mutate('delete_stashdock_tag', { name }); if (activeTag === name) setActiveTag(''); }
@@ -417,8 +435,9 @@ export function McpShelf() {
         const removed = new Set(deleting.ids);
         setSelected(previous => previous.filter(id => !removed.has(id))); setSelectedAll(false);
         setItems(previous => previous.filter(item => !removed.has(item.id)));
+        setNotice(deleting.title === undefined ? 'References deleted.' : 'Reference deleted.');
         setDeleting(null); refresh();
-      } catch (error) { setMutationError(message(error)); }
+      } catch { setMutationError('References could not be deleted. Try again.'); }
     }} />
   </main>;
 }
