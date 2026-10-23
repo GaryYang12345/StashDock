@@ -5,7 +5,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { canonicalReferenceUrl } from '../src/lib/reference-url.mjs';
 
-const compiled = await build({ stdin: { contents: "export {canonicalizeUrl} from './src/lib/bookmarks'; export {canonicalUrl as mcpCanonical} from './plugins/stashdock/server/local-library.mjs'; export {filterItems,buildSearchIndex,uniqueImports} from './src/features/library/selectors';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, platform: 'node', format: 'esm' });
+const compiled = await build({ stdin: { contents: "export {canonicalizeUrl} from './src/lib/canonical-url'; export {canonicalUrl as mcpCanonical} from './plugins/stashdock/server/local-library.mjs'; export {filterItems,buildSearchIndex,uniqueImports} from './src/features/library/selectors';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, platform: 'node', format: 'esm' });
 const { canonicalizeUrl, mcpCanonical, filterItems, buildSearchIndex, uniqueImports } = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const item = { id: 'saved', title: 'Saved', kind: 'web', source: 'Example', url: 'https://example.org/post', tags: ['Design'], createdAt: new Date().toISOString() };
 

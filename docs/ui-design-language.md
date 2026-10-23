@@ -1,5 +1,7 @@
 # StashDock 基础设计语言：Arc baseline
 
+> 注意：文中的“小 Dock / Quick Dock / 小面板”已退役。当前桌面只有大面板和悬浮文件夹（含文件夹快速搜索），以 AGENTS.md 为准；本文其余 Arc 基础规范仍有效。
+
 状态：2026-10-08 第三轮已覆盖应用大面板、小 Dock、Codex 内嵌 Dock、导入表单和浏览器扩展。motion/react、Lucide、本地字体和官方 foundation 为统一基础。扩展保持纯 HTML，以共享 assets 适配，不引入第二套 React 应用。验收范围和明确例外见 [arc-surfaces-verification.md](arc-surfaces-verification.md)。Arc 是控件和语义规范的基础，不是把整个产品变成其演示站。
 
 ## 收藏卡片规范（2026-10-09）

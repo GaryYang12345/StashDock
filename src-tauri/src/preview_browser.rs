@@ -313,7 +313,7 @@ impl PublicProxy {
         let task = thread::spawn(move || {
             while !done.load(Ordering::Relaxed) && Instant::now() < deadline {
                 if let Ok((stream, _)) = listener.accept() {
-                    // VPN/system proxy can change while a sign-in window is open.
+                    // VPN/system proxy can change while a render is in progress.
                     let system_upstream = crate::public_web::system_proxy();
                     let Ok(work) = task_work.lock().map(|work| work.clone()) else {
                         break;

@@ -7,7 +7,7 @@ const read = path => readFile(new URL('../' + path, import.meta.url), 'utf8');
 test('duplicate bookmark profiles preserve a later cached icon and one selectable URL', async () => {
   const source = ts.transpileModule(await read('src/lib/linkImport.ts'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText
     .replace(/import .*from '@tauri-apps\/api\/core';/, 'const invoke = () => {}; const isTauri = () => false;')
-    .replace(/import .*from '.\/bookmarks';/, 'const canonicalizeUrl = value => new URL(value).href;')
+    .replace(/import .*from '.\/canonical-url';/, 'const canonicalizeUrl = value => new URL(value).href;')
     .replace(/import .*from '@tauri-apps\/plugin-opener';/, 'const openUrl = async () => {};')
     .replace(/import .*from '.\/captureSites';/, 'const captureSites = [];')
     .replace(/import .*from '.\/referenceCover';/, 'const prepareReferenceCover = async () => {};');

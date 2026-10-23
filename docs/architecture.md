@@ -142,7 +142,7 @@ clipboard write, synthetic File path, host IPC, local-file access or automatic
 send. DownloadURL is Chromium-specific and file-target compatibility is not a
 guarantee; browser regression success does not establish Codex composer receipt.
 
-Desktop Dock and Library instead use `drag_reference_file` via their own Tauri
+The desktop library and its folder search instead use `drag_reference_file` via their own Tauri
 window. The command validates the main source window, selected IDs and bounded PNG,
 reads canonical persisted context, writes a generated .md file and runs Shell
 CF_HDROP/alpha-preview OLE on the app UI thread. The frontend cancels its HTML drag

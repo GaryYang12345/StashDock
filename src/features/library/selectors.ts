@@ -1,4 +1,4 @@
-import { canonicalizeUrl } from "../../lib/bookmarks";
+import { canonicalizeUrl } from "../../lib/canonical-url";
 import { matchesSearchTerms, referenceSearchText, searchTerms } from "../../lib/reference-search.mjs";
 import type { CollectionFilter, StashItem } from "../../types";
 

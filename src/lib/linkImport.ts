@@ -1,6 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { StashItem } from '../types';
-import { canonicalizeUrl } from './bookmarks';
+import { canonicalizeUrl } from './canonical-url';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { captureSites, customCapturePlatform, type CapturePlatform } from './captureSites';
 import { prepareReferenceCover, type PrepareReferenceCover } from './referenceCover';

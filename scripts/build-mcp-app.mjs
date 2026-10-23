@@ -1,7 +1,7 @@
 import { build as viteBuild } from 'vite';
 import react from '@vitejs/plugin-react';
 import { build as esbuild } from 'esbuild';
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -48,6 +48,9 @@ for (const input of inputs) {
   packages.add(parts.slice(0, parts[0].startsWith('@') ? 2 : 1).join('/'));
 }
 const notices = resolve(root, 'plugins/stashdock/notices');
+// Start empty: notices describe exactly what this build bundles, never a
+// dependency an earlier build had.
+await rm(notices, { recursive: true, force: true });
 await mkdir(notices, { recursive: true });
 await copyFile(resolve(root, 'build-runtime/node', platform, 'LICENSE'), resolve(notices, 'Node.js-LICENSE'));
 const inventory = [];

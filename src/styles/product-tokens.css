@@ -1,4 +1,4 @@
-/* Product roles shared by desktop, browser shelf and the MCP App. */
+/* Product roles shared by desktop, the browser extension and the MCP App. */
 :root {
   --favorite-star: #E8B931;
   --platform-avatar-ring: #ffffff;
