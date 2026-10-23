@@ -27,7 +27,7 @@ Versions come from `package.json` (Desktop), `plugins/stashdock/.codex-plugin/pl
 - [Windows installation](docs/INSTALL_WINDOWS.md)
 - [ChatGPT plugin installation](docs/windows-plugin-install.md)
 - [Browser extension installation](extension/README.md)
-- [Mac migration handoff / Mac 迁移交接](docs/MAC_START_HERE.zh-CN.md)
+- [Mac migration handoff / Mac 迁移交接](docs/MAC_START_HERE.zh-CN.md) · [Mac sync / 已有 Mac 分支同步](docs/MAC_SYNC.zh-CN.md)
 
 The current release is Windows x64 only. macOS, Claude and Safari are not released.
 The Windows installer is not code-signed. Browser packages are not store listings;

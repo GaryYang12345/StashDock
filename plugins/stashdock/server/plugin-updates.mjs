@@ -1,12 +1,14 @@
 // Settings > About > Check for updates in the ChatGPT plugin. Plugin packages
-// are published as GitHub release assets (stashdock-plugin-<version>-win32-x64.zip);
-// the newest one is compared with this plugin. Installing stays with the host:
-// the App only opens the release page.
-const ASSET = /^stashdock-plugin-(\d+)\.(\d+)\.(\d+)-win32-x64\.zip$/;
+// are published as GitHub release assets named
+// stashdock-plugin-<version>-<platform>-<arch>.zip (win32-x64, darwin-arm64);
+// the newest package for this computer is compared with this plugin. Installing
+// stays with the host: the App only opens the release page.
+const assetPattern = target => new RegExp(`^stashdock-plugin-(\\d+)\\.(\\d+)\\.(\\d+)-${target.replace(/[^\w-]/g, '')}\\.zip$`);
 const parse = value => { const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(value)); return match ? match.slice(1).map(Number) : null; };
 const newer = (a, b) => { for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
 
-export async function checkPluginUpdates({ repository, current, fetchImpl = fetch }) {
+export async function checkPluginUpdates({ repository, current, target = `${process.platform}-${process.arch}`, fetchImpl = fetch }) {
+  const ASSET = assetPattern(target);
   if (typeof repository !== 'string' || !/^[\w.-]+\/[\w.-]+$/.test(repository)) return { status: 'unconfigured', version: null, url: null };
   const installed = parse(current);
   if (!installed) throw Error('The installed version is invalid.');

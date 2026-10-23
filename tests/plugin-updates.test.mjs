@@ -18,10 +18,20 @@ test('plugin update check finds the newest plugin package among releases', async
     release('plugin-v0.4.30', ['stashdock-plugin-0.4.30-win32-x64.zip']),
     release('plugin-v0.6.0', ['stashdock-plugin-0.6.0-win32-x64.zip'], { draft: true }),
   ];
-  assert.deepEqual(await checkPluginUpdates({ repository, current: '0.4.28', fetchImpl: answer(releases) }),
+  assert.deepEqual(await checkPluginUpdates({ repository, current: '0.4.28', target: 'win32-x64', fetchImpl: answer(releases) }),
     { status: 'available', version: '0.5.0', url: `https://github.com/${repository}/releases/tag/plugin-v0.5.0` });
-  assert.equal((await checkPluginUpdates({ repository, current: '0.5.0', fetchImpl: answer(releases) })).status, 'current');
-  assert.equal((await checkPluginUpdates({ repository, current: '0.10.0', fetchImpl: answer(releases) })).status, 'current');
+  assert.equal((await checkPluginUpdates({ repository, current: '0.5.0', target: 'win32-x64', fetchImpl: answer(releases) })).status, 'current');
+  assert.equal((await checkPluginUpdates({ repository, current: '0.10.0', target: 'win32-x64', fetchImpl: answer(releases) })).status, 'current');
+});
+
+test('plugin update check only compares the package built for this computer', async () => {
+  const releases = [
+    release('plugin-v0.6.0', ['stashdock-plugin-0.6.0-darwin-arm64.zip']),
+    release('plugin-v0.5.0', ['stashdock-plugin-0.5.0-win32-x64.zip', 'stashdock-plugin-0.5.0-darwin-arm64.zip']),
+  ];
+  assert.equal((await checkPluginUpdates({ repository, current: '0.5.0', target: 'win32-x64', fetchImpl: answer(releases) })).status, 'current');
+  assert.deepEqual(await checkPluginUpdates({ repository, current: '0.5.0', target: 'darwin-arm64', fetchImpl: answer(releases) }),
+    { status: 'available', version: '0.6.0', url: `https://github.com/${repository}/releases/tag/plugin-v0.6.0` });
 });
 
 test('plugin update check ignores foreign pages and reports no release honestly', async () => {

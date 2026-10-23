@@ -1,6 +1,32 @@
 # 给 Mac 上 GPT 的交接提示词
 
-将下面整段发送给能够访问本机仓库和终端工具的 GPT/Codex。源码从 GitHub 拉取，轻量交接包只补充规范和精确提交号；无需继承 Windows 聊天历史。先按 `MAC_START_HERE.zh-CN.md` 建立迁移分支。
+有两段提示词：已经做过 Mac 版、需要跟上现行 main 时用第一段；从零开始迁移时用第二段。发给能够访问本机仓库和终端工具的 GPT/Codex，无需继承 Windows 聊天历史。
+
+## 同步已有 Mac 分支
+
+---
+
+你之前基于 StashDock 旧的 GitHub 版本（https://github.com/GaryYang12345/StashDock ）做了 macOS 的 Desktop 和 ChatGPT 插件。main 之后有大量更新，请把你的 Mac 分支跟上现行 main，并继续在这台 Mac 上完成实现和验证。
+
+先 `git fetch origin`，给你的分支打一个回退标签，再阅读 `docs/MAC_SYNC.zh-CN.md`（同步方法、变化清单、Windows 实现与 Apple 建议做法对照、验收和交回方式），然后按顺序读 `AGENTS.md`、`CLAUDE.md`、`docs/product-principles.md`、`docs/architecture.md`、`docs/WINDOW_LIFECYCLE.md`、`docs/MAC_MIGRATION_HANDOFF.zh-CN.md`。界面工作前读 `.agents/skills/arc/SKILL.md` 和 `docs/ui-design-language.md`。`docs/history/` 是历史记录，不是规则。
+
+核心要求：
+
+1. 用 `git merge origin/main` 合并（保留你的历史），共享文件以 main 为准，Mac 专属改动放回平台适配层；main 已删除的文件不要恢复；生成物（`plugins/stashdock/dist`、`web/shelf.html`）合并后重新构建。
+2. Desktop 和 ChatGPT 插件的样式、文案、交互、动画的视觉意图、数据库、SQL、搜索、MCP 工具和 AI 上下文必须与 Windows 一致，共享 React 界面不分叉。
+3. 窗口、空间动画、拖拽/剪贴板、网页渲染、系统代理、开机启动、菜单栏、Dock、打包签名，按 macOS 公开 API 和 Mac 用户习惯来做，不要硬套 Windows 的 DWM / OLE / 注册表 / 任务栏做法。`AGENTS.md` 中描述 Windows 实现细节的规则，对 Mac 约束的是用户看到的结果。选择与 Windows 不同的实现时在 PR 里写明理由。
+4. 不使用私有 API，不要求"屏幕录制"等额外权限，不禁用 Gatekeeper/SIP，不提交证书、私钥或账号信息。
+5. 所有会修改数据的测试使用临时合成库；用你旧版本建过的测试库（复制一份）验证升级。
+6. 合并后先让 `npx tsc -b`、`node --test tests/*.test.mjs`、`cd src-tauri && cargo test` 全部通过，再做 `MAC_SYNC` 第 4 节标为 [原生] 的工作，重点是空间交接（第 5 节验收标准）、文件夹快速搜索、Copy for AI / 拖拽原始文件、WKWebView 截图封面和系统代理、插件打包（`stashdock-plugin-X.Y.Z-darwin-arm64.zip`）。
+7. 在 production `.app`（开发服务器停止时）上实测，不以静态检查或模拟成功代替。
+
+完成后推送你的分支（不要推 main）并开 PR，按 `MAC_SYNC` 第 6 节写清合并的提交号、Apple 原生实现与理由、所有改动过的共享文件和原因、测试与真机验收结果、录屏/截图、未完成项。Windows 那边会拉下来逐项核对、回归并给出修改建议。开始执行。
+
+---
+
+## 从零开始迁移
+
+先按 `MAC_START_HERE.zh-CN.md` 建立迁移分支，源码从 GitHub 拉取。
 
 ---
 

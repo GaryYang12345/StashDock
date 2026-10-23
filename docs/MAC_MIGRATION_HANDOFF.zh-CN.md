@@ -3,7 +3,13 @@
 产品只发布了 Windows x64。Windows Desktop、ChatGPT local plugin 和浏览器扩展共用这一份
 源码，各自的版本见 `package.json`、`plugins/stashdock/.codex-plugin/plugin.json` 和
 `extension/manifest.json`。轻量交接包的 `BASELINE.json` 记录精确 source commit。
-Mac 尚未构建或验证。
+Mac 尚未在 main 上构建或验证。已有 Mac 分支的同步方法、自旧基线以来的变化和 Apple 建议做法见
+[MAC_SYNC](MAC_SYNC.zh-CN.md)。
+
+**一致与原生的边界：** 样式、文案、交互、动画的视觉意图、数据库、SQL、搜索、MCP 工具和 AI 上下文
+两边必须一致；窗口机制、动画实现、拖拽/剪贴板、网页渲染、代理、开机启动、菜单栏、Dock、打包签名
+按 macOS 公开 API 和用户习惯来做，不要硬套 Windows 的做法。`AGENTS.md` 中描述 Windows 实现细节的
+规则，对 Mac 约束的是用户看到的结果。
 
 ## 阅读顺序
 
@@ -53,7 +59,7 @@ Node MCP stdio 服务；Chrome/Edge/Firefox 共享 Save-page 扩展。同一用�
 | 文件夹拖动 | `folder_window.rs` 系统拖动循环 | 原生窗口拖动 |
 | 原始文件剪贴板/拖拽 | `reference_clipboard.rs`、`reference_drag_windows.rs`（Shell/OLE） | 复用 `reference_transfer.rs` 的不可变文件组，用公开的文件 URL 剪贴板与拖拽能力交付 |
 | 公共网页截图 | `preview_webview.rs` / `stashdock-preview`：隔离的系统 Evergreen WebView2；非 Windows 返回不支持 | 合适的系统原生渲染器（如 WebKit），保持隔离、拒绝下载/弹窗、私网拒绝、有界并发和自有资源清理 |
-| 插件运行时 | 校验固定版本的官方 win32-x64 Node 与 Windows helpers | 校验固定的官方 darwin-arm64 Node、完整许可证、本机构建 helpers |
+| 插件运行时 | 校验固定版本的官方 win32-x64 Node 与 Windows helpers；包名 `stashdock-plugin-X.Y.Z-win32-x64.zip` | 校验固定的官方 darwin-arm64 Node、完整许可证、本机构建 helpers；包名 `stashdock-plugin-X.Y.Z-darwin-arm64.zip`（插件检查更新按平台-架构找包） |
 | 独立生命周期 | `independent_startup.rs`（Windows shell / Job Object） | 退出 AI 宿主、终端或启动器不能带走 Desktop |
 | 检测与打开 | 部分安装证据和应用启动为 Windows 路径 | 读取真实启用证据，不用历史握手或缓存代替 |
 

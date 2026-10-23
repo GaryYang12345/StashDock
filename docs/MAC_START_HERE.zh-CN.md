@@ -2,6 +2,11 @@
 
 源码仓库：https://github.com/GaryYang12345/StashDock
 
+**已经基于旧 GitHub 版本做过 Mac 版？** 先读 [MAC_SYNC](MAC_SYNC.zh-CN.md)：它列出自旧基线
+`f1995cf` 以来的全部变化、合并方法、Windows 实现与 Apple 建议做法的对照，以及交回审查的方式。
+提示词用 [MAC_HANDOFF_PROMPT](MAC_HANDOFF_PROMPT.zh-CN.md) 里的"同步已有 Mac 分支"一段。
+下面的步骤用于从零开始。
+
 轻量交接 ZIP 只带提示词、规范、Arc Skill 和精确提交号，不重复携带源码、
 Windows 运行时或个人收藏。所有交接资料也在仓库里，不传 ZIP 也可以开始。
 

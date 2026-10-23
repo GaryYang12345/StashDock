@@ -53,6 +53,9 @@ $Tasks = [ordered]@{
   'inspect-reload'= { & cmd /c "node scripts/inspect-webview.mjs --port $debugPort --reload --out `"$queue`" 2>&1" }
   'probe-import-dialog' = { & cmd /c "node scripts/inspect-webview.mjs --port $debugPort --seconds 1 --probe import-dialog --out `"$queue`" 2>&1" }
   'git-status'    = { & cmd /c 'git status --short --branch 2>&1 && git log --oneline -5 2>&1' }
+  # Publish local main after the user asked for it: a plain fast-forward push with
+  # this computer's own Git credentials (never --force, never another branch).
+  'git-push'      = { & cmd /c 'git push origin main 2>&1 && git status --short --branch 2>&1' }
   # Production builds for the user to test: the Desktop installer (embedded
   # frontend, custom-protocol) and the complete ChatGPT/Codex plugin package.
   'desktop-build' = { & cmd /c 'npm run desktop:build 2>&1' }

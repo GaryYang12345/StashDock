@@ -171,7 +171,7 @@ export function McpShelf() {
     alive.current = true;
     // Panel height belongs to the host. Inline autoResize would feed viewport
     // height back to it instead of filling the available side-panel space.
-    const app = new App({ name: 'StashDock', version: '0.4.29' }, { availableDisplayModes: ['fullscreen'] }, { autoResize: false, strict: true });
+    const app = new App({ name: 'StashDock', version: '0.4.30' }, { availableDisplayModes: ['fullscreen'] }, { autoResize: false, strict: true });
     appRef.current = app;
     let disposed = false;
     setConnected(false); setConnectionError('');
