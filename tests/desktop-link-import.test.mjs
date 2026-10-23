@@ -173,5 +173,6 @@ test('progress inherits shared dialog gutters and matches its title hierarchy', 
   assert.match(progress, /\.percentage[^}]+font-size: var\(--text-sm\)/);
   assert.doesNotMatch(progress, /@media/);
   assert.match(dialog, /\.body \{ padding: var\(--space-6\); \}/);
-  assert.match(dialog, /@media \(max-width: 560px\)[\s\S]*\.body \{ padding: var\(--space-4\); \}/);
+  // One gutter at every width; a narrow 16px gutter crowded the title into the 34px corner.
+  assert.doesNotMatch(dialog, /@media \(max-width: 560px\)/);
 });

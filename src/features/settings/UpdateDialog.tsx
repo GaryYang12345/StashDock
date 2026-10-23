@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { FluidDialog } from '../../components/FluidDialog';
 import { Button } from '../../components/arc/button/button';
 import brandMark from '../../../assets/brand/icon.svg';
@@ -13,9 +12,11 @@ type State = { phase: 'checking' } | { phase: 'done'; update: UpdateInfo } | { p
 const MIN_CHECK_MS = 600;
 export const versionLabel = (version: string) => `v${version.replace(/^v/i, '')}`;
 
-// Desktop-only: plugin updates belong to their host. Shares the import progress
+// One check for Desktop and the ChatGPT plugin: each host supplies its own check
+// (Desktop releases, or the newest plugin package) and opens the release page;
+// installing stays with the user or the host. Shares the import progress
 // surface (grey brand mark, centred status) without a progress bar.
-export function UpdateDialog({ open, version, onClose, openLink }: { open: boolean; version: string; onClose: () => void; openLink: (url: string) => Promise<unknown> }) {
+export function UpdateDialog({ open, product, version, check, onClose, openLink }: { open: boolean; product: string; version: string; check: () => Promise<UpdateInfo>; onClose: () => void; openLink: (url: string) => Promise<unknown> }) {
   const { t } = useI18n();
   const [state, setState] = useState<State>({ phase: 'checking' });
   const [attempt, setAttempt] = useState(0);
@@ -30,14 +31,14 @@ export function UpdateDialog({ open, version, onClose, openLink }: { open: boole
       const wait = Math.max(0, MIN_CHECK_MS - (performance.now() - started));
       setTimeout(() => { if (request === current.current) setState(next); }, wait);
     };
-    invoke<UpdateInfo>('check_desktop_updates').then(update => settle({ phase: 'done', update }), reason => settle({ phase: 'failed', error: String(reason) }));
+    check().then(update => settle({ phase: 'done', update }), reason => settle({ phase: 'failed', error: reason instanceof Error ? reason.message : String(reason) }));
     return () => { current.current++; };
   }, [open, attempt]);
   const update = state.phase === 'done' ? state.update : null;
   const available = update?.status === 'available' && update.url ? update : null;
   const title = state.phase === 'checking' ? t('Checking for updates') : state.phase === 'failed' ? t('Updates could not be checked') : available ? t('Update available') : update?.status === 'current' ? t('You are up to date.') : t('No public release yet');
   const detail = state.phase === 'failed' ? t(state.error) : available ? t('Version {version} is available. You have {current}.', { version: versionLabel(available.version || ''), current: versionLabel(version) })
-    : update?.status === 'current' ? `StashDock Desktop ${versionLabel(version)}` : t('Updates will be available after the public release.');
+    : update?.status === 'current' ? `${product} ${versionLabel(version)}` : t('Updates will be available after the public release.');
   return <FluidDialog open={open} onClose={onClose} onExited={() => setState({ phase: 'checking' })} title={title} progress={<div className={styles.surface}>
     <img className={styles.mark} src={brandMark} alt="" draggable={false} aria-hidden="true" />
     <p className={styles.title} role="status" aria-live="polite">{title}</p>

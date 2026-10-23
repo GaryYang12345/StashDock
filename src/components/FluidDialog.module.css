@@ -5,7 +5,9 @@
 .content[data-size="import"] { width: min(calc(100% - var(--space-8)), 600px); overflow-x: hidden; }
 .content[data-progress] { width: min(calc(100% - var(--space-8)), 360px); border-radius: var(--radius-panel); }
 .content[data-progress] .body { padding: var(--space-8); }
-@media (max-width: 600px) { .content[data-progress] .body { padding: var(--space-6); } }
+@media (max-width: 600px) { .content[data-progress] .body { padding: var(--space-6); }
+/* One 24px gutter at every width: the 34px surface radius crowds a narrower
+   title into its corner. */ }
 .visuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 /* A growing spring temporarily overflows even when its final content fits.
    Only real viewport clamping should enable a scrollbar. */
@@ -18,7 +20,3 @@
 .title { margin: 0; font-family: var(--font-body); font-size: var(--text-lg); font-weight: 500; letter-spacing: var(--tracking-body); line-height: var(--leading-body); overflow-wrap: anywhere; }
 .description { margin: var(--space-2) 0 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: var(--leading-body); }
 .body { padding: var(--space-6); }
-@media (max-width: 560px) {
-  .header { padding: var(--space-4) var(--space-4) 0; }
-  .body { padding: var(--space-4); }
-}

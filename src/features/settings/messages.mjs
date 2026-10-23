@@ -32,7 +32,7 @@ export const zh = {
   'Detected': '已检测到', 'View guide': '使用指引', 'View guide for {name}': '{name} 使用指引',
   'Follow ChatGPT': '跟随 ChatGPT', 'About {section}': '关于{section}',
   'About storage location': '关于存储位置', 'Shared by StashDock Desktop and AI plugins on this device.': '由本机的 StashDock Desktop 和 AI 插件共享。',
-  'About plugin updates': '关于插件更新', 'Manage plugin updates in ChatGPT.': '在 ChatGPT 中更新插件。',
+  
   'Change storage location?': '更改存储位置？', 'Move references and files to this folder.': '将收藏和文件迁移到此文件夹。',
   'Move library': '迁移收藏库', 'Storage could not be updated': '无法更新存储设置',
   'Storage location updated': '存储位置已更新', 'Restart StashDock Desktop': '重启 StashDock Desktop',
@@ -136,6 +136,8 @@ export const zh = {
   'Windows startup settings could not be changed. Try again.': '无法更改 Windows 启动设置，请重试。',
   'Updates could not be checked. Check your connection and try again.': '无法检查更新，请检查网络后重试。',
   'Updates could not be checked. Try again later.': '无法检查更新，请稍后重试。',
+  'Updates could not be checked. Try again.': '无法检查更新，请重试。', 'The update response is too large.': '更新信息过大，无法读取。',
+  'The update response could not be read.': '无法读取更新信息。', 'The installed version is invalid.': '已安装的版本号无效。',
   'All': '全部', 'Recent': '最近', 'Web': '网页', 'Files': '文件', 'Favorites': '星标', 'Tags': '标签',
   'Collections': '分类', 'Tag filters': '标签筛选',
   'Context library': '收藏库', 'Collection': '分类', 'References': '收藏', 'Import references': '导入收藏',

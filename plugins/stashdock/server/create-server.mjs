@@ -14,6 +14,7 @@ import { openCaptureSite } from './open-capture-site.mjs';
 import { openIntegration } from './open-integration.mjs';
 import { readStorageInfo } from './settings.mjs';
 import { createStorageService } from './storage-service.mjs';
+import { checkPluginUpdates } from './plugin-updates.mjs';
 import productLinks from '../../../src-tauri/product-links.json' with { type: 'json' };
 // One plugin version: the manifest the host installs and caches by.
 import pluginManifest from '../.codex-plugin/plugin.json' with { type: 'json' };
@@ -175,6 +176,10 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
     const githubUrl = typeof repository === 'string' && /^[\w.-]+\/[\w.-]+$/.test(repository) ? `https://github.com/${repository}` : null;
     return { ...valueResult({}), _meta: { settings: { preferences: library.getCodexPreferences(), version: PLUGIN_VERSION, githubUrl } } };
   }));
+  server.registerTool('check_stashdock_plugin_updates', {
+    description: 'Check GitHub Releases for a newer StashDock plugin package, from Settings. Does not download or install anything.', inputSchema: {},
+    annotations: { ...readOnly, openWorldHint: true }, _meta: appOnly,
+  }, guarded(async () => ({ ...valueResult({}), _meta: { update: await checkPluginUpdates({ repository: productLinks.githubRepository, current: PLUGIN_VERSION }) } })));
   server.registerTool('save_stashdock_preferences', {
     description: 'Save only the language or theme explicitly chosen in the Codex panel. Does not change desktop preferences.',
     inputSchema: { preferences: z.object({ language: z.enum(['system', 'en', 'zh']).optional(), theme: z.enum(['system', 'light', 'dark']).optional() }).strict().refine(value => Object.keys(value).length > 0) },

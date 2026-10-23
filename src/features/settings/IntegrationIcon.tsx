@@ -4,7 +4,8 @@ import firefox from '../../assets/brands/firefox.svg?inline';
 import safari from '../../assets/brands/safari.svg?inline';
 import codex from '../../assets/brands/chatgpt.svg?inline';
 import claude from '../../assets/brands/claude.svg?inline';
-import desktop from '../../../assets/brand/icon.png';
+// The app's own launch tile (white plate), like the other apps' brand icons.
+import desktop from '../../../src-tauri/icons/128x128.png';
 import type { IntegrationId } from './integrations';
 import styles from './IntegrationSections.module.css';
 const marks = { chrome, edge, firefox, safari, codex, claude, desktop };

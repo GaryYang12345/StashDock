@@ -15,7 +15,7 @@ import styles from './SettingsView.module.css';
 import { IntegrationSections } from './IntegrationSections';
 import type { IntegrationInfo } from './integrations';
 import { GitHubMark } from './GitHubMark';
-import { UpdateDialog, versionLabel } from './UpdateDialog';
+import { UpdateDialog, versionLabel, type UpdateInfo } from './UpdateDialog';
 
 export default function SettingsView({ onClose, onBusyChange }: { onClose: () => void; onBusyChange: (busy: boolean) => void }) {
   const { t } = useI18n();
@@ -59,7 +59,7 @@ export default function SettingsView({ onClose, onBusyChange }: { onClose: () =>
           <Row title="StashDock Desktop" meta={versionLabel(info.version)} icon={<IntegrationIcon id="desktop" />}><Button variant="secondary" size="sm" disabled={moving} onClick={() => setCheckingUpdates(true)}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />{t('Check for updates')}</Button></Row>
           {info.githubUrl && <Row title="GitHub" icon={<GitHubMark />}><Button variant="ghost" size="sm" onClick={() => run(() => openExternalUrl(info.githubUrl!))}>{t('Open')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button></Row>}
         </div></section>
-        <UpdateDialog open={checkingUpdates} version={info.version} onClose={() => setCheckingUpdates(false)} openLink={openExternalUrl} />
+        <UpdateDialog open={checkingUpdates} product="StashDock Desktop" version={info.version} check={() => invoke<UpdateInfo>('check_desktop_updates')} onClose={() => setCheckingUpdates(false)} openLink={openExternalUrl} />
         </>}
         {restartRequired && operationError ? <Alert tone="info" title={t('Storage location updated')}><Button variant="secondary" onClick={() => run(() => invoke('restart_desktop'))}>{t('Restart StashDock Desktop')}</Button></Alert> : <Alert tone="danger" title={t('Try again.')} open={Boolean(operationError)}>{t(operationError)}</Alert>}
     </SettingsFrame>;
