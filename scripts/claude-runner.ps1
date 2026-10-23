@@ -57,6 +57,10 @@ $Tasks = [ordered]@{
   # frontend, custom-protocol) and the complete ChatGPT/Codex plugin package.
   'desktop-build' = { & cmd /c 'npm run desktop:build 2>&1' }
   'plugin-package'= { & cmd /c 'npm run plugin:build 2>&1 && npm run plugin:package 2>&1' }
+  # Install those builds for the user's own testing (scripts\claude-install.ps1).
+  'install-info'   = { & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\claude-install.ps1 -Target info }
+  'install-desktop'= { & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\claude-install.ps1 -Target desktop }
+  'install-plugin' = { & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\claude-install.ps1 -Target plugin }
 }
 
 Write-Host "Claude runner watching $queue" -ForegroundColor Cyan
