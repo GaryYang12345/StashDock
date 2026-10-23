@@ -53,6 +53,10 @@ $Tasks = [ordered]@{
   'inspect-reload'= { & cmd /c "node scripts/inspect-webview.mjs --port $debugPort --reload --out `"$queue`" 2>&1" }
   'probe-import-dialog' = { & cmd /c "node scripts/inspect-webview.mjs --port $debugPort --seconds 1 --probe import-dialog --out `"$queue`" 2>&1" }
   'git-status'    = { & cmd /c 'git status --short --branch 2>&1 && git log --oneline -5 2>&1' }
+  # Production builds for the user to test: the Desktop installer (embedded
+  # frontend, custom-protocol) and the complete ChatGPT/Codex plugin package.
+  'desktop-build' = { & cmd /c 'npm run desktop:build 2>&1' }
+  'plugin-package'= { & cmd /c 'npm run plugin:build 2>&1 && npm run plugin:package 2>&1' }
 }
 
 Write-Host "Claude runner watching $queue" -ForegroundColor Cyan
