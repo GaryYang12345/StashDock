@@ -1,7 +1,7 @@
 // Isolated browser profile and browser-only seed library. No desktop mutations.
 async page => {
   await page.goto('http://127.0.0.1:5173/');
-  await page.getByRole('heading',{name:'Context shelf',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Context library',exact:true}).waitFor();
   await page.locator('article').first().waitFor();
   const report = {widths:[],keyboard:false,copy:false,multiDrag:false};
   for(const width of [320,390,768,1024,1440]) {

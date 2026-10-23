@@ -25,7 +25,7 @@ export function Toolbar({ query, searching = false, refreshing, onRefresh, view,
   const { t } = useI18n();
   return <header data-arc-ui className={styles.toolbar}>
     <div className={styles.headingRow}>
-      <div className={styles.title}><h1>{t("Context shelf")}</h1></div>
+      <div className={styles.title}><h1>{t("Context library")}</h1></div>
       <div className={styles.actions}>
         {onSettings && <Button className={styles.compactSettings} variant="ghost" size="sm" disabled={settingsDisabled} onClick={onSettings} aria-label={t('Settings')}><Settings size={16} strokeWidth={1.75} aria-hidden="true" /></Button>}
         <Button type="button" variant="secondary" size="sm" onClick={onAdd} aria-haspopup="dialog" aria-keyshortcuts="Control+n"><Plus size={16} strokeWidth={1.75} aria-hidden="true"  />{t("Import references")}</Button>

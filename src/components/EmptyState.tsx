@@ -32,6 +32,6 @@ export function EmptyState({ query, scope, onAdd, onClearSearch, onShowAll }: {
           : scope === "tag"
             ? { icon: <Tag size={24} strokeWidth={1.75} />, title: t("No references with this tag"), description: t("Add this tag to references to group them here."),
                 action: <Button variant="secondary" onClick={onShowAll}>{t("Show all references")}</Button> }
-            : { icon: <Bookmark size={24} strokeWidth={1.75} />, title: t("Your shelf is empty"), description: t("Import browser bookmarks, links, notes, or local files."), action: importAction };
+            : { icon: <Bookmark size={24} strokeWidth={1.75} />, title: t("Your library is empty"), description: t("Import browser bookmarks, links, notes, or local files."), action: importAction };
   return <ArcEmptyState label={t("Empty references")} icon={content.icon} title={content.title} description={content.description} action={content.action} />;
 }

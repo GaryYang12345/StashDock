@@ -175,7 +175,7 @@ test('no draft capability, malformed payload or host rejection cannot produce su
   let calls = 0;
   const host = { getHostCapabilities: () => ({ experimental: { 'openai/message': {} } }), sendMessage: async () => { calls++; return {}; } };
   assert.equal(draft.supportsDraft(host), false);
-  await assert.rejects(draft.addAttachmentToDraft(host, prepareAttachment([item], ['a'])), /does not support/);
+  await assert.rejects(draft.addAttachmentToDraft(host, prepareAttachment([item], ['a'])), /Adding to chat is unavailable here/);
   assert.equal(calls, 0);
   host.getHostCapabilities = () => ({ experimental: { 'openai/message': { draft: {} } } });
   await assert.rejects(draft.addAttachmentToDraft(host, { title: 'bad', ids: ['a'], content: [{ type: 'text', text: 'paste this' }] }), /invalid/);

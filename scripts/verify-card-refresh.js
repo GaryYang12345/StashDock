@@ -46,7 +46,7 @@ async page => {
   await app.mouse.move(0,0);
   await select.focus();
   await app.keyboard.press('Enter');
-  await app.getByRole('heading',{name:'Context shelf',exact:true}).click();
+  await app.getByRole('heading',{name:'Context library',exact:true}).click();
   if (await opacity(first.getByRole('button',{name:/^Remove .+ from context$/})) !== '1') throw Error('Selected control vanished');
   await app.locator('article').nth(1).hover();
   await app.locator('article').nth(1).getByRole('button',{name:/^Add .+ to context$/}).click();
@@ -61,7 +61,7 @@ async page => {
   const search=app.getByRole('searchbox',{name:'Search references'});
   await search.focus();
   if (await search.evaluate(el=>getComputedStyle(el.parentElement).borderColor===getComputedStyle(el).color)) throw Error('Search focus still uses the foreground border');
-  await app.getByRole('heading',{name:'Context shelf',exact:true}).click();
+  await app.getByRole('heading',{name:'Context library',exact:true}).click();
   const widths=[];
   for(const width of [320,390,768,1024,1440]) {
     await app.setViewportSize({width,height:1000});

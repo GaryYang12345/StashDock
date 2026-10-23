@@ -63,7 +63,7 @@ async page => {
   const add = first.getByRole('button', { name: /^Add .+ to chat$/ });
   await add.click();
   await page.locator('#attachments .chip').first().waitFor();
-  await add.locator('xpath=self::*[@aria-description="Added to draft"]').waitFor();
+  await add.locator('xpath=self::*[@aria-description="Added to chat"]').waitFor();
   await settle();
   const request = await page.evaluate(() => window.testRequests[0]);
   if (request.params.content[0].type !== 'text' || !request.params.content[0]._meta['openai/title']) throw Error('Missing titled inline context');

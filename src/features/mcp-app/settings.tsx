@@ -25,7 +25,7 @@ export function McpSettingsProvider({ children }: { children: ReactNode }) {
   const current = useRef(client); current.current = client;
   const generation = useRef(0), flight = useRef(false);
   const call = useCallback(async (name: string, args: Record<string, unknown> = {}, timeout = 10_000) => {
-    if (!client) throw Error('The MCP App is not connected. Retry the connection.');
+    if (!client) throw Error('StashDock is not connected. Retry the connection.');
     const result = await client.callServerTool({ name, arguments: args }, { timeout });
     if (current.current !== client) throw Error('The connection changed. Retry.');
     if (result.isError) throw Error(result.content.find(block => block.type === 'text')?.text || 'The request failed. Please retry.');

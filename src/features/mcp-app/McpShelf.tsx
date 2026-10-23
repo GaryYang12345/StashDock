@@ -75,6 +75,9 @@ export function McpShelf() {
   const [query, setQuery] = useState('');
   // The query the shown cards answer; the field spins while a newer one is read.
   const [answeredQuery, setAnsweredQuery] = useState('');
+  // What the shown cards answer, so an empty state never names a collection
+  // whose results have not arrived yet.
+  const [answeredScope, setAnsweredScope] = useState<EmptyScope>('all');
   const [destination, setDestination] = useState({ filter: 'all', activeTag: '' });
   const { filter, activeTag } = destination;
   const setFilter = (filter: string) => setDestination(previous => previous.filter === filter && !previous.activeTag ? previous : { filter, activeTag: '' });
@@ -146,7 +149,7 @@ export function McpShelf() {
       setHasMore(result.structuredContent?.hasMore === true);
       setReadError('');
       setReady(true);
-      if (!offset) setAnsweredQuery(text);
+      if (!offset) { setAnsweredQuery(text); setAnsweredScope(activeTag ? 'tag' : collection as EmptyScope); }
     } catch (error) {
       if (alive.current && request === sequence.current) { setReadError(message(error)); setReady(true); setAnsweredQuery(text); }
     } finally {
@@ -240,7 +243,7 @@ export function McpShelf() {
   const mutationFlight = useRef(false);
   async function mutate(name: string, args: Record<string, unknown>) {
     const app = appRef.current;
-    if (!app || !connected) throw new Error('The MCP App is not connected. Retry the connection.');
+    if (!app || !connected) throw new Error('StashDock is not connected. Retry the connection.');
     if (mutationFlight.current) throw new Error('Wait for the current library change to finish.');
     mutationFlight.current = true; setMutationBusy(true); setMutationError('');
     try {
@@ -280,7 +283,7 @@ export function McpShelf() {
   // The system dialog runs on this computer; the App only receives tokens.
   async function chooseFiles(): Promise<ChosenFile[]> {
     const app = appRef.current;
-    if (!app || !connected) throw new Error('The MCP App is not connected. Retry the connection.');
+    if (!app || !connected) throw new Error('StashDock is not connected. Retry the connection.');
     const result = await app.callServerTool({ name: 'choose_stashdock_files', arguments: {} }, { timeout: 300_000 });
     if (result.isError) throw new Error(result.content.find(block => block.type === 'text')?.text || 'The files could not be read. Choose them again.');
     const files = result._meta?.files;
@@ -330,7 +333,7 @@ export function McpShelf() {
       setAcknowledged([...successful]);
       }
     } catch (error) {
-      if (alive.current && appRef.current === app) setAddError(`${message(error)} Check the input box before trying again.`);
+      if (alive.current && appRef.current === app) setAddError(message(error));
     } finally {
       flight.current = false;
       if (alive.current && appRef.current === app) setPending([]);
@@ -353,9 +356,9 @@ export function McpShelf() {
       <h2 className={styles.srOnly}>{t('Saved references')}</h2>
       {connectionError ? <Alert tone="danger" title={t('StashDock could not connect')}><span className={styles.retry}><span>{t(connectionError)}</span><Button variant="secondary" onClick={() => setAttempt(value => value + 1)}>{t('Retry connection')}</Button></span></Alert>
         : !connected ? <LoadingReferences className={styles.list} /> : <>
-          {!draftSupported && <Alert tone="warning" className={styles.notice} title={t('Draft attachments are unavailable')}>{t('Open this MCP App beside an active conversation in a host that supports adding to the draft. No message will be sent.')}</Alert>}
+          {!draftSupported && <Alert tone="warning" className={styles.notice} title={t('Adding to chat is unavailable')}>{t('Open StashDock beside an active conversation to add references. No message will be sent.')}</Alert>}
           {readError && <Alert tone="danger" className={styles.notice} title={t('References could not be refreshed')}><span className={styles.retry}><span>{t(readError)}</span><Button variant="secondary" onClick={refresh} loading={refreshing}>{t('Retry connection')}</Button></span></Alert>}
-          {addError && <Alert tone="danger" className={styles.notice} title={t('Reference was not confirmed in the draft')} onDismiss={() => setAddError('')}>{t(addError)}</Alert>}
+          {addError && <Alert tone="danger" className={styles.notice} title={t('Could not confirm the reference was added')} onDismiss={() => setAddError('')}>{t(addError)} {t('Check the input box before trying again.')}</Alert>}
           {managementError && <Alert tone="danger" className={styles.notice} title={t('The library change could not be saved')} onDismiss={() => setManagementError('')}>{t(managementError)}</Alert>}
           {!ready ? <LoadingReferences compact={view === 'list'} className={view === 'grid' ? styles.list : undefined} /> : items.length ? <div className={view === 'grid' ? styles.list : listStyles.list} aria-busy={refreshing}>
             {items.map(item => <ReferenceCardView key={item.id} item={item} view={view} className={styles.card}
@@ -372,10 +375,10 @@ export function McpShelf() {
                 {acknowledgedIds.has(item.id) ? <Check size={16} strokeWidth={1.75} aria-hidden="true" /> : <Plus size={16} strokeWidth={1.75} aria-hidden="true" />}<CardActionLabel compact={t(acknowledgedIds.has(item.id) ? 'Added' : 'Add')}>{t(acknowledgedIds.has(item.id) ? 'Added' : 'Add to chat')}</CardActionLabel>
               </Button>} />)}
             {hasMore && <Button variant="secondary" loading={loadingMore} onClick={() => { if (appRef.current) void load(appRef.current, query, filter, items.length); }}>{t('Load more references')}</Button>}
-          </div> : !readError && <EmptyState query={query} scope={activeTag ? 'tag' : filter as EmptyScope} onAdd={() => importDialog.current?.open()} onClearSearch={() => setQuery('')} onShowAll={() => { setFilter('all'); setActiveTag(''); }} />}
+          </div> : !readError && <EmptyState query={answeredQuery} scope={answeredScope} onAdd={() => importDialog.current?.open()} onClearSearch={() => setQuery('')} onShowAll={() => { setFilter('all'); setActiveTag(''); }} />}
         </>}
     </ScrollArea>
-    <span className={styles.srOnly} role="status">{pending.length ? t('Adding to draft') : acknowledged.length ? t('Added to draft') : t('{count} selected', { count: selected.length })}</span>
+    <span className={styles.srOnly} role="status">{pending.length ? t('Adding to chat') : acknowledged.length ? t('Added to chat') : t('{count} selected', { count: selected.length })}</span>
     <AnimatePresence initial={false}>{selected.length > 0 && <motion.footer hidden={settingsOpen} className={`${context.position} ${context.compact}`}
       initial={{ opacity: 0, y: reduce ? 0 : 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: reduce ? 0 : 8 }}
       transition={reduce ? { duration: 0 } : { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }}>

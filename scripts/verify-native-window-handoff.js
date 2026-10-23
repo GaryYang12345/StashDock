@@ -13,7 +13,7 @@ async page => {
   const initialScroll=await viewport.evaluate(node=>node.scrollTop);
   await search.fill('UI');
   await page.waitForTimeout(180);
-  const node=await page.getByRole('heading',{name:'Context shelf',exact:true}).elementHandle();
+  const node=await page.getByRole('heading',{name:'Context library',exact:true}).elementHandle();
   const selectedScroll=await viewport.evaluate(node=>{node.scrollTop=320;return node.scrollTop;});
   const results=[];
   const settled=async target=>{const s=await invoke('desktop_window_status');if(s.visible!==target||s.requested!==target)throw Error('Direct switch did not commit: '+target);};

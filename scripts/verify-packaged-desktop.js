@@ -17,7 +17,7 @@ async page => {
   page = panel;
   const open = folder.getByRole('button', { name: 'Open StashDock', exact: true });
   const activate = async button => { await button.focus(); await button.press('Enter'); };
-  await page.getByRole('heading', { name: 'Context shelf', exact: true }).waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: 'Context library', exact: true }).waitFor({ state: 'visible' });
   await activate(page.getByRole('button', { name: 'Import references', exact: true }));
   const dialog = page.getByRole('dialog');
   await dialog.waitFor({ state: 'visible' });
@@ -39,6 +39,6 @@ async page => {
   await page.waitForFunction(async () => (await window.__TAURI_INTERNALS__.invoke('desktop_window_status')).visible === 'folder');
   await activate(open);
   await page.waitForFunction(async () => (await window.__TAURI_INTERNALS__.invoke('desktop_window_status')).visible === 'panel');
-  await page.getByRole('heading', { name: 'Context shelf', exact: true }).waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: 'Context library', exact: true }).waitFor({ state: 'visible' });
   return { ...loaded, shelf: true, importTabs: true, singlePageCapture: true, minimizeReopen: true };
 }

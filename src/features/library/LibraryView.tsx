@@ -56,7 +56,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     setTagOperation({ name, action });
   }, []);
   useEffect(() => { if (!active) { setEditing(null); setContentEditing(null); setTagOperation(null); } }, [active]);
-  const { storageReady, error, refresh, refreshing, searching, shownKey, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
+  const { storageReady, error, refresh, refreshing, searching, shownKey, shownQuery, shownFilter, shownTag, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
   // The folder search opens the library on the same search.
   useEffect(() => {
     if (!isTauri()) return;
@@ -145,7 +145,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
                   )}
                 </VirtualShelf>
             ) : (
-              <EmptyState query={query} scope={activeTag ? "tag" : filter} onAdd={() => importDialog.current?.open()} onClearSearch={() => setQuery("")} onShowAll={() => { setActiveTag(null); setFilter("all"); }} />
+              <EmptyState query={shownQuery} scope={shownTag ? "tag" : shownFilter} onAdd={() => importDialog.current?.open()} onClearSearch={() => setQuery("")} onShowAll={() => { setActiveTag(null); setFilter("all"); }} />
             )}
           </ScrollArea>
 

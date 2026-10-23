@@ -9,7 +9,7 @@ new Function('module', 'exports', 'require', compiled.outputFiles[0].text)(modul
 test('the empty state names its real reason: library, collection, tag or search', () => {
   const empty = module.exports.render('');
   assert.match(empty, /lucide-plus/);
-  assert.match(empty, /Your shelf is empty/);
+  assert.match(empty, /Your library is empty/);
   assert.match(empty, /Import references/);
   // An empty collection without a search is not a failed search.
   const files = module.exports.render('', 'files');

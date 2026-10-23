@@ -8,7 +8,7 @@ async page => {
   await page.reload();
   await page.getByRole('article', { name: 'Settings', exact: true }).waitFor();
   await page.getByRole('searchbox', { name: 'Search references' }).fill('Settings');
-  await page.getByRole('article', { name: 'Settings', exact: true }).getByRole('button', { name: 'Add Settings to context', exact: true }).click({ force: true });
+  await page.getByRole('article', { name: 'Settings', exact: true }).getByRole('button', { name: 'Select Settings', exact: true }).click({ force: true });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('heading', { name: 'General', exact: true }).waitFor();
   await page.getByRole('radio', { name: 'Dark', exact: true }).click();

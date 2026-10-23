@@ -7,7 +7,7 @@ async page => {
   await app.getByRole('searchbox', { name: 'Search references' }).fill('Settings fixture');
   await app.getByRole('article', { name: 'Settings fixture', exact: true }).waitFor();
   const reference = app.getByRole('article', { name: 'Settings fixture', exact: true });
-  await reference.getByRole('button', { name: 'Add Settings fixture to context', exact: true }).click({ force: true });
+  await reference.getByRole('button', { name: 'Select Settings fixture', exact: true }).click({ force: true });
   await app.getByRole('button', { name: 'Settings', exact: true }).click();
   await app.getByRole('heading', { name: 'General', exact: true }).waitFor();
   if (await app.getByText('Launch at login', { exact: true }).count() || await app.getByText('Shortcut', { exact: true }).count()) throw Error('Desktop-only controls leaked into the plugin');

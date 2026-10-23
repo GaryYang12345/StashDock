@@ -8,7 +8,7 @@ async page => {
   await page.getByRole('menuitem', { name: 'Edit content', exact: true }).hover(); await settle();
   if (await first.evaluate(el => getComputedStyle(el).transform) !== 'matrix(1, 0, 0, 1, 0, -2)') throw Error('Desktop menu loses lift');
   await page.keyboard.press('Escape');
-  await page.getByRole('heading', { name: 'Context shelf' }).hover(); await settle();
+  await page.getByRole('heading', { name: 'Context library' }).hover(); await settle();
   if (await first.evaluate(el => getComputedStyle(el).transform) !== 'none') throw Error('Desktop lift sticks');
   await first.hover();
   await first.getByRole('button', { name: /^Add .+ to context$/ }).hover();

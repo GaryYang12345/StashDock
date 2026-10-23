@@ -65,7 +65,7 @@ export function ReferenceCardView({ item, selected, view, onToggle, onFavorite, 
 
   const select = <div className={styles.selection} data-visible={selected || undefined}>
     <Button type="button" variant="secondary" size="sm" className={styles.iconButton} aria-pressed={selected}
-      aria-label={t(selected ? 'Remove {title} from context' : 'Add {title} to context', { title: item.title })}
+      aria-label={t('Select {title}', { title: item.title })}
       data-tooltip={t("Select")} disabled={selectionDisabled} onClick={() => onToggle(item.id)}>
       {selected ? <Check size={16} strokeWidth={1.75} aria-hidden="true" /> : <Circle size={16} strokeWidth={1.75} aria-hidden="true" />}
     </Button>

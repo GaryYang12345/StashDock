@@ -7,7 +7,7 @@ import { readReferenceCover } from '../../lib/referenceCover';
 export function mcpLinkImport(getApp: () => App | null): LinkImportService {
   async function read(name: string, args: Record<string, unknown> = {}) {
     const app = getApp();
-    if (!app) throw new Error('The MCP App is not connected. Retry the connection.');
+    if (!app) throw new Error('StashDock is not connected. Retry the connection.');
     const result = await app.callServerTool({ name, arguments: args }, { timeout: name === 'preview_stashdock_link' ? 55_000 : 30_000 });
     if (result.isError) throw new Error(result.content.find(block => block.type === 'text')?.text || 'The import could not be read. Retry.');
     return result._meta;

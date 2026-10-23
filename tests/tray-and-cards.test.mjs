@@ -47,7 +47,7 @@ test('native close hides; only the tray exit action can terminate the process',a
 
 test('grid and list expose all actions by keyboard and announce copied state',()=>{
   for(const html of [grid,list]) {
-    for(const name of ['Remove Fixture reference from context','Add Fixture reference to favorites','Open Fixture reference','Delete Fixture reference','Copy Fixture reference for AI']) assert.ok(html.includes(`aria-label="${name}"`));
+    for(const name of ['Select Fixture reference','Add Fixture reference to favorites','Open Fixture reference','Delete Fixture reference','Copy Fixture reference for AI']) assert.ok(html.includes(`aria-label="${name}"`));
     assert.match(html,/aria-pressed="true"/);
     assert.match(html,/role="status">Fixture reference copied/);
     assert.match(html,/draggable="true"/);
