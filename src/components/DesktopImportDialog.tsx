@@ -37,6 +37,8 @@ type Props = {
     open: boolean;
     onClose: () => void;
     onAdd: (items: StashItem[], persisted?: boolean) => Promise<void>;
+    /** Replace the saved reference with the same link, after the user confirms. */
+    onReplace?: (item: StashItem) => Promise<void>;
     availableTags?: string[];
     existingItems?: StashItem[];
     services?: LinkImportService;
@@ -50,7 +52,7 @@ function BrowserIcon({ browser }: {
 }) { return <img className={styles.browserIcon} src={({ Chrome: chromeIcon, Edge: edgeIcon, Firefox: firefoxIcon } as Record<string, string>)[browser]} alt="" aria-hidden="true"/>; }
 // Shortest time the batch progress surface stays up, so an import is felt.
 const BATCH_PROGRESS_MIN_MS = 900;
-export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], existingItems = [], services = desktopLinkImport, onImportFiles = importReferenceFiles, onChooseFiles = services === desktopLinkImport && isTauri() ? chooseReferenceFiles : undefined, onImportChosenFiles = importChosenReferenceFiles }: Props) {
+export function DesktopImportDialog({ open, onClose, onAdd, onReplace, availableTags = [], existingItems = [], services = desktopLinkImport, onImportFiles = importReferenceFiles, onChooseFiles = services === desktopLinkImport && isTauri() ? chooseReferenceFiles : undefined, onImportChosenFiles = importChosenReferenceFiles }: Props) {
   const { t } = useI18n();
     const [mode, setMode] = useState('link');
     // The file form keeps its own chosen files and edits; once opened it stays
@@ -70,6 +72,8 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [busy, setBusy] = useState(false);
+    // A link that is already saved waits here until the user chooses to replace it.
+    const [replacing, setReplacing] = useState<{ item: StashItem; title?: string; prepare: (batch: StashItem[]) => Promise<StashItem[]> } | null>(null);
     const flight = useRef(false);
     const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
     const lookupRequest = useRef<{ url: string; service: LinkImportService; version: number; promise: Promise<LinkPreview> } | null>(null);
@@ -191,7 +195,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
         return cleanReferenceTags(canonical && !currentTags.current.some(tag => tag.toLowerCase() === canonical.toLowerCase()) ? [...currentTags.current, canonical] : currentTags.current);
     };
     // `saved` reports real progress as chunks are written (batch imports).
-    const save = async (items: StashItem[], persisted = false, prepare?: (batch: StashItem[], offset: number) => Promise<StashItem[]>, saved?: (count: number) => void) => {
+    const save = async (items: StashItem[], persisted = false, prepare?: (batch: StashItem[], offset: number) => Promise<StashItem[]>, saved?: (count: number) => void, commit: (items: StashItem[], persisted?: boolean) => Promise<void> = onAdd) => {
         if (flight.current) return;
         flight.current = true;
         const version = generation.current;
@@ -207,7 +211,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
                 const batch = items.slice(offset, offset + batchSize);
                 const prepared = prepare ? await prepare(batch, offset) : batch;
                 if (version !== generation.current) return;
-                await onAdd(prepared, persisted);
+                await commit(prepared, persisted);
                 saved?.(Math.min(items.length, offset + batch.length));
             }
             setProgress(current => current ? { ...current, completed: current.total } : null);
@@ -275,25 +279,27 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
                 const version = generation.current;
                 const existingUrls = await services.existingUrls?.() ?? [];
                 if (version !== generation.current) return;
-                if ([...existingItems, ...existingUrls.map(url => ({ url } as StashItem))].some(item => { try {
-                    return item.url && normalizeLink(item.url) === normalizeLink(url);
-                }
-                catch {
-                    return false;
-                } })) {
+                const same = (candidate?: string) => { try { return Boolean(candidate) && normalizeLink(candidate!) === normalizeLink(url); } catch { return false; } };
+                const duplicate = existingItems.find(item => same(item.url)) ?? (existingUrls.some(same) ? {} as Partial<StashItem> : undefined);
+                if (duplicate && !onReplace) {
                     setError('This link is already in your library.');
                     return;
                 }
                 const item = makeLink({ url, title, content, tags: values, faviconUrl: preview?.faviconUrl, preview: preview?.preview });
                 if (item.origin && edited.current.content) item.origin.contentEdited = true;
                 if (item.origin && preview?.previewKind) item.origin.previewKind = preview.previewKind;
-                await save([item], false, async () => {
+                const prepare = async () => {
                     let details: LinkPreview | undefined;
                     try { if (services.available()) details = await lookup(normalized); } catch (error) { if (importCapacityError(error)) throw error; /* Unavailable pages remain valid links. */ }
                     const settled = settleImportedLink(item, edited.current.content ? { ...details, title: details?.title || item.title, content } : details);
                     if (!edited.current.title && details?.title.trim()) settled.title = details.title;
                     return [withReferenceCover(settled, covers.link ?? null)];
-                });
+                };
+                if (duplicate) {
+                    setReplacing({ item, title: duplicate.title, prepare });
+                    return;
+                }
+                await save([item], false, prepare);
             }
             else {
                 if (!content.trim()) {
@@ -374,5 +380,18 @@ export function DesktopImportDialog({ open, onClose, onAdd, availableTags = [], 
       {fileOpened && <TabsContent value="file" forceMount hidden={mode !== "file"} className={styles.importPanel}><ReferenceFileImport availableTags={availableTags} prepareCover={services.prepareCover} disabled={!services.available()} onBusy={setBusy} onSave={onImportFiles} onChoose={onChooseFiles} onSaveChosen={onImportChosenFiles} onAdded={async items => { await onAdd(items, true); onClose(); }} /></TabsContent>}
     </Tabs>
     <Alert className={styles.error} tone="danger" title={t("Import could not be completed")} open={Boolean(error)}>{t(error)}</Alert>
+    <FluidDialog open={Boolean(replacing)} onClose={() => { if (!busy) setReplacing(null); }} busy={busy} title={t('Replace saved link?')}
+      description={replacing?.title ? t('“{title}” is already in your library.', { title: replacing.title }) : t('This link is already in your library.')}>
+      <p className={styles.replaceCopy}>{t('Replace its title, content, tags and cover. Your AI context is kept.')}</p>
+      <Alert tone="danger" title={t('Import could not be completed')} open={Boolean(replacing && error)}>{t(error)}</Alert>
+      <div className={styles.replaceActions}>
+        <Button type="button" variant="secondary" disabled={busy} onClick={() => setReplacing(null)}>{t('Keep existing')}</Button>
+        <Button type="button" variant="primary" loading={busy} onClick={() => {
+          const pending = replacing;
+          if (!pending || !onReplace) return;
+          void save([pending.item], false, pending.prepare, undefined, async items => { await onReplace(items[0]); setReplacing(null); });
+        }}>{t('Replace link')}</Button>
+      </div>
+    </FluidDialog>
   </FluidDialog>;
 }

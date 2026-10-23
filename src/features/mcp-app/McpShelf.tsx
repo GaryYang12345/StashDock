@@ -422,6 +422,9 @@ export function McpShelf() {
       }
       // As on desktop, new references are shown in All: a filtered view could hide them.
       if (filter !== 'all' || activeTag) { setFilter('all'); setActiveTag(''); } else refresh();
+    }} onReplace={async item => {
+      await mutate('replace_stashdock_link', { item });
+      if (filter !== 'all' || activeTag) { setFilter('all'); setActiveTag(''); } else refresh();
     }} />
     <TagEditor operation={tagOperation} returnFocus={tagFocus} onClose={() => setTagOperation(null)} onSave={async (name, replacement) => {
       if (replacement === null) { await mutate('delete_stashdock_tag', { name }); if (activeTag === name) setActiveTag(''); }

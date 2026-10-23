@@ -201,6 +201,23 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     knownUrls?.set(url, { id, url });
     return { item: get(id), duplicate: false };
   }
+  // The user confirmed replacing the saved reference with this link (the same
+  // rule as desktop's replaceLink): keep its identity, creation time, favorite
+  // and edited AI context; replace its title, content, tags and cover.
+  const replaceLink = raw => transaction(() => {
+    const url = raw?.url ? canonicalUrl(raw.url) : null;
+    const existing = url && db.prepare('SELECT id,url FROM stash_items WHERE url IS NOT NULL').all().find(row => { try { return canonicalUrl(row.url) === url; } catch { return false; } });
+    if (!existing) return insert(raw).item;
+    if (!['web', 'repo'].includes(raw.kind) || !text(raw.title, 500)) throw new Error('Each reference needs a title and a supported kind.');
+    const origin = raw.origin && typeof raw.origin === 'object' && !Array.isArray(raw.origin) ? { ...raw.origin } : {};
+    delete origin.assetPath; delete origin.originalPath;
+    origin.importedAt = new Date().toISOString();
+    const preview = raster(raw.preview);
+    db.prepare('UPDATE stash_items SET title=?,kind=?,source=?,excerpt=?,tags_json=?,content=?,preview=COALESCE(?,preview),origin_json=?,updated_at=? WHERE id=?')
+      .run(text(raw.title, 500), raw.kind, text(raw.source, 300) || 'StashDock', text(raw.excerpt, 2000), JSON.stringify(tags(raw.tags || [])),
+        text(raw.content || '', 2_000_000) || null, preview, JSON.stringify(origin), new Date().toISOString(), existing.id);
+    return get(existing.id);
+  });
   const importItems = items => {
     if (!Array.isArray(items) || !items.length || items.length > 500) throw new Error('Import between 1 and 500 references at a time.');
     return transaction(() => {
@@ -434,5 +451,5 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     describeChosenFiles: paths => chosenFiles.describe(paths), importChosenFiles,
     getCodexPreferences, saveCodexPreferences, integrations, registerInstallation,
     browserOriginAllowed: origin => registeredBrowserOrigin(readMeta, origin), desktopExecutable,
-    ...browserCaptureStore(db, { insert }), listCapturePlatforms, saveCapturePlatform, saveContextReference, importItems, importFiles, setFavorite, setTags, applyTagChanges, editMetadata, defaultCover, editContext, changeTag, remove, removeMany, close: () => db.close() };
+    ...browserCaptureStore(db, { insert }), listCapturePlatforms, saveCapturePlatform, saveContextReference, importItems, replaceLink, importFiles, setFavorite, setTags, applyTagChanges, editMetadata, defaultCover, editContext, changeTag, remove, removeMany, close: () => db.close() };
 }

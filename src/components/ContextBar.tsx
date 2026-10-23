@@ -24,7 +24,6 @@ export function ContextBar({ items, copied, onCopy, onClear, onDelete, busy = fa
         <GripVertical className={styles.grip} size={16} strokeWidth={1.75} aria-hidden="true" />
         <div className={styles.summary}>
           <div className={styles.summaryHeading}><p role="status">{t('{count} selected', { count: items.length })}</p>{onSelectAll && <SelectAllReferences onSelectAll={onSelectAll} allSelected={allSelected} />}</div>
-          <span>{t("Drag or copy to your AI app")}</span>
         </div>
       </div>
       <div className={styles.actions}>

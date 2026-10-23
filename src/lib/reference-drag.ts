@@ -60,8 +60,6 @@ function selectionBarPreview(source: HTMLElement) {
   };
   const status = source.querySelector<HTMLElement>('[role="status"]');
   if (status) label(status);
-  const hint = Array.from(source.querySelectorAll('span')).find(node => node.textContent === 'Drag or copy to your AI app');
-  if (hint) label(hint);
   for (const button of source.querySelectorAll('button')) {
     const rect = button.getBoundingClientRect(), css = getComputedStyle(button);
     if (!rect.width || css.display === 'none') continue;

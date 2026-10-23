@@ -128,6 +128,11 @@ export function useLibraryController(active: boolean, allowImport = true, editin
     setFilter("all");
     setActiveTag(null);
   };
+  const replaceLink = async (item: StashItem) => {
+    await libraryStore.replaceLink(item);
+    setFilter("all");
+    setActiveTag(null);
+  };
 
   const handleCopy = useCallback(async () => {
     if (!selectedItems.length) return;
@@ -163,5 +168,5 @@ export function useLibraryController(active: boolean, allowImport = true, editin
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [active, allowImport, editing, pendingDelete, handleCopy, selectedItems.length]);
 
-  return { storageReady, error, refresh, refreshing, searching, shownKey, shownQuery: shown.query, shownFilter, shownTag, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem };
+  return { storageReady, error, refresh, refreshing, searching, shownKey, shownQuery: shown.query, shownFilter, shownTag, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, replaceLink, handleCopy, handleCopyItem };
 }

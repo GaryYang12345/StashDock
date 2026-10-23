@@ -148,7 +148,7 @@ export const zh = {
   'Pin tag': '置顶标签', 'Unpin tag': '取消置顶', 'Actions for tag {name}': '标签“{name}”的操作',
   'Copy for AI': '复制给 AI', 'Copy': '复制', 'Copied': '已复制', 'Select all': '全选',
   'Select all matching references': '选择所有匹配的收藏', 'Selected references': '已选收藏', '{count} selected': '已选 {count} 项',
-  'Drag or copy to your AI app': '拖拽或复制到 AI 应用', 'Clear selection': '取消选择',
+  'Clear selection': '取消选择',
   'Empty references': '暂无收藏', 'No matching references': '没有匹配的收藏', 'Your library is empty': '收藏库还是空的',
   'Try different keywords.': '换个关键词试试。', 'Clear search': '清除搜索',
   'No files yet': '还没有文件', 'Import PDFs, documents and other local files to use as AI context.': '导入 PDF、文档等本地文件，作为 AI 上下文使用。',
@@ -223,6 +223,9 @@ export const zh = {
   'The library data is invalid. Refresh and retry.': '收藏库数据无效，请刷新后重试。',
   'This target did not accept the references. Try Copy for AI instead.': '目标位置未接收收藏，请改用“复制给 AI”。',
   'Wait for the current library change to finish.': '请等待当前修改完成。',
+  'Replace saved link?': '替换已保存的链接？', '“{title}” is already in your library.': '“{title}”已在收藏库中。',
+  'Replace its title, content, tags and cover. Your AI context is kept.': '将替换它的标题、内容、标签和封面，AI 上下文会保留。',
+  'Keep existing': '保留原有', 'Replace link': '替换链接',
 };
 export function resolveLanguage(preference, systemLanguage = 'en') {
   return preference === 'zh' || (preference === 'system' && /^zh\b/i.test(systemLanguage)) ? 'zh' : 'en';

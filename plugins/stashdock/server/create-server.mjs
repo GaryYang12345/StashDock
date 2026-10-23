@@ -267,6 +267,15 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
     for (const item of items) prepared.push(item.origin?.previewSource === 'custom' ? { ...item, preview: await normalizeCover(item.preview) } : item);
     const { items: rows, ...counts } = library.importItems(prepared); return counts;
   }, false, false);
+  registerWrite('replace_stashdock_link', 'Replace the saved reference for this link after the user confirmed it in the App. Keeps its favorite and edited AI context.', {
+    item: z.object({ title: z.string().min(1).max(500), kind: z.enum(['web', 'repo']), source: z.string().max(300),
+      url: z.string().min(1).max(8192), excerpt: z.string().max(2_000_000), content: z.string().max(2_000_000).optional(),
+      tags: tagList, createdAt: z.string().max(64), favorite: z.boolean().optional(), preview: z.string().max(750_000).optional(), origin: z.record(z.string(), z.unknown()).optional() }),
+  }, async ({ item }) => {
+    const prepared = item.origin?.previewSource === 'custom' ? { ...item, preview: await normalizeCover(item.preview) } : item;
+    const saved = library.replaceLink(prepared);
+    return { id: saved.id, replaced: true };
+  }, false, true);
   registerWrite('import_stashdock_files', 'Save managed copies of files explicitly selected by the user. No arbitrary file paths.', {
     files: z.array(z.object({ name: z.string().min(1).max(300), mimeType: z.string().max(200), base64: z.string().max(6_666_668), title: z.string().trim().min(1).max(500).optional(), content: z.string().max(50_000).optional(), preview: z.string().max(750_000).optional() })).min(1).max(10),
     tags: tagList.optional(),

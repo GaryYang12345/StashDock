@@ -56,7 +56,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     setTagOperation({ name, action });
   }, []);
   useEffect(() => { if (!active) { setEditing(null); setContentEditing(null); setTagOperation(null); } }, [active]);
-  const { storageReady, error, refresh, refreshing, searching, shownKey, shownQuery, shownFilter, shownTag, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
+  const { storageReady, error, refresh, refreshing, searching, shownKey, shownQuery, shownFilter, shownTag, filter, setFilter, activeTag, setActiveTag, query, setQuery, selectedItems, selectedSet, setSelectedIds, view, setView, importDialog, copied, copiedItemId, notice, setNotice, searchRef, counts, tags, visibleItems, toggleSelection, toggleFavorite, handleDelete, handleDeleteSelected, pendingDelete, setPendingDelete, deleting, deleteError, confirmDelete, handleOpenItem, addItems, replaceLink, handleCopy, handleCopyItem } = useLibraryController(active, true, Boolean(editing || contentEditing || tagOperation || settingsOpen));
   // The folder search opens the library on the same search.
   useEffect(() => {
     if (!isTauri()) return;
@@ -156,7 +156,7 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
         </div>
       </main>
 
-      <ReferenceImportDialog ref={importDialog} active={active} onAdd={addItems} availableTags={tags.map(tag => tag.name)} existingItems={libraryStore.getSnapshot().items} />
+      <ReferenceImportDialog ref={importDialog} active={active} onAdd={addItems} onReplace={replaceLink} availableTags={tags.map(tag => tag.name)} existingItems={libraryStore.getSnapshot().items} />
       <ReferenceEditor item={editing} prepareCover={prepareReferenceCover} availableTags={tags.map(tag => tag.name)} returnFocus={returnFocus} onClose={() => setEditing(null)} onSave={(id, title, tags, cover) => libraryStore.edit(id, title, tags, cover)} />
       <ContentEditor item={contentEditing} returnFocus={returnFocus} onClose={() => setContentEditing(null)} onSave={(id, content) => libraryStore.editContent(id, content)} />
       <TagEditor operation={tagOperation} returnFocus={returnFocus} onClose={() => setTagOperation(null)} onSave={async (name, replacement) => {

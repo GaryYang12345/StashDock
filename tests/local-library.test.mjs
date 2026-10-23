@@ -48,6 +48,19 @@ test('SQLite core works with no desktop, preserves concurrent changes, and updat
     db.close();
   } finally { b.close(); a.close(); }
 });
+test('replacing a saved link keeps its identity, favorite and edited AI context', async t => {
+  const dataDir = temporary(t), library = createLocalLibrary({ dataDir });
+  try {
+    const [item] = library.importItems([fixture]).items;
+    library.setFavorite(item.id, true); library.editContext(item.id, 'My context');
+    const replaced = library.replaceLink({ ...fixture, url: fixture.url + '#again', title: 'New title', content: 'New body', tags: ['Fresh'] });
+    assert.equal(replaced.id, item.id);
+    const [row] = await library.read();
+    assert.equal(row.title, 'New title'); assert.deepEqual(row.tags, ['Fresh']); assert.equal(row.content, 'New body');
+    assert.equal(row.favorite, true); assert.equal(row.contextOverride, 'My context'); assert.equal(row.createdAt, item.createdAt);
+    assert.equal((await library.read()).length, 1);
+  } finally { library.close(); }
+});
 test('bulk deletion is atomic, idempotent and removes the deleted references\' library copies', async t => {
   const dataDir = temporary(t), library = createLocalLibrary({ dataDir });
   const db = new DatabaseSync(join(dataDir, 'stashdock.sqlite3'));
@@ -120,7 +133,8 @@ test('App management tools are app-only writes; model search remains read-only',
     await server.connect(left); await client.connect(right);
     const { tools } = await client.listTools();
     const writes = tools.filter(tool => tool.annotations.readOnlyHint === false);
-    assert.equal(writes.length, 22);
+    assert.equal(writes.length, 23);
+    assert.ok(writes.some(tool => tool.name === 'replace_stashdock_link' && tool._meta?.ui?.visibility?.includes('app')));
     assert.ok(writes.some(tool => tool.name === 'open_stashdock_integration'));
     assert.ok(writes.some(tool => tool.name === 'save_stashdock_preferences'));
     assert.ok(writes.some(tool => tool.name === 'save_stashdock_capture_platform'));

@@ -35,3 +35,7 @@
 .saved { flex: none; display: inline-flex; align-items: center; gap: var(--space-1); }
 .error { margin-top: var(--space-4); }
 @media (max-width: 390px) { .entry { align-items: flex-start; flex-wrap: wrap; } }
+
+/* Same composition as the browser extension's Replace saved page dialog. */
+.replaceCopy { margin: 0 0 var(--space-6); color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); }
+.replaceActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }

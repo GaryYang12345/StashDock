@@ -1,5 +1,6 @@
 import type { StashItem } from "../../types";
 import { uniqueImports } from "./selectors";
+import { canonicalizeUrl } from "../../lib/canonical-url";
 import { reconcileReferences } from '../../lib/reconcileReferences';
 import { editReferenceCover, type ReferenceCoverEdit } from '../../lib/referenceCover';
 
@@ -94,6 +95,18 @@ export function createLibraryStore(repository: LibraryRepository) {
         publish(saved ?? next);
       }
       return { imported: unique.length, skipped: incoming.length - unique.length };
+    }),
+    // The user confirmed replacing the saved reference with this link: keep its
+    // identity, creation time, favorite and edited AI context (kept by the
+    // native upsert), and replace its title, content, tags and cover.
+    replaceLink: (incoming: StashItem) => enqueue(async () => {
+      const url = incoming.url ? canonicalizeUrl(incoming.url) : null;
+      const existing = url ? snapshot.items.find(item => item.url && canonicalizeUrl(item.url) === url) : undefined;
+      const item = existing
+        ? { ...incoming, id: existing.id, createdAt: existing.createdAt, favorite: existing.favorite, content: incoming.content ?? '', contextOverride: undefined }
+        : incoming;
+      const next = existing ? snapshot.items.map(current => current.id === existing.id ? item : current) : [item, ...snapshot.items];
+      publish(await repository.add([item], next) ?? next);
     }),
     remove: (id: string) => enqueue(async () => {
       const next = snapshot.items.filter(item => item.id !== id);
