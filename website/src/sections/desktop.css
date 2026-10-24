@@ -29,3 +29,5 @@
   .desk-chat { height: 440px; }
 }
 @media (max-width: 560px) { .desk-stage { padding: 8px; border-radius: 28px; } .desk-steps { left: 12px; right: 12px; top: 12px; max-width: none; } }
+/* Three cards across, as on a full-size library window. */
+.desk-panel .desk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

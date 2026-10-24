@@ -3,8 +3,9 @@
 .chat-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; letter-spacing: -0.01em; color: var(--ink); }
 .chat-title img { width: 20px; height: 20px; }
 .chat-thread { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 16px 22px 12px; scrollbar-width: thin; }
-.chat-hello { margin: auto; padding-bottom: 32px; display: grid; justify-items: center; gap: 18px; text-align: center; }
-.chat-hello p { margin: 0; font-size: clamp(1.5rem, 2.3vw, 2rem); font-weight: 400; letter-spacing: -0.02em; color: var(--ink); }
+/* The empty state keeps its place while the composer grows. */
+.chat-hello { position: absolute; left: 32px; right: 32px; top: 40%; translate: 0 -50%; display: grid; justify-items: center; gap: 18px; text-align: center; pointer-events: none; }
+.chat-hello p { margin: 0; font-size: clamp(1.375rem, 2vw, 1.875rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.3; color: var(--ink); text-wrap: balance; }
 .chat-hello .chat-hello-mark { width: 56px; height: 56px; opacity: .28; }
 .bubble-row { display: grid; gap: 8px; max-width: 88%; }
 .bubble-row.user { align-self: flex-end; justify-items: end; }

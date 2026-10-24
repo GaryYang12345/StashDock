@@ -5,8 +5,7 @@ import { TooltipLayer } from '../../src/components/TooltipLayer';
 import { copy, type Language } from './copy';
 import { SiteContext, initialLanguage, rememberLanguage } from './parts/useSite';
 import { Nav } from './sections/Nav';
-import { Hero } from './sections/Hero';
-import { Scattered } from './sections/Scattered';
+import { Story } from './sections/Story';
 import { LiveDemo } from './sections/LiveDemo';
 import { DesktopDemo } from './sections/DesktopDemo';
 import { Pillars } from './sections/Pillars';
@@ -26,8 +25,7 @@ export function App() {
         <TooltipLayer />
         <Nav />
         <main>
-          <Hero />
-          <Scattered />
+          <Story />
           <LiveDemo />
           <DesktopDemo />
           <Pillars />

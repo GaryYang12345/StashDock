@@ -1,5 +1,5 @@
 /* The desk: the product's grey shell holding the conversation and the plugin panel. */
-.demo-desk { width: var(--page-wide); margin-inline: auto; display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 12px; height: 700px; padding: 12px; border-radius: 34px; background: var(--well); box-shadow: inset 0 0 0 1px oklch(0% 0 0 / .035); }
+.demo-desk { width: var(--page-wide); margin-inline: auto; display: grid; grid-template-columns: minmax(0, 1fr) 500px; gap: 12px; height: 700px; padding: 12px; border-radius: 34px; background: var(--well); box-shadow: inset 0 0 0 1px oklch(0% 0 0 / .035); }
 .demo-plugin { position: relative; min-height: 0; overflow: hidden; border-radius: 24px; background: var(--surface); box-shadow: 0 1px 2px oklch(0% 0 0 / .04), 0 8px 24px oklch(0% 0 0 / .04); }
 /* McpShelf fills its iframe; here it fills the panel. */
 .demo-plugin > main { height: 100%; }

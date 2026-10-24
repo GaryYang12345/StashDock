@@ -45,8 +45,8 @@ export function inCollection(item: StashItem, filter: string) {
 }
 
 /* The ChatGPT plugin beside a conversation: the panel follows McpShelf, with its
-   header, collections, tag menu, selectable cards and selection bar. Import and
-   Settings are left out; every other control works on a page-local library. */
+   header, collections, tag menu, selectable cards and selection bar. Import
+   points to its section below; Settings and deleting are left out. */
 export function LiveDemo() {
   const { copy, language } = useSite();
   const { t } = useI18n();
@@ -123,10 +123,10 @@ export function LiveDemo() {
         onRemove={key => setChips(current => current.filter(id => id !== key))} onSent={() => setChips([])}
         onReset={reset} resetToken={resetToken} canReset={changed} />
 
-      <div className="demo-plugin" aria-label="StashDock">
+      <div className="demo-plugin no-delete" aria-label="StashDock">
         <main data-arc-ui className={shelf.root}>
           <header className={header.header}>
-            <div className={header.top}><BrandIcon className={shelf.brand} /></div>
+            <div className={header.top}><BrandIcon className={shelf.brand} /><Button variant="secondary" size="sm" onClick={() => document.getElementById('import')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}><Plus size={16} strokeWidth={1.75} aria-hidden="true" />{t('Import references')}</Button></div>
             <div className={`${header.search} ${shelf.searchRow}`}>
               <SearchField label={t('Search references')} placeholder={t('Search references')} value={query} onValueChange={setQuery} autoComplete="off" spellCheck={false} />
               <div className={shelf.viewToolbar}><ReferenceViewToggle value={view} onChange={setView} /></div>
@@ -160,7 +160,7 @@ export function LiveDemo() {
                 <SelectAllReferences disabled={pending.length > 0} allSelected={allSelected} onSelectAll={() => setSelected(current => [...new Set([...current, ...items.map(item => item.id)])])} />
               </div></div>
               <div className={context.actions}>
-                <SelectionManagementActions disabled={pending.length > 0} onDelete={() => remove(selected)} onClear={() => setSelected([])} />
+                <SelectionManagementActions disabled={pending.length > 0} onClear={() => setSelected([])} />
                 <Button type="button" variant="primary" size="sm" className={`${action.button} ${!pending.length && selectionAdded ? action.success : ''}`} loading={pending.length > 1 || (pending.length === 1 && selected.length === 1 && pending[0] === selected[0])} onClick={() => add(selected)}>
                   {selectionAdded ? <Check size={16} strokeWidth={1.75} aria-hidden="true" /> : <Plus size={16} strokeWidth={1.75} aria-hidden="true" />}
                   {selectionAdded ? text.added : text.add}

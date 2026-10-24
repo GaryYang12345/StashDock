@@ -1,4 +1,5 @@
 @import "../../src/styles/product-tokens.css";
+@import "../../src/styles/scrollbars.css";
 
 @font-face { font-family: "Srotone"; src: url("../Srotone-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Srotone"; src: url("../Srotone-Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
@@ -77,3 +78,7 @@ a { color: inherit; }
 /* The few utilities shared components expect from the app's Tailwind build. */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .h-\[19px\] { height: 19px; } .w-\[135px\] { width: 135px; } .max-w-full { max-width: 100%; } .object-contain { object-fit: contain; }
+
+/* The demonstrations keep favourites but not deleting: the card's second
+   control (Delete reference) is hidden. */
+.no-delete article [class*="_controls_"] > button + button { display: none; }

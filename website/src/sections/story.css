@@ -1,0 +1,16 @@
+.story { position: relative; }
+/* The folder's track ends where the scattered section stops being pinned, so
+   the folder and the section leave together. */
+.story-track { --folder-centre: 76svh; position: absolute; inset: 0 0 calc(100svh - var(--folder-centre) - 72px); z-index: 30; pointer-events: none; }
+.story-folder { position: sticky; top: calc(var(--folder-centre) - 72px); width: 144px; height: 144px; margin-inline: auto; translate: -4px 0; pointer-events: auto; }
+.story-folder-button { display: block; width: 144px; height: 144px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.story-folder-button:focus-visible { outline: none; }
+.story-folder-button:focus-visible .folder-pocket-outline { stroke: #878787; stroke-opacity: .5; }
+/* The desktop folder's own hover: lifted, with its references raised. */
+.story-folder-surface { display: block; width: 160px; height: 160px; scale: .9; transform-origin: 0 0; transition: transform var(--duration-standard) var(--ease-standard); }
+.story-folder .folder-artwork { display: block; overflow: visible; pointer-events: none; }
+.story-folder .folder-reference { transition: transform var(--duration-standard) var(--ease-standard); }
+.story-folder-button:hover .story-folder-surface { transform: translateY(-2px) scale(1.012); }
+.story-folder-button:hover .folder-reference { transform: translateY(-3px); }
+.story-folder-button:active .story-folder-surface { transform: scale(.985); }
+@media (prefers-reduced-motion: reduce) { .story-folder-surface, .story-folder .folder-reference { transition: none; } }

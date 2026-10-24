@@ -1,26 +1,30 @@
-.hero { position: relative; display: grid; align-items: center; min-height: min(880px, calc(100svh - 60px)); padding-block: 72px 96px; overflow: hidden; background: radial-gradient(120% 80% at 50% 100%, var(--canvas) 0%, var(--background) 62%); }
+/* The hero leaves its lower part to the folder, which then stays in place
+   while the page scrolls into the scattered section (see Story). */
+.hero { position: relative; display: grid; align-content: start; min-height: calc(100svh - 60px); padding-block: clamp(40px, 8.5vh, 104px) 0; overflow: hidden; background: radial-gradient(120% 70% at 50% 100%, var(--canvas) 0%, var(--background) 62%); }
 .hero-copy { display: grid; justify-items: center; gap: var(--space-6); text-align: center; }
-.hero-title { font-size: clamp(2.375rem, 6.2vw, 5.5rem); }
+.hero-title { font-size: clamp(2.375rem, min(6.2vw, 9.4svh), 5.5rem); }
 .hero-line { display: block; white-space: nowrap; }
 .hero-lede { max-width: 36rem; }
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-2); }
 .pill.large { min-height: 48px; padding-inline: 22px 24px; gap: 10px; }
-.hero-plugin { display: inline-flex; align-items: center; gap: 6px; margin-top: calc(var(--space-2) * -1); font-size: var(--text-sm); font-weight: 500; color: var(--quiet); text-decoration: none; transition: color .16s ease; }
-.hero-plugin:hover { color: var(--ink); }
-.hero-plugin svg { transition: transform .2s ease; }
-.hero-plugin:hover svg { transform: translateX(2px); }
 
-/* Icons set into the headline, sized to the type and centred on its x-height. */
-.title-icon { position: relative; display: inline-block; vertical-align: middle; }
-.title-folder { width: 1.38em; height: 1.38em; margin: -.2em -.08em 0; translate: 0 -.04em; }
-.title-folder .folder-artwork { display: block; width: 100%; height: 100%; overflow: visible; }
-.title-ai { width: 1em; height: 1em; margin: -.12em .04em 0; translate: 0 -.04em; }
-.title-ai img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-:lang(zh) .title-folder { margin-inline: .02em; }
-:lang(zh) .title-ai { margin-inline: .12em; }
+/* The plugin announcement, above the headline. */
+.hero-badge { display: inline-flex; align-items: center; gap: 10px; height: 38px; padding: 0 6px 0 12px; margin-bottom: calc(var(--space-2) * -1); border-radius: var(--radius-pill); background: var(--surface); box-shadow: 0 0 0 1px var(--border), 0 4px 14px oklch(0% 0 0 / .05); font-size: var(--text-sm); font-weight: 500; color: var(--ink); text-decoration: none; transition: box-shadow .2s ease, transform .2s ease; }
+.hero-badge img { width: 18px; height: 18px; }
+.hero-badge:hover { box-shadow: 0 0 0 1px var(--border-strong), 0 6px 18px oklch(0% 0 0 / .08); }
+.hero-badge-action { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px 0 12px; border-radius: var(--radius-pill); background: var(--accent-strong); color: var(--accent-foreground); }
+.hero-badge-action svg { transition: transform .2s ease; }
+.hero-badge:hover .hero-badge-action svg { transform: translateX(2px); }
+
+/* Marks set into the headline: one size, centred on the line. */
+.title-icon { position: relative; display: inline-block; width: .92em; height: .92em; margin: -.12em .06em 0; vertical-align: middle; translate: 0 -.05em; }
+.title-icon img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+/* StashDock's mark in the grey of the update card's brand mark. */
+.title-brand img { opacity: .28; }
+:lang(zh) .title-icon { margin-inline: .14em; }
 :lang(zh) .hero-lede { max-width: 40rem; }
 @media (max-width: 640px) {
-  .hero { min-height: 0; padding-block: 64px 72px; }
   .hero-title { font-size: clamp(2rem, 10vw, 2.75rem); }
   .hero-line { white-space: normal; text-wrap: balance; }
+  .hero-badge { height: 34px; font-size: 13px; }
 }
