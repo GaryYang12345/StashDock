@@ -12,9 +12,9 @@
 .desk-folder:hover .folder-reference, .desk-folder[data-search-open] .folder-reference { transform: translateY(-3px); }
 .desk-folder:has(.desk-folder-button:active) .desk-folder-surface { transform: scale(.985); }
 
-/* The search window, as folder_search places it: 480 x 316, centred on the
-   folder's optical axis (4px left of centre), its bottom 40px over the folder. */
-.quick-window { --edge: 32px; --above-field: calc(var(--edge) + 44px + var(--space-3)); position: absolute; left: calc(72px - 4px - 240px); top: calc(-316px + 40px); width: 480px; height: 316px; color: var(--foreground); cursor: default; }
+/* The search window, as folder_search places it: 480 x 316, its bottom 40px
+   over the folder, centred on the folder (the page needs no optical shift). */
+.quick-window { --edge: 32px; --above-field: calc(var(--edge) + 44px + var(--space-3)); position: absolute; left: calc(72px - 240px); top: calc(-316px + 40px); width: 480px; height: 316px; color: var(--foreground); cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .desk-folder:hover .desk-folder-surface, .desk-folder:has(.desk-folder-button:active) .desk-folder-surface, .desk-folder:hover .folder-reference { transform: none; }
 }

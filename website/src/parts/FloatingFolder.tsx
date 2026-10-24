@@ -20,7 +20,7 @@ import './floating.css';
 export const REFERENCE_TYPE = 'application/x-stashdock-reference';
 const FIELD = 184, FLOW = 460, CARD = 232;
 /** The search window: 480 x 316, its bottom 40px over the folder's transparent top. */
-const WINDOW_W = 480, WINDOW_H = 316, OVERLAP = 40, OPTICAL_SHIFT = 4, FOLDER = 144;
+const WINDOW_W = 480, WINDOW_H = 316, OVERLAP = 40, FOLDER = 144;
 const INTENT_MS = 180, SEARCH_DELAY = 140, COPIED_MS = 1800, RESULT_LIMIT = 24;
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const mod = (value: number, size: number) => ((value % size) + size) % size;
@@ -204,4 +204,4 @@ export function DeskFolder({ bounds, events = {}, hidden = false }: { bounds: Re
   </motion.div>;
 }
 
-export const searchWindowSize = { width: WINDOW_W, height: WINDOW_H, overlap: OVERLAP, shift: OPTICAL_SHIFT };
+export const searchWindowSize = { width: WINDOW_W, height: WINDOW_H, overlap: OVERLAP };

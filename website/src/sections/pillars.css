@@ -8,13 +8,12 @@
 .pillar-stage { position: relative; min-height: 600px; display: grid; place-items: center; padding: clamp(24px, 4vw, 44px); border-radius: 34px; background: var(--well); overflow: hidden; }
 .pillar-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-2); }
 .pillar-replay { color: var(--quiet); }
-/* Chapters of the import film: the current one fills as it plays. */
+/* Chapters of the import film. */
 .chapters { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--radius-pill); background: var(--well); }
 .chapter { position: relative; overflow: hidden; height: 32px; padding: 0 14px; border: 0; border-radius: var(--radius-pill); background: transparent; font: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--quiet); cursor: pointer; transition: color .2s ease, background-color .2s ease; }
 .chapter:hover { color: var(--ink); }
 .chapter[data-active] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px oklch(0% 0 0 / .08); }
 .chapter > span { position: relative; z-index: 1; }
-.chapter-progress { position: absolute; left: 10px; right: 10px; bottom: 4px; height: 2px; border-radius: 2px; background: var(--ink); opacity: .18; transform-origin: 0 50%; }
 .pillar-stage > .reveal, .pillar-stage > div { width: 100%; }
 .browser-marks { display: grid; gap: 10px; margin-top: var(--space-2); }
 .browser-marks > span { display: flex; gap: 10px; }

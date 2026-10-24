@@ -1,4 +1,4 @@
-.download-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.download-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .download-card { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; padding: 32px; border-radius: 30px; background: var(--well); }
 .download-card .pill.secondary { background: var(--surface); }
 .download-card .pill.secondary:hover { background: oklch(99% 0 0); box-shadow: 0 0 0 1px var(--border); }

@@ -78,7 +78,7 @@ const items: DemoItem[] = [
     text: { en: { title: 'example/sdk', excerpt: 'Client library and API reference.', content: 'Client library and API reference.' },
       zh: { title: 'example/sdk', excerpt: '客户端库和 API 文档。', content: '客户端库和 API 文档。' } } },
   { id: 'voice', kind: 'web', source: 'Xiaohongshu', url: 'https://www.xiaohongshu.com/explore/1', createdAt: at(14), preview: post('#f6e6e6', '#ff2442'), origin: origin('xiaohongshu', 'browser_extension', { faviconUrl: xiaohongshuMark }),
-    tags: { en: ['Writing'], zh: ['写作'] },
+    tags: { en: ['Writing', 'Design'], zh: ['写作', '设计'] },
     text: { en: { title: 'Notes on brand voice', excerpt: 'Speak like a thoughtful friend, not a brochure.', content: 'Speak like a thoughtful friend, not a brochure.' },
       zh: { title: '关于品牌语气的笔记', excerpt: '像一个靠谱的朋友说话，而不是宣传册。', content: '像一个靠谱的朋友说话，而不是宣传册。' } } },
   { id: 'reuse', kind: 'web', source: 'Research', url: 'https://research.example/reuse', createdAt: at(13), preview: research('#dfe6dc'), origin: origin('edge', 'manual_url', { faviconUrl: researchMark }),

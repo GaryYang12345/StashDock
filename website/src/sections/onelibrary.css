@@ -13,3 +13,7 @@
   .one-lines { display: none; }
   .one-folder { margin-top: 40px; width: 140px; }
 }
+/* The AI plugin's marks: ChatGPT, then the others fading away. */
+.one-marks[data-trail] img:nth-child(2) { opacity: .7; }
+.one-marks[data-trail] img:nth-child(3) { opacity: .4; }
+.one-marks[data-trail] img:nth-child(4) { opacity: .18; }

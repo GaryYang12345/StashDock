@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowLeft, Check, Download, FileUp, Link, Plus, RefreshCw, RotateCcw, SquarePen, X } from 'lucide-react';
+import { ArrowLeft, Check, Download, FileUp, Link, Play, Plus, RefreshCw, SquarePen, X } from 'lucide-react';
 import { Button } from '../../../src/components/arc/button/button';
 import { Input } from '../../../src/components/arc/input/input';
 import { Textarea } from '../../../src/components/arc/textarea/textarea';
@@ -59,11 +59,11 @@ function Pillar({ id, title, body, flip, extra, stage }: { id?: string; title: s
 }
 
 function ReplayButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
-  return <Button type="button" variant="secondary" size="sm" className="pillar-replay" onClick={onClick} disabled={disabled}><RotateCcw size={16} strokeWidth={1.75} aria-hidden="true" />{label}</Button>;
+  return <Button type="button" variant="secondary" size="sm" className="pillar-replay" onClick={onClick} disabled={disabled}><Play size={15} strokeWidth={1.75} aria-hidden="true" />{label}</Button>;
 }
 
-/* Starts once when the stage scrolls into view; `run` restarts it. */
-function useFirstView<T extends Element>(margin = '-25% 0px') {
+/* Starts once the stage reaches the middle of the screen; `run` restarts it. */
+function useFirstView<T extends Element>(margin = '-48% 0px -48% 0px') {
   const [ref, inView] = useInView<T>(margin);
   const [run, setRun] = useState(0);
   useEffect(() => { if (inView) setRun(value => value || 1); }, [inView]);
@@ -71,7 +71,7 @@ function useFirstView<T extends Element>(margin = '-25% 0px') {
 }
 
 /* ---------- Import: Link, Note, File and browser bookmarks, one after another ---------- */
-type Chapter = 0 | 1 | 2 | 3;
+type Chapter = 0 | 1 | 2;
 type Dialog = { tab: 'link' | 'note' | 'file'; menu?: boolean; browser?: 'reading' | 'list'; progress?: number; url?: string; looking?: boolean; title?: string; content?: string; tags?: string[]; file?: boolean };
 
 function ImportPillar() {
@@ -86,7 +86,6 @@ function ImportPillar() {
   const pick = (id: string) => library.find(item => item.id === id)!;
   const bookmarks = useMemo(() => ['calm', 'sdk', 'reuse', 'pricing-thread', 'voice'].map(pick), [library]); // eslint-disable-line react-hooks/exhaustive-deps
   const [chapter, setChapter] = useState<Chapter>(0);
-  const [playing, setPlaying] = useState(false);
   const [cards, setCards] = useState<StashItem[]>([]);
   const [modal, setModal] = useState<Dialog | null>(null);
   const [pressed, setPressed] = useState('');
@@ -98,10 +97,10 @@ function ImportPillar() {
   async function play(from: Chapter) {
     const s = script.start();
     const ms = (value: number) => reduced ? 0 : value;
-    setPlaying(true); setModal(null); setPressed('');
+    setModal(null); setPressed('');
     // Each chapter adds to the library the earlier ones built.
-    const earlier: StashItem[][] = [[pick('calm')], [pick('rules')], [pick('spec')]];
-    setCards([...earlier.slice(0, from).flat().reverse(), ...base]);
+    const earlier: StashItem[][] = [bookmarks, [pick('rules')]];
+    setCards([...earlier.slice(0, from).reverse().flat(), ...base]);
     s.place(stage.current ? stage.current.clientWidth - 60 : 400, stage.current ? stage.current.clientHeight - 40 : 400);
     const click = async (selector: string, then: () => void, travel = 650) => {
       if (!await s.move(selector, ms(travel))) return false;
@@ -113,49 +112,18 @@ function ImportPillar() {
       return true;
     };
     const patch = (next: Partial<Dialog>) => setModal(current => current ? { ...current, ...next } : current);
-    const open = (tab: Dialog['tab']) => click('[data-step="import"]', () => setModal({ tab }));
+    const open = () => click('[data-step="import"]', () => setModal({ tab: 'link' }));
     const save = async (selector: string, added: StashItem[]) => {
       if (!await click(selector, () => setModal(null))) return false;
       setCards(current => [...added, ...current.filter(item => !added.some(entry => entry.id === item.id))]);
       return s.wait(ms(1500));
     };
-    for (let next = from; next <= 3; next++) {
+    for (let next = from; next <= 2; next++) {
       setChapter(next as Chapter);
       if (!await s.wait(ms(500))) return;
       if (next === 0) {
-        if (!await open('link')) return;
-        if (!await s.move('[data-step="url"]', ms(600))) return;
-        if (!await type(text.link, url => patch({ url }), 18)) return;
-        patch({ looking: true });
-        if (!await s.wait(ms(900))) return;
-        const calm = pick('calm');
-        patch({ looking: false, title: calm.title, content: calm.content, tags: calm.tags.slice(0, 1) });
-        if (!await s.wait(ms(700))) return;
-        if (!await save('[data-step="save"]', [calm])) return;
-      }
-      if (next === 1) {
-        if (!await open('link')) return;
-        if (!await click('[data-step="tab-note"]', () => patch({ tab: 'note' }))) return;
-        if (!await s.move('[data-step="title"]', ms(500))) return;
-        if (!await type(text.noteTitle, title => patch({ title }), 40)) return;
-        if (!await s.move('[data-step="content"]', ms(500))) return;
-        if (!await type(text.noteBody, content => patch({ content }), 22)) return;
-        patch({ tags: pick('rules').tags.slice(0, 1) });
-        if (!await s.wait(ms(500))) return;
-        if (!await save('[data-step="save"]', [pick('rules')])) return;
-      }
-      if (next === 2) {
-        if (!await open('link')) return;
-        if (!await click('[data-step="tab-file"]', () => patch({ tab: 'file' }))) return;
-        if (!await click('[data-step="choose"]', () => {})) return;
-        if (!await s.wait(ms(500))) return;
-        const spec = pick('spec');
-        patch({ file: true, title: spec.title, content: spec.content, tags: spec.tags });
-        if (!await s.wait(ms(900))) return;
-        if (!await save('[data-step="save"]', [spec])) return;
-      }
-      if (next === 3) {
-        if (!await open('link')) return;
+        // Links: a whole browser's bookmarks at once.
+        if (!await open()) return;
         if (!await click('[data-step="from"]', () => patch({ menu: true }))) return;
         if (!await s.wait(ms(500))) return;
         if (!await click('[data-step="chrome"]', () => patch({ menu: false, browser: 'reading' }))) return;
@@ -167,10 +135,31 @@ function ImportPillar() {
         if (!await s.wait(ms(800))) return;
         setModal(null);
         setCards(current => [...bookmarks, ...current.filter(item => !bookmarks.some(entry => entry.id === item.id))]);
+        if (!await s.wait(ms(1500))) return;
+      }
+      if (next === 1) {
+        if (!await open()) return;
+        if (!await click('[data-step="tab-note"]', () => patch({ tab: 'note' }))) return;
+        if (!await s.move('[data-step="title"]', ms(500))) return;
+        if (!await type(text.noteTitle, title => patch({ title }), 40)) return;
+        if (!await s.move('[data-step="content"]', ms(500))) return;
+        if (!await type(text.noteBody, content => patch({ content }), 22)) return;
+        patch({ tags: pick('rules').tags.slice(0, 1) });
+        if (!await s.wait(ms(500))) return;
+        if (!await save('[data-step="save"]', [pick('rules')])) return;
+      }
+      if (next === 2) {
+        if (!await open()) return;
+        if (!await click('[data-step="tab-file"]', () => patch({ tab: 'file' }))) return;
+        if (!await click('[data-step="choose"]', () => {})) return;
+        if (!await s.wait(ms(500))) return;
+        const spec = pick('spec');
+        patch({ file: true, title: spec.title, content: spec.content, tags: spec.tags });
+        if (!await s.wait(ms(900))) return;
+        if (!await save('[data-step="save"]', [spec])) return;
         await s.move('[data-step="grid"]', ms(900), .5, .3);
       }
     }
-    setPlaying(false);
   }
 
   const stageNode = <div className="import" ref={node => { stage.current = node; (view.ref as { current: HTMLDivElement | null }).current = node; }}>
@@ -198,7 +187,7 @@ function ImportPillar() {
     <div className="chapters" role="tablist" aria-label={text.title}>
       {text.chapters.map((name, i) => <button key={name} type="button" role="tab" aria-selected={chapter === i} className="chapter" data-active={chapter === i || undefined} data-done={i < chapter || undefined}
         onClick={() => setJump(current => ({ chapter: i as Chapter, run: current.run + 1 }))}>
-        <span>{name}</span>{chapter === i && playing && !reduced && <motion.i key={`${jump.run}-${i}`} className="chapter-progress" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: [7.5, 8, 5.5, 7][i], ease: 'linear' }} />}
+        <span>{name}</span>
       </button>)}
     </div>
     <ReplayButton label={text.replay} onClick={() => setJump(current => ({ chapter: 0, run: current.run + 1 }))} />
@@ -362,7 +351,7 @@ function AgentsPillar() {
   const { copy, language } = useSite();
   const text = copy.agents;
   const reduced = useReducedMotion();
-  const view = useFirstView<HTMLDivElement>('-30% 0px');
+  const view = useFirstView<HTMLDivElement>();
   const [step, setStep] = useState(0);
   const rule = useMemo(() => demoLibrary(language).find(item => item.id === 'rules')!, [language]);
   const steps = 7;

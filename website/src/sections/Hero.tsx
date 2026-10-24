@@ -20,11 +20,7 @@ export function Hero() {
   const enter = (delay: number) => ({ initial: { opacity: 0, y: 16, filter: 'blur(8px)' }, animate: { opacity: 1, y: 0, filter: 'blur(0px)' }, transition: { duration: .9, delay, ease: cubic(motionTokens.ease.enter) } });
   return <section className="hero" id="top">
     <div className="hero-copy page">
-      <motion.a className="hero-badge" href={links.plugin} {...enter(0)}>
-        <img src={chatgptMark} alt="" width={18} height={18} /><span>{copy.hero.badge}</span>
-        <span className="hero-badge-action">{copy.hero.badgeAction}<ArrowRight size={14} strokeWidth={2} aria-hidden="true" /></span>
-      </motion.a>
-      <motion.h1 className="display display-xl hero-title" aria-label={copy.hero.plain} {...enter(.06)}>
+      <motion.h1 className="display display-xl hero-title" aria-label={copy.hero.plain} {...enter(0)}>
         {copy.hero.title.split('\n').map(line => <span key={line} className="hero-line" aria-hidden="true">{inline(line)}</span>)}
       </motion.h1>
       <motion.p className="lede hero-lede" {...enter(.16)}>{copy.hero.body}</motion.p>
@@ -32,6 +28,10 @@ export function Hero() {
         <a className="pill primary large" href={links.desktop}><OsMark os="windows" />{copy.hero.windows}</a>
         <a className="pill primary large" href={links.mac}><OsMark os="mac" size={17} />{copy.hero.mac}</a>
       </motion.div>
+      <motion.a className="hero-badge" href={links.plugin} {...enter(.34)}>
+        <img src={chatgptMark} alt="" width={18} height={18} /><span>{copy.hero.badge}</span>
+        <span className="hero-badge-action">{copy.hero.badgeAction}<ArrowRight size={14} strokeWidth={2} aria-hidden="true" /></span>
+      </motion.a>
     </div>
   </section>;
 }

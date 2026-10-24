@@ -30,7 +30,7 @@ export function Platforms() {
     </div>
     <Reveal className="plugin-status page" delay={80}>
       <div className="plugin-row"><img src={chatgptMark} alt="" width={24} height={24} /><span className="plugin-name">ChatGPT</span><span className="plugin-badge ready">{copy.platforms.available}</span></div>
-      <div className="plugin-row"><img src={claudeMark} alt="" width={24} height={24} /><span className="plugin-name">Claude</span><span className="plugin-badge">{copy.platforms.soon}</span></div>
+      <div className="plugin-row"><img src={claudeMark} alt="" width={24} height={24} /><span className="plugin-name">Claude</span><span className="plugin-badge ready">{copy.platforms.available}</span></div>
     </Reveal>
   </section>;
 }

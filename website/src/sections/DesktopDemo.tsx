@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Check, Minus } from 'lucide-react';
+import { Minus } from 'lucide-react';
 import SegmentedControl from '../../../src/components/arc/segmented-control/segmented-control';
 import { ScrollArea } from '../../../src/components/arc/scroll-area/scroll-area';
 import { motionTokens } from '../../../src/components/arc/lib/motion-tokens';
@@ -100,7 +100,7 @@ export function DesktopDemo() {
       <div className="desk-area" ref={area}>
         <ol className="desk-steps" aria-label="Steps">
           {text.steps.map((step, i) => <li key={step} data-done={steps[i] || undefined} data-current={i === current || undefined}>
-            <span className="desk-step-mark">{steps[i] ? <Check size={12} strokeWidth={2.25} aria-hidden="true" /> : i + 1}</span>{step}
+            <span className="desk-step-mark">{i + 1}</span>{step}
           </li>)}
           <li className="desk-step-note">{text.open}</li>
         </ol>

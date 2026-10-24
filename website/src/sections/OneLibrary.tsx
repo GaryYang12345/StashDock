@@ -5,6 +5,10 @@ import chatgptMark from '../../../src/assets/brands/chatgpt.svg';
 import chromeMark from '../../../src/assets/brands/chrome.svg';
 import edgeMark from '../../../src/assets/brands/edge.svg';
 import firefoxMark from '../../../src/assets/brands/firefox.svg';
+import safariMark from '../../../src/assets/brands/safari.svg';
+import claudeMark from '../../../src/assets/brands/claude.svg';
+
+const logo = (file: string) => `${import.meta.env.BASE_URL}logos/${file}.svg`;
 import { Reveal } from '../parts/Reveal';
 import { useInView, useSite } from '../parts/useSite';
 import './onelibrary.css';
@@ -17,8 +21,9 @@ export function OneLibrary() {
   const [ref, shown] = useInView<HTMLDivElement>('-20% 0px');
   const entries = [
     { title: text.desktop, body: text.desktopBody, marks: [brandTile] },
-    { title: text.plugin, body: text.pluginBody, marks: [chatgptMark] },
-    { title: text.extension, body: text.extensionBody, marks: [chromeMark, edgeMark, firefoxMark] },
+    // ChatGPT first, then other AI apps trailing off.
+    { title: text.plugin, body: text.pluginBody, marks: [chatgptMark, claudeMark, logo('gemini-color'), logo('deepseek-color')], trail: true },
+    { title: text.extension, body: text.extensionBody, marks: [chromeMark, edgeMark, firefoxMark, safariMark] },
   ];
   return <section className="section one" aria-labelledby="one-title">
     <Reveal className="page section-head center">
@@ -28,7 +33,7 @@ export function OneLibrary() {
     <div className="one-hub page" ref={ref}>
       <div className="one-entries">
         {entries.map((entry, i) => <Reveal key={entry.title} className="one-entry" delay={i * 90}>
-          <span className="one-marks">{entry.marks.map(mark => <img key={mark} className={mark === brandTile ? 'tile' : undefined} src={mark} alt="" width={36} height={36} />)}</span>
+          <span className="one-marks" data-trail={'trail' in entry || undefined}>{entry.marks.map(mark => <img key={mark} className={mark === brandTile ? 'tile' : undefined} src={mark} alt="" width={36} height={36} />)}</span>
           <h3 className="display-sm">{entry.title}</h3>
           <p className="small">{entry.body}</p>
         </Reveal>)}
