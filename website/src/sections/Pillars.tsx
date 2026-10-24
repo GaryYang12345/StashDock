@@ -62,11 +62,17 @@ function ReplayButton({ label, onClick, disabled }: { label: string; onClick: ()
   return <Button type="button" variant="secondary" size="sm" className="pillar-replay" onClick={onClick} disabled={disabled}><Play size={15} strokeWidth={1.75} aria-hidden="true" />{label}</Button>;
 }
 
-/* Starts once the stage reaches the middle of the screen; `run` restarts it. */
+/* Starts once the stage has reached the middle of the screen and stayed a
+   moment, so the reader sees the window before it moves; `run` restarts it. */
+const SETTLE_MS = 1600;
 function useFirstView<T extends Element>(margin = '-48% 0px -48% 0px') {
   const [ref, inView] = useInView<T>(margin);
   const [run, setRun] = useState(0);
-  useEffect(() => { if (inView) setRun(value => value || 1); }, [inView]);
+  useEffect(() => {
+    if (!inView) return;
+    const id = window.setTimeout(() => setRun(value => value || 1), SETTLE_MS);
+    return () => window.clearTimeout(id);
+  }, [inView]);
   return { ref, run, restart: () => setRun(value => value + 1) };
 }
 

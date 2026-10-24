@@ -11,10 +11,10 @@
 
 .desk-steps { position: absolute; left: 20px; top: 20px; z-index: 2; display: grid; gap: 10px; margin: 0; padding: 16px 18px; list-style: none; border-radius: 20px; background: color-mix(in oklab, var(--surface) 82%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 1px 2px oklch(0% 0 0 / .04), 0 8px 24px oklch(0% 0 0 / .05); font-size: 13px; color: var(--quiet); max-width: 300px; }
 .desk-steps li { display: flex; align-items: center; gap: 10px; transition: color .2s ease; }
-.desk-steps li[data-current] { color: var(--ink); font-weight: 500; }
 .desk-steps li[data-done] { color: var(--ink); }
 .desk-step-mark { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--surface-muted); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--quiet); transition: background-color .2s ease, color .2s ease; }
-[data-current] > .desk-step-mark, [data-done] > .desk-step-mark { background: var(--ink); color: var(--surface); }
+/* Grey until the step is done, then black. */
+[data-done] > .desk-step-mark { background: var(--ink); color: var(--surface); }
 .desk-step-note { padding-top: 8px; margin-top: 2px; border-top: 1px solid var(--border-subtle); font-size: 12px; color: var(--text-muted); }
 .desk-restore { position: absolute; left: 50%; bottom: 96px; translate: -50% 0; z-index: 2; background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
 

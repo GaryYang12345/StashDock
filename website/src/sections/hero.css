@@ -1,5 +1,7 @@
 .hero { position: relative; display: grid; align-content: center; min-height: min(900px, calc(100svh - 60px)); padding-block: 64px 120px; overflow: hidden; background: radial-gradient(120% 70% at 50% 100%, var(--canvas) 0%, var(--background) 62%); }
-.hero-copy { display: grid; justify-items: center; gap: var(--space-6); text-align: center; }
+/* The hero's glow fades out before its edge, so no seam shows below it. */
+.hero::after { content: ""; position: absolute; inset: auto 0 0; height: 200px; background: linear-gradient(to bottom, transparent, var(--background)); pointer-events: none; }
+.hero-copy { position: relative; z-index: 1; display: grid; justify-items: center; gap: var(--space-6); text-align: center; }
 .hero-title { font-size: clamp(2.375rem, min(6.2vw, 9.4svh), 5.5rem); }
 .hero-line { display: block; white-space: nowrap; }
 .hero-lede { max-width: 36rem; }

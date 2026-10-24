@@ -1,5 +1,4 @@
 import chatgptMark from '../../../src/assets/brands/chatgpt.svg';
-import claudeMark from '../../../src/assets/brands/claude.svg';
 import { Reveal } from '../parts/Reveal';
 import { useSite } from '../parts/useSite';
 import './platforms.css';
@@ -30,7 +29,6 @@ export function Platforms() {
     </div>
     <Reveal className="plugin-status page" delay={80}>
       <div className="plugin-row"><img src={chatgptMark} alt="" width={24} height={24} /><span className="plugin-name">ChatGPT</span><span className="plugin-badge ready">{copy.platforms.available}</span></div>
-      <div className="plugin-row"><img src={claudeMark} alt="" width={24} height={24} /><span className="plugin-name">Claude</span><span className="plugin-badge ready">{copy.platforms.available}</span></div>
     </Reveal>
   </section>;
 }
