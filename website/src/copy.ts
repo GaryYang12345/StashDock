@@ -35,7 +35,7 @@ const en = {
     add: 'Add to chat', addShort: 'Add', added: 'Added',
   },
   desktop: {
-    title: 'Or use the desktop app.',
+    title: 'On your desktop, one hover away.',
     body: 'You can also install StashDock Desktop. Its floating folder stays on top of every app: hover to search, drag or paste a card into any AI, or click to open your whole library.',
     steps: ['Hover the folder', 'Type “design”', 'Drag a card into the box, or Copy and paste'],
     open: 'Click the folder to open your library',
@@ -134,7 +134,7 @@ const zh: typeof en = {
     add: '添加到对话', addShort: '添加', added: '已添加',
   },
   desktop: {
-    title: '或者，用桌面端。',
+    title: '在桌面上，悬停即得。',
     body: '你也可以安装 StashDock 桌面端。悬浮文件夹停在所有应用之上：悬停即可搜索，把卡片拖进或粘贴到任何 AI，点一下打开完整的库。',
     steps: ['悬停文件夹', '输入“设计”', '把卡片拖进输入框，或复制后粘贴'],
     open: '点击文件夹，打开你的库',
