@@ -4,14 +4,12 @@
 .field, .frame, .empty { position: absolute; }
 .empty { translate: -50% 0; }
 .field { width: 184px; transform-origin: 50% 100%; bottom: var(--edge); }
-.surface:not([data-upward]) .field { bottom: auto; top: var(--edge); transform-origin: 50% 0; }
 .field { --search-border: transparent; --search-border-active: transparent; }
 .field label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .field > div > div { min-height: 44px; border-radius: var(--radius-pill); padding-inline: var(--space-4); background: var(--surface-raised); box-shadow: var(--folder-elevation); }
 
-/* Cards sit above the field (below it when it opens downwards). */
+/* Cards sit above the field. */
 .frame { width: 460px; height: 0; bottom: var(--above-field); transform-origin: 50% 100%; }
-.surface:not([data-upward]) .frame { bottom: auto; top: var(--above-field); transform-origin: 50% 0; }
 .frame[data-filled] { height: 176px; }
 .swap { position: absolute; inset: 0; transform-origin: inherit; }
 /* Both ends dissolve; only the current card is fully clear. */
@@ -21,4 +19,4 @@
 .stage3d { position: relative; width: 232px; height: 168px; transform-style: preserve-3d; perspective: 1100px; }
 .slot { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform, opacity; }
 .empty { bottom: var(--above-field); margin: 0; white-space: nowrap; font-size: var(--text-sm); color: var(--text-secondary); text-shadow: 0 0 12px var(--surface); }
-.surface:not([data-upward]) .empty { bottom: auto; top: var(--above-field); }
+

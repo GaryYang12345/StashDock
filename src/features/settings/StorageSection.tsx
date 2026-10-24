@@ -8,6 +8,7 @@ import { SettingsRow, formatStorageSize } from './SettingsParts';
 import { SettingHelp } from './SettingHelp';
 import { useI18n } from './locale';
 import styles from './SettingsView.module.css';
+import { errorText } from '../../lib/errorText';
 
 export type StorageInfo = { path: string; bytes: number; references: number };
 export type StorageDestination = { path: string; token?: string };
@@ -29,7 +30,7 @@ export function StorageSection({ services, onBusyChange, onMoved, disabled = fal
       const value = await services.read();
       if (!value || typeof value.path !== 'string' || !Number.isFinite(value.bytes) || value.bytes < 0 || !Number.isSafeInteger(value.references) || value.references < 0) throw Error('Storage details could not be read. Retry.');
       if (alive.current && generation.current === request) setStorage(value);
-    } catch (reason) { if (alive.current && generation.current === request) setError(String(reason)); }
+    } catch (reason) { if (alive.current && generation.current === request) setError(errorText(reason)); }
     finally { if (alive.current && generation.current === request) setReading(false); }
   }
   useEffect(() => { alive.current = true; void read(); return () => { alive.current = false; ++generation.current; }; }, [services]);
@@ -38,7 +39,7 @@ export function StorageSection({ services, onBusyChange, onMoved, disabled = fal
     if (flight.current || disabled) return;
     flight.current = true; setBusy(true); setMoving(isMove); setError('');
     try { await task(); }
-    catch (reason) { if (alive.current) setError(String(reason)); }
+    catch (reason) { if (alive.current) setError(errorText(reason)); }
     finally { flight.current = false; if (alive.current) { setBusy(false); setMoving(false); } }
   }
   return <><section className={styles.section} aria-labelledby="settings-storage"><h2 id="settings-storage">{t('Storage')}</h2><div className={styles.group}>

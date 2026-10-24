@@ -40,9 +40,10 @@ import { readPreviewPages } from './readPreviewPages';
 import { useMcpSettings } from './settings';
 import McpSettingsView from './McpSettingsView';
 import { useI18n } from '../settings/locale';
+import { COMPOSER_UNAVAILABLE, errorText } from '../../lib/errorText';
 
 const kinds = ['web', 'repo', 'pdf', 'image', 'note', 'file'];
-function message(error: unknown) { return error instanceof Error ? error.message : 'The request failed. Please retry.'; }
+const message = (error: unknown) => errorText(error);
 
 function readRows(raw: unknown): StashItem[] {
   if (!Array.isArray(raw) || raw.some(item => !item || typeof item !== 'object' || typeof item.id !== 'string' ||
@@ -171,7 +172,7 @@ export function McpShelf() {
     alive.current = true;
     // Panel height belongs to the host. Inline autoResize would feed viewport
     // height back to it instead of filling the available side-panel space.
-    const app = new App({ name: 'StashDock', version: '0.4.33' }, { availableDisplayModes: ['fullscreen'] }, { autoResize: false, strict: true });
+    const app = new App({ name: 'StashDock', version: '0.4.34' }, { availableDisplayModes: ['fullscreen'] }, { autoResize: false, strict: true });
     appRef.current = app;
     let disposed = false;
     setConnected(false); setConnectionError('');
@@ -369,7 +370,7 @@ export function McpShelf() {
         : !connected ? <LoadingReferences className={styles.list} /> : <>
           {!draftSupported && <Alert tone="warning" className={styles.notice} title={t('Adding to chat is unavailable')}>{t('Open StashDock beside an active conversation to add references. No message will be sent.')}</Alert>}
           {readError && <Alert tone="danger" className={styles.notice} title={t('References could not be refreshed')}><span className={styles.retry}><span>{t(readError)}</span><Button variant="secondary" onClick={refresh} loading={refreshing}>{t('Retry connection')}</Button></span></Alert>}
-          {addError && <Alert tone="danger" className={styles.notice} title={t('Could not confirm the reference was added')} onDismiss={() => setAddError('')}>{t(addError)} {t('Check the input box before trying again.')}</Alert>}
+          {addError && <Alert tone="danger" className={styles.notice} title={t('Could not confirm the reference was added')} onDismiss={() => setAddError('')}>{t(addError)}{addError !== COMPOSER_UNAVAILABLE && <> {t('Check the input box before trying again.')}</>}</Alert>}
           {managementError && <Alert tone="danger" className={styles.notice} title={t('The library change could not be saved')} onDismiss={() => setManagementError('')}>{t(managementError)}</Alert>}
           <Alert tone="info" className={styles.notice} title={t(notice)} open={Boolean(notice)} onDismiss={() => setNotice('')} />
           {!ready ? <LoadingReferences compact={view === 'list'} className={view === 'grid' ? styles.list : undefined} /> : items.length ? <div className={view === 'grid' ? styles.list : listStyles.list} aria-busy={refreshing}>

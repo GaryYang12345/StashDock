@@ -16,7 +16,7 @@ import styles from './FolderSearch.module.css';
 // cover flow of matching references above it. Everything floats; nothing is
 // wrapped in a panel. Native placement, hover intent and focus belong to
 // folder_search.rs; this view only reports what it shows and what the user does.
-type Status = { open: boolean; upward: boolean; anchorPx: number | null };
+type Status = { open: boolean; anchorPx: number | null };
 const FIELD = 184, FLOW = 460, CARD = 232;
 /** Room around the field for its shadow, inside the window region. */
 const FIELD_SHADOW = 32;
@@ -70,19 +70,20 @@ function Flow({ items, pos, index, copiedId, go, onCopy, onOpen, onDragStart, on
 
 // Opening: the field rises out of the folder, then cards rise out of the field.
 // Closing runs the same path backwards: cards sink into the field, then the
-// field folds back into the folder. Mirrored when it opens below.
+// field folds back into the folder. Always above the folder, near a screen
+// edge too, so the composition never changes.
 const panelMotion = (reduced: boolean | null): Variants => ({ hidden: {}, shown: {}, gone: { transition: { staggerChildren: reduced ? 0 : 0.07 } } });
-const fieldMotion = (reduced: boolean | null, upward: boolean): Variants => {
-  const y = upward ? 18 : -18;
+const fieldMotion = (reduced: boolean | null): Variants => {
+  const y = 18;
   return {
     hidden: { opacity: 0, y, scaleX: 0.78, scaleY: 0.6, filter: `blur(${motionTokens.blur.soft}px)` },
     shown: { opacity: 1, y: 0, scaleX: 1, scaleY: 1, filter: 'blur(0px)', transition: reduced ? { duration: 0 } : { ...motionTokens.spring.smooth, opacity: { duration: motionTokens.duration.fast, ease: cubic(motionTokens.ease.enter) }, filter: { duration: motionTokens.duration.standard } } },
     gone: { opacity: 0, y, scaleX: 0.78, scaleY: 0.6, filter: `blur(${motionTokens.blur.subtle}px)`, transition: reduced ? { duration: 0 } : { duration: motionTokens.duration.standard, ease: cubic(motionTokens.ease.inOut), opacity: { duration: motionTokens.duration.fast, delay: 0.06 } } },
   };
 };
-const frameMotion = (reduced: boolean | null, upward: boolean): Variants => ({
+const frameMotion = (reduced: boolean | null): Variants => ({
   hidden: {}, shown: { opacity: 1, y: 0, scale: 1 },
-  gone: { opacity: 0, y: upward ? 22 : -22, scale: 0.94, filter: `blur(${motionTokens.blur.subtle}px)`, transition: { duration: reduced ? 0 : motionTokens.duration.exit, ease: cubic(motionTokens.ease.standard) } },
+  gone: { opacity: 0, y: 22, scale: 0.94, filter: `blur(${motionTokens.blur.subtle}px)`, transition: { duration: reduced ? 0 : motionTokens.duration.exit, ease: cubic(motionTokens.ease.standard) } },
 });
 const rise = (reduced: boolean | null, y: number): { initial: TargetAndTransition; animate: TargetAndTransition; exit: TargetAndTransition } => ({
   initial: { opacity: 0, y, scale: 0.96, filter: `blur(${motionTokens.blur.soft}px)` },
@@ -130,7 +131,7 @@ function SearchPanel({ status, onHeld }: { status: Status; onHeld: (held: boolea
     if (filled && frame.current) { const { offsetTop: y, offsetHeight: h } = frame.current; rects.push({ x: 0, y: y - 40, width: window.innerWidth, height: h + 64 }); }
     if (empty && note.current) { const box = note.current.getBoundingClientRect(); rects.push({ x: box.left - 8, y: box.top - 8, width: box.width + 16, height: box.height + 16 }); }
     void invoke('folder_search_region', { rects }).catch(() => {});
-  }, [filled, empty, status.upward, status.anchorPx]);
+  }, [filled, empty, status.anchorPx]);
 
   const go = (next: number) => {
     if (!results.length) return;
@@ -175,18 +176,18 @@ function SearchPanel({ status, onHeld }: { status: Status; onHeld: (held: boolea
   const fieldCentre = anchor;
   const fieldLeft = anchor - FIELD / 2;
   const flowLeft = anchor - FLOW / 2;
-  return <motion.div ref={surface} className={styles.surface} data-upward={status.upward || undefined} variants={panelMotion(reduced)} initial="hidden" animate="shown" exit="gone">
+  return <motion.div ref={surface} className={styles.surface} variants={panelMotion(reduced)} initial="hidden" animate="shown" exit="gone">
     {/* Keeps its size until leaving cards have sunk into the field, so they never flash past it. */}
-    <motion.div ref={frame} className={styles.frame} style={{ left: flowLeft }} variants={frameMotion(reduced, status.upward)}
+    <motion.div ref={frame} className={styles.frame} style={{ left: flowLeft }} variants={frameMotion(reduced)}
       data-filled={filled || undefined}>
       <AnimatePresence initial={false} mode="popLayout" onExitComplete={() => { if (!hasResults.current) setHoldFrame(false); }}>
-        {results.length > 0 && <motion.div key={resultKey} className={styles.swap} {...rise(reduced, status.upward ? 14 : -14)}>
+        {results.length > 0 && <motion.div key={resultKey} className={styles.swap} {...rise(reduced, 14)}>
           <Flow items={results} pos={pos} index={index} copiedId={copiedId} go={go} onCopy={item => void copy(item)} onOpen={open}
             onDragStart={dragStart} onDragEnd={endReferenceDrag} />
         </motion.div>}
       </AnimatePresence>
     </motion.div>
-    <motion.div ref={field} className={styles.field} style={{ left: fieldLeft }} variants={fieldMotion(reduced, status.upward)}
+    <motion.div ref={field} className={styles.field} style={{ left: fieldLeft }} variants={fieldMotion(reduced)}
       onPointerDown={() => { if (!focused) void invoke('folder_search_focus').then(() => input.current?.focus()).catch(() => {}); }}>
       <SearchField ref={input} label={t('Search references')} placeholder={t('Search')} value={query} onValueChange={setQuery} autoComplete="off" spellCheck={false}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -202,7 +203,7 @@ function SearchPanel({ status, onHeld }: { status: Status; onHeld: (held: boolea
 }
 
 export function FolderSearch() {
-  const [status, setStatus] = useState<Status>({ open: false, upward: true, anchorPx: null });
+  const [status, setStatus] = useState<Status>({ open: false, anchorPx: null });
   // Each opening is a fresh search: a new query, no leftover cards.
   const [session, setSession] = useState(0);
   useEffect(() => {

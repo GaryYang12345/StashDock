@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LocaleProvider } from './locale';
 import { resolveLanguage } from './messages.mjs';
+import { errorText } from '../../lib/errorText';
 
 export type DesktopPreferences = { language: 'system' | 'en' | 'zh'; theme: 'system' | 'light' | 'dark'; shortcut: string; floatingWindow: boolean };
 export type SettingsInfo = { preferences: DesktopPreferences; launchAtLogin: boolean; version: string; githubUrl: string | null; systemLanguage?: string };
@@ -44,7 +45,7 @@ export function DesktopPreferencesProvider({ children }: { children: ReactNode }
         setInfo({ ...value, preferences: earlyPreferences.current ?? value.preferences });
         earlyPreferences.current = null;
       }
-    } catch (reason) { if (alive.current && generation.current === version) setError(String(reason)); }
+    } catch (reason) { if (alive.current && generation.current === version) setError(errorText(reason)); }
     finally { if (alive.current && generation.current === version) setLoading(false); }
   }, []);
   useEffect(() => {
@@ -64,7 +65,7 @@ export function DesktopPreferencesProvider({ children }: { children: ReactNode }
         if (disposed) { stop(); return; } unlisten = stop;
       }
       if (!disposed) await reload();
-    })().catch(reason => { if (!disposed) { setError(String(reason)); setLoading(false); } });
+    })().catch(reason => { if (!disposed) { setError(errorText(reason)); setLoading(false); } });
     return () => { disposed = true; alive.current = false; ++generation.current; unlisten?.(); window.removeEventListener('languagechange', language); };
   }, [reload]);
   const preferences = info?.preferences ?? DEFAULT;
@@ -86,7 +87,7 @@ export function DesktopPreferencesProvider({ children }: { children: ReactNode }
     try {
       const value = isTauri() ? await invoke<DesktopPreferences>('save_desktop_preferences', { preferences }) : preferences;
       if (alive.current) setInfo(current => current ? { ...current, preferences: value } : current);
-    } catch (reason) { if (alive.current) setError(String(reason)); throw reason; }
+    } catch (reason) { if (alive.current) setError(errorText(reason)); throw reason; }
     finally { flight.current = false; if (alive.current) setPending(false); }
   };
   const setStartup = async (enabled: boolean) => {
@@ -95,7 +96,7 @@ export function DesktopPreferencesProvider({ children }: { children: ReactNode }
     try {
       const value = await invoke<boolean>('set_launch_at_login', { enabled });
       if (alive.current) setInfo(current => current ? { ...current, launchAtLogin: value } : current);
-    } catch (reason) { if (alive.current) setError(String(reason)); throw reason; }
+    } catch (reason) { if (alive.current) setError(errorText(reason)); throw reason; }
     finally { flight.current = false; if (alive.current) setPending(false); }
   };
   return <Context.Provider value={{ info, loading, pending, error, reload, save, setStartup }}><LocaleProvider language={resolveLanguage(preferences.language, info?.systemLanguage ?? systemLanguage)}>{children}</LocaleProvider></Context.Provider>;

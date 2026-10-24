@@ -8,6 +8,7 @@ import { StorageSection, type StorageInfo, type StorageServices, type StorageDes
 import { IntegrationIcon } from '../settings/IntegrationIcon';
 import { useI18n } from '../settings/locale';
 import { useMcpSettings } from './settings';
+import { errorText } from '../../lib/errorText';
 import styles from '../settings/SettingsView.module.css';
 import { IntegrationSections } from '../settings/IntegrationSections';
 import { GitHubMark } from '../settings/GitHubMark';
@@ -33,7 +34,7 @@ export default function McpSettingsView({ onClose, onOpenLink, onLibraryMoved }:
       <IntegrationSections host="codex" load={loadIntegrations} openLink={onOpenLink} openApp={id => call('open_stashdock_integration', { id })} disabled={busy} />
       <section className={styles.section} aria-labelledby="settings-about"><h2 id="settings-about">{t('About')}</h2><div className={styles.group}>
         <SettingsRow title="StashDock for ChatGPT" meta={versionLabel(info.version)} icon={<IntegrationIcon id="codex" />}><Button variant="secondary" size="sm" disabled={busy} onClick={() => setCheckingUpdates(true)}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />{t('Check for updates')}</Button></SettingsRow>
-        {info.githubUrl && <SettingsRow title="GitHub" icon={<GitHubMark />}><Button variant="ghost" size="sm" onClick={() => { setOperationError(''); void onOpenLink(info.githubUrl!).catch(reason => setOperationError(String(reason))); }}>{t('Open')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button></SettingsRow>}
+        {info.githubUrl && <SettingsRow title="GitHub" icon={<GitHubMark />}><Button variant="ghost" size="sm" onClick={() => { setOperationError(''); void onOpenLink(info.githubUrl!).catch(reason => setOperationError(errorText(reason))); }}>{t('Open')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button></SettingsRow>}
       </div><Alert tone="danger" title={t('Try again.')} open={Boolean(operationError)}>{t(operationError)}</Alert></section>
       <UpdateDialog open={checkingUpdates} product="StashDock for ChatGPT" version={info.version} check={checkUpdates} onClose={() => setCheckingUpdates(false)} openLink={onOpenLink} />
     </>}

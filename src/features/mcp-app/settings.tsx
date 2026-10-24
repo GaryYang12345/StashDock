@@ -3,6 +3,7 @@ import { App, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
 import { LocaleProvider } from '../settings/locale';
 import { resolveLanguage } from '../settings/messages.mjs';
 import type { Appearance } from '../settings/SettingsParts';
+import { errorText } from '../../lib/errorText';
 
 type Info = { preferences: Appearance; version: string; githubUrl: string | null };
 type Host = { theme?: 'light' | 'dark'; locale?: string };
@@ -41,7 +42,7 @@ export function McpSettingsProvider({ children }: { children: ReactNode }) {
       if (!value || typeof value.version !== 'string' || (value.githubUrl !== null && !/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(value.githubUrl))) throw Error('Settings could not be loaded. Retry.');
       const preferences = appearance(value.preferences);
       if (request === generation.current) setInfo({ ...value, preferences });
-    } catch (reason) { if (request === generation.current) setError(String(reason)); }
+    } catch (reason) { if (request === generation.current) setError(errorText(reason)); }
     finally { if (request === generation.current) setLoading(false); }
   }, [client, call]);
   useEffect(() => {
@@ -67,7 +68,7 @@ export function McpSettingsProvider({ children }: { children: ReactNode }) {
       const result = await call('save_stashdock_preferences', { preferences: patch });
       const next = appearance(result.preferences);
       if (request === generation.current) setInfo(value => value ? { ...value, preferences: next } : value);
-    } catch (reason) { if (request === generation.current) setError(String(reason)); throw reason; }
+    } catch (reason) { if (request === generation.current) setError(errorText(reason)); throw reason; }
     finally { flight.current = false; if (request === generation.current) setPending(false); }
   };
   return <Context.Provider value={{ info, loading, pending, error, setClient, setHost, reload, save, call }}><LocaleProvider language={language}>{children}</LocaleProvider></Context.Provider>;

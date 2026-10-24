@@ -9,6 +9,7 @@ import { IntegrationIcon } from './IntegrationIcon';
 import { applicationWebsite, githubUrl, installationUrl, integrationCatalog, integrationGuides, referencePurpose, type IntegrationId, type IntegrationInfo } from './integrations';
 import { useI18n } from './locale';
 import styles from './IntegrationSections.module.css';
+import { errorText } from '../../lib/errorText';
 
 export function IntegrationGuide({ id, kind, info, openApp, openLink }: { id: IntegrationId; kind: 'usage' | 'setup'; info: IntegrationInfo | null; openApp?: (id: IntegrationId) => Promise<unknown>; openLink: (url: string) => Promise<unknown> }) {
   const { t } = useI18n();
@@ -28,7 +29,7 @@ export function IntegrationGuide({ id, kind, info, openApp, openLink }: { id: In
   async function run(task: () => Promise<unknown>) {
     if (flight.current) return;
     flight.current = true; setPending(true); setError('');
-    try { await task(); } catch (reason) { if (alive.current) setError(String(reason).replace(/^Error: /, '')); }
+    try { await task(); } catch (reason) { if (alive.current) setError(errorText(reason)); }
     finally { flight.current = false; if (alive.current) setPending(false); }
   }
   return <div className={styles.guide}>

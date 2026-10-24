@@ -10,6 +10,7 @@ import { agents, browsers, integrationCatalog, integrationGuides, type Integrati
 import { useI18n } from './locale';
 import settings from './SettingsView.module.css';
 import styles from './IntegrationSections.module.css';
+import { errorText } from '../../lib/errorText';
 
 type Props = { host: 'desktop' | 'codex'; load: () => Promise<IntegrationInfo>; openLink: (url: string) => Promise<unknown>; openApp?: (id: IntegrationId) => Promise<unknown>; disabled?: boolean };
 type Guide = { id: IntegrationId; kind: 'setup' | 'usage' };
@@ -21,7 +22,7 @@ export function IntegrationSections({ host, load, openLink, openApp, disabled }:
   async function refresh() {
     const generation = ++request.current; setLoading(true); setError('');
     try { const result = await load(); if (!result || !Array.isArray(result.items)) throw Error('Installation status could not be checked. Retry.'); if (request.current === generation) setInfo(result); }
-    catch (reason) { if (request.current === generation) setError(String(reason)); }
+    catch (reason) { if (request.current === generation) setError(errorText(reason)); }
     finally { if (request.current === generation) setLoading(false); }
   }
   useEffect(() => {

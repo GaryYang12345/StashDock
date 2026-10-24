@@ -148,8 +148,6 @@ pub struct SearchPlacement {
     pub y: i32,
     pub width: u32,
     pub height: u32,
-    /// Cards grow upward from a field below them; false mirrors the layout.
-    pub upward: bool,
     /// The folder's centre from the window's left edge, in physical pixels
     /// (the page divides by its own device pixel ratio).
     pub anchor_px: f64,
@@ -166,15 +164,14 @@ pub fn search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) ->
     // Always centred on the folder's (optical) axis, even if the outer cards then reach
     // past the screen edge: symmetry matters more than showing every side card.
     let x = (centre - w / 2.0).round();
-    let above = folder.1 as f64 - h + overlap;
-    let upward = above >= area.y as f64;
-    let y = if upward { above } else { folder.1 as f64 + folder_size - overlap }.round();
+    // Always above the folder, the same composition everywhere: near the top of
+    // the screen the cards may reach past the edge rather than flip below.
+    let y = (folder.1 as f64 - h + overlap).round();
     SearchPlacement {
         x: x as i32,
         y: y as i32,
         width: w as u32,
         height: h as u32,
-        upward,
         anchor_px: centre - x,
     }
 }
@@ -182,20 +179,18 @@ pub fn search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) ->
 mod tests {
     use super::*;
     #[test]
-    fn search_is_centred_on_the_folder_and_flips_at_the_top() {
+    fn search_is_centred_on_the_folder_and_always_above_it() {
         let area = WorkArea { x: 0, y: 0, width: 1920, height: 1040, scale: 1.5 };
         let folder = 144.0 * 1.5;
         // Room above: centred on the folder, overlapping its transparent top.
         let up = search_placement((900, 700), folder, area);
-        assert!(up.upward);
         assert_eq!((up.width, up.height), (720, 474));
         assert_eq!(up.y, 700 - 474 + 60);
         assert_eq!(up.x, 900 + 108 - 6 - 360);
         assert!((up.anchor_px - 360.0).abs() < 0.01);
-        // No room above: mirrored below the folder.
-        let down = search_placement((900, 40), folder, area);
-        assert!(!down.upward);
-        assert_eq!(down.y, 40 + 216 - 60);
+        // Near the top of the screen: still above the folder, reaching past the edge.
+        let top = search_placement((900, 40), folder, area);
+        assert_eq!(top.y, 40 - 474 + 60);
         // Screen edge: still centred on the folder, reaching past the edge.
         let edge = search_placement((1920 - 216, 700), folder, area);
         assert_eq!(edge.x, 1920 - 108 - 6 - 360);

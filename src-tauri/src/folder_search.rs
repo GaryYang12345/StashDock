@@ -48,7 +48,6 @@ pub struct FolderSearchState(Mutex<Search>);
 #[serde(rename_all = "camelCase")]
 pub struct FolderSearchStatus {
     pub open: bool,
-    pub upward: bool,
     /// Physical pixels from the window's left edge; None before the first placement.
     pub anchor_px: Option<f64>,
 }
@@ -71,7 +70,6 @@ fn search_window(app: &AppHandle) -> Option<WebviewWindow> {
 fn status_of(inner: &Search) -> FolderSearchStatus {
     FolderSearchStatus {
         open: inner.open,
-        upward: inner.placement.is_none_or(|p| p.upward),
         anchor_px: inner.placement.map(|p| p.anchor_px),
     }
 }

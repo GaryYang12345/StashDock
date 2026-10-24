@@ -16,6 +16,7 @@ import { IntegrationSections } from './IntegrationSections';
 import type { IntegrationInfo } from './integrations';
 import { GitHubMark } from './GitHubMark';
 import { UpdateDialog, versionLabel, type UpdateInfo } from './UpdateDialog';
+import { errorText } from '../../lib/errorText';
 
 export default function SettingsView({ onClose, onBusyChange }: { onClose: () => void; onBusyChange: (busy: boolean) => void }) {
   const { t } = useI18n();
@@ -35,14 +36,14 @@ export default function SettingsView({ onClose, onBusyChange }: { onClose: () =>
     move: async ({ path }) => {
       await invoke('move_library', { path });
       setRestartRequired(true);
-      try { await invoke('restart_desktop'); } catch (reason) { if (alive.current) setOperationError(String(reason)); }
+      try { await invoke('restart_desktop'); } catch (reason) { if (alive.current) setOperationError(errorText(reason)); }
     },
   }), [t]);
   const disabled = loading || pending || !info || moving || restartRequired;
   function run(task: () => Promise<unknown>) {
     if (operation.current) return;
     operation.current = true; setOperationError('');
-    void task().catch(reason => { if (alive.current) setOperationError(String(reason)); }).finally(() => { operation.current = false; });
+    void task().catch(reason => { if (alive.current) setOperationError(errorText(reason)); }).finally(() => { operation.current = false; });
   }
   const preferences = info?.preferences;
   return <SettingsFrame onClose={onClose} busy={moving || restartRequired} loading={loading}>

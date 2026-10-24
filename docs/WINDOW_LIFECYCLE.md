@@ -60,8 +60,8 @@ visible surface; it closes and detaches when the folder hides. It is topmost,
 taskbar-free and non-activating until its field is pressed; closing returns focus
 to the previous window. Hover over the folder or the search is combined into one
 180 ms intent delay both ways. Its native region covers only the visible field and
-cards (empty when closed). Placement centres on the folder's optical axis, flips
-below the folder when there is no room above, and never moves the folder. A press
+cards (empty when closed). Placement centres on the folder's optical axis, always
+opens above the folder (near the top of the screen too), and never moves the folder. A press
 on the folder (to open or drag it) puts the search away first.
 
 ## Native events

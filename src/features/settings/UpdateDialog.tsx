@@ -5,6 +5,7 @@ import brandMark from '../../../assets/brand/icon.svg';
 import { GitHubMark } from './GitHubMark';
 import { useI18n } from './locale';
 import styles from './UpdateDialog.module.css';
+import { errorText } from '../../lib/errorText';
 
 export type UpdateInfo = { status: 'unconfigured' | 'current' | 'available'; version: string | null; url: string | null };
 type State = { phase: 'checking' } | { phase: 'done'; update: UpdateInfo } | { phase: 'failed'; error: string };
@@ -31,7 +32,7 @@ export function UpdateDialog({ open, product, version, check, onClose, openLink 
       const wait = Math.max(0, MIN_CHECK_MS - (performance.now() - started));
       setTimeout(() => { if (request === current.current) setState(next); }, wait);
     };
-    check().then(update => settle({ phase: 'done', update }), reason => settle({ phase: 'failed', error: reason instanceof Error ? reason.message : String(reason) }));
+    check().then(update => settle({ phase: 'done', update }), reason => settle({ phase: 'failed', error: errorText(reason) }));
     return () => { current.current++; };
   }, [open, attempt]);
   const update = state.phase === 'done' ? state.update : null;
@@ -47,7 +48,7 @@ export function UpdateDialog({ open, product, version, check, onClose, openLink 
     <div className={styles.actions}>
       {state.phase === 'failed' && <Button variant="secondary" size="sm" onClick={() => setAttempt(value => value + 1)}>{t('Retry')}</Button>}
       <Button variant={available ? 'secondary' : state.phase === 'failed' ? 'ghost' : 'secondary'} size="sm" onClick={onClose}>{t(state.phase === 'checking' ? 'Cancel' : available ? 'Not now' : 'Done')}</Button>
-      {available && <Button variant="primary" size="sm" onClick={() => { setLinkError(''); void openLink(available.url!).then(onClose, reason => setLinkError(String(reason))); }}><GitHubMark size={16} />{t('Update on GitHub')}</Button>}
+      {available && <Button variant="primary" size="sm" onClick={() => { setLinkError(''); void openLink(available.url!).then(onClose, reason => setLinkError(errorText(reason))); }}><GitHubMark size={16} />{t('Update on GitHub')}</Button>}
     </div>
   </div>} >{null}</FluidDialog>;
 }
