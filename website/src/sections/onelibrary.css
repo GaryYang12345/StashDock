@@ -1,0 +1,15 @@
+.one { background: linear-gradient(180deg, var(--background), var(--canvas)); }
+.one-hub { display: grid; justify-items: center; }
+.one-entries { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.one-entry { display: grid; gap: 10px; align-content: start; justify-items: center; text-align: center; padding: 8px 16px 20px; }
+.one-entry p { margin: 0; max-width: 30ch; }
+.one-marks { display: flex; align-items: center; justify-content: center; gap: 8px; height: 56px; margin-bottom: 6px; }
+.one-marks img { width: 36px; height: 36px; }
+.one-marks img.tile { width: 52px; height: 52px; }
+.one-lines { display: block; width: 100%; height: clamp(96px, 14vw, 180px); overflow: visible; }
+.one-folder { width: 168px; margin-top: -24px; }
+@media (max-width: 860px) {
+  .one-entries { grid-template-columns: minmax(0, 1fr); }
+  .one-lines { display: none; }
+  .one-folder { margin-top: 40px; width: 140px; }
+}

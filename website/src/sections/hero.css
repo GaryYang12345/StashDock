@@ -1,0 +1,32 @@
+.hero { position: relative; min-height: max(720px, calc(100svh - 60px)); overflow: hidden; background: radial-gradient(120% 80% at 50% 100%, var(--canvas) 0%, var(--background) 62%); }
+.hero-copy { position: relative; z-index: 2; display: grid; justify-items: center; gap: var(--space-6); padding-top: clamp(72px, 12vh, 136px); text-align: center; pointer-events: none; }
+.hero-copy a, .hero-copy button { pointer-events: auto; }
+.hero-title span { display: block; }
+/* While the folder's search shows results, the page behind steps back. */
+.hero-copy { transition: opacity var(--duration-standard, .24s) ease, filter var(--duration-standard, .24s) ease; }
+.hero:has(.quick-stage) .hero-copy { opacity: .14; filter: blur(3px); }
+.hero-lede { max-width: 36rem; }
+.hero-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-2); }
+
+/* The whole hero is the folder's desk. */
+.hero-stage { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.hero-folder { position: absolute; left: calc(50% - 88px); bottom: 15%; width: 176px; height: 176px; pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.hero-folder:active { cursor: grabbing; }
+.hero-folder-art { width: 176px; height: 176px; transition: transform var(--duration-standard, .24s) var(--ease-standard, ease); }
+.hero-folder-art .folder-artwork { display: block; overflow: visible; pointer-events: none; }
+.hero-folder-art .folder-reference { transition: transform var(--duration-standard, .24s) var(--ease-standard, ease); }
+.hero-folder:hover .hero-folder-art, .hero-folder[data-open] .hero-folder-art { transform: translateY(-2px) scale(1.012); }
+.hero-folder:hover .folder-reference, .hero-folder[data-open] .folder-reference { transform: translateY(-3px); }
+.hero-hint { position: absolute; left: 0; right: 0; bottom: calc(15% - 36px); margin: 0; text-align: center; color: var(--text-muted); }
+
+/* Quick search: centred on the folder's optical axis, always above it. */
+.quick { position: absolute; left: calc(50% - 4px); bottom: calc(100% - 40px); width: 460px; height: 268px; translate: -50% 0; cursor: default; perspective: 1100px; }
+.quick-field { position: absolute; left: calc(50% - 92px); bottom: 32px; width: 184px; transform-origin: 50% 100%; --search-border: transparent; --search-border-active: transparent; }
+.quick-field label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.quick-field > div > div { min-height: 44px; border-radius: var(--radius-pill); padding-inline: var(--space-4); background: var(--surface-raised); box-shadow: var(--folder-elevation); }
+.quick-flow { position: absolute; left: 0; right: 0; bottom: 88px; height: 176px; transform-origin: 50% 100%; }
+.quick-stage { position: absolute; inset: 0; display: grid; place-items: center; transform-style: preserve-3d;
+  mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%); -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%); }
+.quick-slot { position: absolute; transform-style: preserve-3d; will-change: transform, opacity; }
+.quick-empty { position: absolute; left: 50%; bottom: 8px; translate: -50% 0; margin: 0; white-space: nowrap; font-size: var(--text-sm); color: var(--quiet); }
+@media (max-width: 640px) { .hero { min-height: max(860px, calc(100svh - 60px)); } .hero-folder { bottom: 10%; } .hero-hint { bottom: calc(10% - 36px); } .quick { width: 340px; } }

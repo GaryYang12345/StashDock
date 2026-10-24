@@ -45,3 +45,7 @@ Thumbs.db
 *.pem
 *.key
 *.zip
+
+# Brand font files are licensed separately; keep them out of the public repository.
+website/*.ttf
+website/dist/

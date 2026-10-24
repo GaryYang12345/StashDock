@@ -1,0 +1,64 @@
+/* The desk: the product's grey shell holding two white surfaces, a library and an AI app. */
+.demo-desk { width: var(--page-wide); margin-inline: auto; display: grid; grid-template-columns: minmax(0, 1.32fr) minmax(340px, 1fr); gap: 12px; height: 680px; padding: 12px; border-radius: 34px; background: var(--well); box-shadow: inset 0 0 0 1px oklch(0% 0 0 / .035); }
+.demo-library, .demo-chat { min-height: 0; display: flex; flex-direction: column; border-radius: 24px; background: var(--surface); box-shadow: 0 1px 2px oklch(0% 0 0 / .04), 0 8px 24px oklch(0% 0 0 / .04); }
+.demo-library { overflow: hidden; }
+.demo-library-head { display: grid; gap: var(--space-3); padding: 20px 20px 12px; }
+.demo-library-head h3 { font-size: 1.125rem; }
+.demo-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.demo-search-row { display: flex; align-items: center; gap: var(--space-3); }
+.demo-search-row > :first-child { flex: 1; min-width: 0; }
+.demo-search-row > :last-child { flex: none; }
+.demo-search-row label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.demo-scroll { flex: 1; min-height: 0; }
+.demo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: var(--space-3); padding: 4px 20px 20px; align-items: start; }
+.demo-empty { margin: 32px 20px; text-align: center; }
+
+.demo-chat { position: relative; overflow: hidden; }
+.demo-chat-head { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--border-subtle); }
+.demo-chat-title { font-size: var(--text-sm); font-weight: 500; color: var(--quiet); }
+.demo-thread { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 24px 20px 12px; scrollbar-width: thin; }
+.demo-hello { font-size: clamp(1.625rem, 2.4vw, 2.125rem); margin: auto; padding-bottom: 24px; text-align: center; color: var(--ink); max-width: 12ch; }
+:lang(zh) .demo-hello { max-width: none; }
+.bubble-row { display: grid; gap: 8px; max-width: 88%; }
+.bubble-row.user { align-self: flex-end; justify-items: end; }
+.bubble-row.ai { align-self: flex-start; }
+.bubble { margin: 0; padding: 10px 14px; border-radius: 20px; font-size: var(--text-sm); line-height: 1.5; text-wrap: pretty; }
+.user .bubble { background: var(--surface-muted); }
+.ai .bubble { padding-inline: 2px; }
+.bubble-refs { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.typing { display: inline-flex; gap: 4px; padding: 14px 4px; }
+.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: typing 1s infinite ease-in-out; }
+.typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes typing { 0%, 80%, 100% { opacity: .3; transform: none; } 40% { opacity: 1; transform: translateY(-2px); } }
+
+/* Composer: context chips sit above the input, as an AI app shows them. */
+.composer { position: relative; margin: 8px 12px 12px; padding: 8px; border-radius: 26px; background: var(--surface); box-shadow: 0 0 0 1px var(--border), 0 4px 16px oklch(0% 0 0 / .05); transition: box-shadow .2s ease; }
+.composer[data-over] { box-shadow: 0 0 0 2px var(--ink), 0 8px 26px oklch(0% 0 0 / .1); }
+.composer-chips { overflow: hidden; }
+.composer-chips-inner { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 8px; }
+.context-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 220px; height: 44px; padding: 0 6px 0 10px; border-radius: 14px; background: var(--surface-muted); font-size: 13px; line-height: 1.2; }
+.context-chip > span:first-child { flex: none; }
+.context-chip-label { display: grid; min-width: 0; font-weight: 500; }
+.context-chip-label, .context-chip-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.context-chip-label small { font-size: 11px; font-weight: 400; color: var(--quiet); }
+.context-chip-remove { display: grid; place-items: center; width: 24px; height: 24px; flex: none; border: 0; border-radius: 50%; background: transparent; color: var(--quiet); cursor: pointer; }
+.context-chip-remove:hover { background: oklch(0% 0 0 / .06); color: var(--ink); }
+.context-chip.sent { height: 30px; padding: 0 10px 0 8px; border-radius: 10px; max-width: 200px; }
+.context-chip.sent > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.composer-row { display: flex; align-items: center; gap: 8px; }
+.composer-input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 0; outline: 0; background: transparent; font: inherit; font-size: var(--text-sm); color: var(--ink); }
+.composer-input::placeholder { color: var(--text-muted); }
+.composer-send { width: var(--control-height-sm); padding: 0; border-radius: 50%; flex: none; }
+.composer-drop { position: absolute; inset: 0; display: grid; place-items: center; border-radius: inherit; background: color-mix(in oklab, var(--surface) 88%, transparent); font-size: var(--text-sm); font-weight: 500; pointer-events: none; }
+
+@media (max-width: 960px) {
+  .demo-desk { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .demo-library { height: 600px; }
+  .demo-chat { height: 460px; }
+}
+@media (max-width: 560px) {
+  .demo-search-row { flex-wrap: wrap; } .demo-search-row > :last-child { flex: 1 1 100%; }
+  .demo-desk { padding: 8px; border-radius: 28px; }
+  .demo-grid { grid-template-columns: minmax(0, 1fr); padding-inline: 14px; }
+  .demo-library-head { padding: 16px 14px 10px; }
+}
