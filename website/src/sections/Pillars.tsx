@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Check, RotateCcw } from 'lucide-react';
 import { Button } from '../../../src/components/arc/button/button';
 import { Input } from '../../../src/components/arc/input/input';
@@ -13,6 +13,7 @@ import brandMark from '../../../assets/brand/icon.svg';
 import type { StashItem } from '../../../src/types';
 import { demoLibrary } from '../demo-data';
 import { Reveal } from '../parts/Reveal';
+import { FloatingDesk } from '../parts/FloatingFolder';
 import { useInView, useSite } from '../parts/useSite';
 import './pillars.css';
 
@@ -23,7 +24,7 @@ export function Pillars() {
   const { copy } = useSite();
   return <section className="section pillars" id="features" aria-label={copy.nav.features}>
     <Pillar title={copy.collect.title} body={copy.collect.body}><CollectVisual /></Pillar>
-    <Pillar title={copy.find.title} body={copy.find.body} flip><FindVisual /></Pillar>
+    <Pillar title={copy.find.title} body={copy.find.body} flip><FloatingDesk /></Pillar>
     <Pillar title={copy.use.title} body={copy.use.body}><UseVisual /></Pillar>
     <Pillar id="agents" title={copy.agents.title} body={copy.agents.body} flip><AgentsVisual /></Pillar>
   </section>;
@@ -77,47 +78,6 @@ function CollectVisual() {
         {phase === 'saved' && <Check size={16} strokeWidth={1.75} aria-hidden="true" />}{phase === 'saved' ? text.saved : text.save}
       </Button>
     </aside>
-  </div>;
-}
-
-/* Find: tags are context groups; choosing one regroups the cards in place. */
-function FindVisual() {
-  const { copy, language } = useSite();
-  const reduced = useReducedMotion();
-  const library = useMemo(() => demoLibrary(language), [language]);
-  // The groups with the most to show.
-  const tags = useMemo(() => {
-    const counts = new Map<string, number>();
-    library.forEach(item => item.tags.forEach(name => counts.set(name, (counts.get(name) ?? 0) + 1)));
-    return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([name]) => name);
-  }, [library]);
-  const [tag, setTag] = useState('');
-  const [touched, setTouched] = useState(false);
-  const [ref, shown] = useInView<HTMLDivElement>('-25% 0px');
-  // Until someone chooses a tag, the visual shows how tags regroup the library.
-  useEffect(() => {
-    if (!shown || touched || reduced) return;
-    const cycle = ['', ...tags];
-    let index = 0;
-    const id = window.setInterval(() => { index = (index + 1) % cycle.length; setTag(cycle[index]); }, 2400);
-    return () => window.clearInterval(id);
-  }, [shown, touched, reduced, tags]);
-  const items = library.filter(item => !tag || item.tags.includes(tag));
-  return <div className="find" ref={ref}>
-    <div className="find-tags" role="group" aria-label={copy.collect.tagsLabel}>
-      {['', ...tags].map(name => <Button key={name || 'all'} type="button" size="sm" variant={tag === name ? 'primary' : 'secondary'} aria-pressed={tag === name}
-        onClick={() => { setTouched(true); setTag(name); }}>{name || copy.demo.allTags}</Button>)}
-    </div>
-    <LayoutGroup>
-      <motion.div className="find-grid" layout={!reduced}>
-        <AnimatePresence mode="popLayout" initial={false}>
-          {items.map(item => <motion.div key={item.id} className="mini-card" layout={!reduced} initial={{ opacity: 0, scale: .9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .9 }} transition={reduced ? { duration: 0 } : spring}>
-            <div className="mini-cover"><PreviewArtwork item={strip(item)} /></div>
-            <div className="mini-row"><ReferenceMark item={strip(item)} /><span>{item.title}</span></div>
-          </motion.div>)}
-        </AnimatePresence>
-      </motion.div>
-    </LayoutGroup>
   </div>;
 }
 

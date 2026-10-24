@@ -31,10 +31,8 @@
 .sidebar-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .sidebar-save { width: 100%; margin-top: 4px; }
 
-/* Find */
-.find { width: min(600px, 100%); display: grid; gap: 18px; align-content: start; height: 470px; }
-.find-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.find-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-content: start; }
+/* Find: the floating folder's desk fills the stage. */
+.pillar-stage:has(.desk) { padding: 0; place-items: stretch; }
 .mini-card { padding: 6px; border-radius: 18px; background: var(--surface); box-shadow: 0 1px 2px oklch(0% 0 0 / .05), 0 6px 18px oklch(0% 0 0 / .05); }
 .mini-cover { overflow: hidden; border-radius: 12px; aspect-ratio: 16 / 9; background: var(--surface-muted); }
 .mini-cover > * { width: 200%; height: 200%; transform: scale(.5); transform-origin: 0 0; }
@@ -92,7 +90,6 @@
   .pillar-stage { min-height: 0; padding: 16px 16px 56px; border-radius: 28px; }
   .collect { grid-template-columns: minmax(0, 1fr); }
   .sidebar { border-left: 0; border-top: 1px solid var(--border-subtle); }
-  .find-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .use { grid-template-columns: minmax(0, 1fr); height: auto; gap: 20px; }
   .use-app { height: 280px; }
   .agents { grid-template-columns: minmax(0, 1fr); height: auto; }

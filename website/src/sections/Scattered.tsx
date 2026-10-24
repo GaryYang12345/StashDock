@@ -12,16 +12,16 @@ import './scattered.css';
 
 type Mark = { glyph: ReferenceVisualKind } | { image: string };
 // Where each fragment starts, relative to the folder: x in vw, y in vh, tilt in degrees.
-const fragments: { mark: Mark; x: number; y: number; r: number }[] = [
-  { mark: { glyph: 'note' }, x: -33, y: -17, r: -6 },
-  { mark: { glyph: 'pdf' }, x: 31, y: -19, r: 5 },
-  { mark: { image: xMark }, x: -17, y: -9, r: 4 },
-  { mark: { image: xiaohongshuMark }, x: 18, y: -6, r: -4 },
-  { mark: { image: chromeMark }, x: -39, y: 4, r: 3 },
-  { mark: { image: chatgptMark }, x: 39, y: 6, r: -3 },
-  { mark: { image: githubMark }, x: -24, y: 17, r: -2 },
-  { mark: { glyph: 'image' }, x: 24, y: 18, r: 4 },
-  { mark: { glyph: 'spreadsheet' }, x: -3, y: -21, r: -2 },
+const fragments: { mark: Mark; x: number; y: number; r: number; start: number }[] = [
+  { mark: { glyph: 'note' }, x: -33, y: -17, r: -6, start: .14 },
+  { mark: { glyph: 'pdf' }, x: 31, y: -19, r: 5, start: .18 },
+  { mark: { image: xMark }, x: -17, y: -9, r: 4, start: .22 },
+  { mark: { image: xiaohongshuMark }, x: 18, y: -6, r: -4, start: .16 },
+  { mark: { image: chromeMark }, x: -7, y: 23, r: 3, start: .2 },
+  { mark: { image: chatgptMark }, x: 38, y: 7, r: -3, start: .24 },
+  { mark: { image: githubMark }, x: -30, y: 12, r: -2, start: .18 },
+  { mark: { glyph: 'image' }, x: 24, y: 19, r: 4, start: .26 },
+  { mark: { glyph: 'spreadsheet' }, x: -3, y: -21, r: -2, start: .22 },
 ];
 
 // The problem, felt rather than listed: pieces of context float apart, then
@@ -52,7 +52,7 @@ export function Scattered() {
         <p className="lede">{copy.scattered.body}</p>
       </motion.div>
       <div className="scattered-field" aria-hidden="true">
-        {fragments.map((fragment, i) => <Fragment key={i} index={i} progress={scrollYProgress} {...fragment} label={copy.scatter[i]} />)}
+        {fragments.map((fragment, i) => <Fragment key={i} progress={scrollYProgress} {...fragment} label={copy.scatter[i]} />)}
         <motion.div className="scattered-folder" style={{ scale: folderScale, opacity: folderOpacity }}><FolderArtwork /></motion.div>
       </div>
       <motion.p className="display display-sm scattered-after" style={{ opacity: after, y: afterY }}>{copy.scattered.after}</motion.p>
@@ -60,10 +60,9 @@ export function Scattered() {
   </section>;
 }
 
-function Fragment({ index, progress, mark, x, y, r, label }: { index: number; progress: MotionValue<number>; mark: Mark; x: number; y: number; r: number; label: string }) {
-  // Fragments leave in a loose order, closest last, so the folder seems to draw them in.
-  const start = .14 + (index % 5) * .035 + (index > 4 ? .02 : 0);
-  const end = Math.min(start + .4, .7);
+function Fragment({ progress, mark, x, y, r, start, label }: { progress: MotionValue<number>; mark: Mark; x: number; y: number; r: number; start: number; label: string }) {
+  // Fragments leave in a loose order, so the folder seems to draw them in.
+  const end = start + .4;
   const left = useTransform(progress, [0, start, end], [`${x * 1.08}vw`, `${x}vw`, '0vw']);
   const top = useTransform(progress, [0, start, end], [`${y * 1.12 + 4}vh`, `${y}vh`, '-2vh']);
   const rotate = useTransform(progress, [start, end], [r, 0]);

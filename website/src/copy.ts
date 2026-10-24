@@ -4,10 +4,11 @@ export type Language = 'en' | 'zh';
 const en = {
   nav: { how: 'How it works', features: 'Features', agents: 'Agents', download: 'Download', language: '中文', languageLabel: 'Switch to Chinese' },
   hero: {
-    title: 'Your context,\none move away.',
-    body: 'StashDock is a personal context library for AI. Keep the pages, posts, files and prompts you reuse in one place, and hand them to any AI in a single move.',
+    title: 'Your {folder} context,\nin any {ai} AI.',
+    body: 'A personal context library for AI. Keep what you reuse in one place, and hand it to any AI in one move.',
     primary: 'Download for Windows',
-    secondary: 'macOS coming soon',
+    plugin: 'Get the ChatGPT plugin',
+    secondary: 'Windows 10 and 11. macOS coming soon.',
     hint: 'Hover the folder to search. Drag it anywhere.',
     search: 'Search your library',
     empty: 'No matching references',
@@ -20,12 +21,12 @@ const en = {
   },
   demo: {
     title: 'Try it right here.',
-    body: 'Add a reference to the conversation, or drag it straight into the input box. Tags keep the context you use together.',
+    body: 'With the ChatGPT plugin, your library opens beside the conversation. Add a reference to the chat, then ask.',
     library: 'Context library',
     search: 'Search',
     all: 'All', web: 'Web', files: 'Files', favorites: 'Favorites',
     chatTitle: 'Your AI app',
-    chatHello: 'What are we working on today?',
+    chatHello: 'What should we work on?',
     placeholder: 'Ask anything',
     context: 'Context',
     drop: 'Drop to add as context',
@@ -51,7 +52,7 @@ const en = {
   },
   find: {
     title: 'See everything. Find anything.',
-    body: 'Every reference is a card. Tags are your context groups. Search answers as you type, and the floating folder is always one hover away.',
+    body: 'The floating folder stays on your desktop, wherever you put it. Hover it and search as you type; Copy hands the reference to the AI you are using.',
   },
   use: {
     title: 'Into any AI, in one move.',
@@ -97,10 +98,11 @@ const en = {
 const zh: typeof en = {
   nav: { how: '使用方式', features: '功能', agents: 'Agent', download: '下载', language: 'EN', languageLabel: '切换到英文' },
   hero: {
-    title: '你的上下文，\n一步之遥。',
-    body: 'StashDock 是你的个人 AI 上下文库。把反复要用的网页、帖子、文件和 prompt 放在一处，一步交给任何 AI。',
+    title: '你的{folder}上下文，\n随时交给任何{ai}AI。',
+    body: '你的个人 AI 上下文库。常用的资料收在一处，一步交给任何 AI。',
     primary: '下载 Windows 版',
-    secondary: 'macOS 版即将推出',
+    plugin: '获取 ChatGPT 插件',
+    secondary: '支持 Windows 10 和 11，macOS 版即将推出。',
     hint: '悬停文件夹即可搜索，也可以拖到任何位置。',
     search: '搜索你的收藏',
     empty: '没有匹配的收藏',
@@ -113,12 +115,12 @@ const zh: typeof en = {
   },
   demo: {
     title: '就在这里试试。',
-    body: '把收藏添加到对话，或者直接拖进输入框。用标签把常一起用的上下文归在一起。',
+    body: '装上 ChatGPT 插件，你的库就在对话旁边。把收藏添加到对话，然后提问。',
     library: '上下文库',
     search: '搜索',
     all: '全部', web: '网页', files: '文件', favorites: '星标',
     chatTitle: '你的 AI 应用',
-    chatHello: '今天要做什么？',
+    chatHello: '今天要做点什么？',
     placeholder: '有问题，尽管问',
     context: '上下文',
     drop: '松开即可添加为上下文',
@@ -144,7 +146,7 @@ const zh: typeof en = {
   },
   find: {
     title: '一眼看全，随时找到。',
-    body: '每条收藏都是一张卡片，标签就是你的上下文分组。边输入边出结果，悬浮文件夹悬停即可搜索。',
+    body: '悬浮文件夹停在桌面上，放在哪都行。悬停即可边输入边搜索，点复制就交给你正在用的 AI。',
   },
   use: {
     title: '一步交给任何 AI。',

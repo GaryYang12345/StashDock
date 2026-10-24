@@ -100,3 +100,13 @@ export function demoLibrary(language: Language): StashItem[] {
 }
 
 export const fileKinds = new Set(['file', 'pdf', 'image']);
+
+// The product's search contract: every term must appear somewhere.
+export function matches(items: StashItem[], query: string) {
+  const terms = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  return items.filter(item => {
+    const text = `${item.title} ${item.excerpt} ${item.tags.join(' ')} ${item.source}`.toLocaleLowerCase();
+    return terms.every(term => text.includes(term));
+  });
+}
