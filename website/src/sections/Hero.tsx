@@ -1,16 +1,17 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowUpRight, Download } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { FolderArtwork } from '../../../src/components/FolderArtwork';
 import { motionTokens } from '../../../src/components/arc/lib/motion-tokens';
 import { links } from '../copy';
 import { useSite } from '../parts/useSite';
+import { OsMark } from '../parts/OsMark';
 import './hero.css';
 
 const cubic = (value: readonly number[]) => value as [number, number, number, number];
 const HOLD_MS = 2200;
 // Any AI app: the mark in the title cycles through them.
-const marks = ['openai', 'claude-color', 'gemini-color', 'deepseek-color', 'kimi', 'qwen-color', 'doubao-color', 'perplexity-color', 'grok', 'copilot-color', 'mistral-color', 'minimax-color']
+const marks = ['openai', 'claude-color', 'gemini-color', 'deepseek-color', 'workbuddy-color', 'kimi']
   .map(file => `${import.meta.env.BASE_URL}logos/${file}.svg`);
 
 export function Hero() {
@@ -18,15 +19,15 @@ export function Hero() {
   const enter = (delay: number) => ({ initial: { opacity: 0, y: 16, filter: 'blur(8px)' }, animate: { opacity: 1, y: 0, filter: 'blur(0px)' }, transition: { duration: .9, delay, ease: cubic(motionTokens.ease.enter) } });
   return <section className="hero" id="top">
     <div className="hero-copy page">
-      <motion.h1 className="display display-xl hero-title" aria-label={copy.hero.title.replace(/\{\w+\}\s?/g, '').replace('\n', ' ')} {...enter(0)}>
+      <motion.h1 className="display display-xl hero-title" aria-label={copy.hero.plain} {...enter(0)}>
         {copy.hero.title.split('\n').map(line => <span key={line} className="hero-line" aria-hidden="true">{inline(line)}</span>)}
       </motion.h1>
       <motion.p className="lede hero-lede" {...enter(.12)}>{copy.hero.body}</motion.p>
       <motion.div className="hero-actions" {...enter(.22)}>
-        <a className="pill primary" href={links.desktop}><Download size={16} strokeWidth={1.75} aria-hidden="true" />{copy.hero.primary}</a>
-        <a className="pill secondary" href={links.plugin}>{copy.hero.plugin}<ArrowUpRight size={16} strokeWidth={1.75} aria-hidden="true" /></a>
+        <a className="pill primary large" href={links.desktop}><OsMark os="windows" />{copy.hero.windows}</a>
+        <a className="pill primary large" href={links.mac}><OsMark os="mac" size={17} />{copy.hero.mac}</a>
       </motion.div>
-      <motion.p className="small hero-meta" {...enter(.3)}>{copy.hero.secondary}</motion.p>
+      <motion.a className="hero-plugin" href={links.plugin} {...enter(.3)}>{copy.hero.plugin}<ArrowRight size={15} strokeWidth={1.75} aria-hidden="true" /></motion.a>
     </div>
   </section>;
 }

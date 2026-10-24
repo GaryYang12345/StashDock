@@ -8,6 +8,7 @@ import { Nav } from './sections/Nav';
 import { Hero } from './sections/Hero';
 import { Scattered } from './sections/Scattered';
 import { LiveDemo } from './sections/LiveDemo';
+import { DesktopDemo } from './sections/DesktopDemo';
 import { Pillars } from './sections/Pillars';
 import { Platforms } from './sections/Platforms';
 import { OneLibrary } from './sections/OneLibrary';
@@ -28,6 +29,7 @@ export function App() {
           <Hero />
           <Scattered />
           <LiveDemo />
+          <DesktopDemo />
           <Pillars />
           <Platforms />
           <OneLibrary />

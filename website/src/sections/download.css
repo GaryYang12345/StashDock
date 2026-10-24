@@ -1,4 +1,4 @@
-.download-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.download-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .download-card { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; padding: 32px; border-radius: 30px; background: var(--well); }
 .download-card .pill.secondary { background: var(--surface); }
 .download-card .pill.secondary:hover { background: oklch(99% 0 0); box-shadow: 0 0 0 1px var(--border); }
@@ -8,5 +8,5 @@
 .download-marks img { width: 32px; height: 32px; }
 .download-text { display: grid; gap: 4px; flex: 1; }
 .download-text p { margin: 0; }
-.download-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.download-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 @media (max-width: 900px) { .download-grid { grid-template-columns: minmax(0, 1fr); } .download-marks, .download-tile { height: 48px; width: auto; } }

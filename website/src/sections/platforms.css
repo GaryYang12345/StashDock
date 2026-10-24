@@ -6,8 +6,7 @@
 .marquee:hover .marquee-track { animation-play-state: paused; }
 @keyframes marquee { to { transform: translateX(-50%); } }
 .platform { display: inline-flex; align-items: center; gap: 12px; height: 64px; padding: 0 26px 0 20px; border-radius: 99px; background: var(--well); font-family: var(--font-display); font-weight: 500; font-size: 1.125rem; letter-spacing: -0.02em; white-space: nowrap; color: var(--ink); }
-.platform img { width: 28px; height: 28px; filter: grayscale(1); opacity: .72; transition: filter .3s ease, opacity .3s ease; }
-.platform:hover img { filter: none; opacity: 1; }
+.platform img { width: 28px; height: 28px; }
 .plugin-status { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: clamp(48px, 6vw, 72px); }
 .plugin-row { display: inline-flex; align-items: center; gap: 10px; height: 56px; padding: 0 10px 0 16px; border-radius: 99px; background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
 .plugin-name { font-weight: 500; }

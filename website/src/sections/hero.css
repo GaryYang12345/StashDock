@@ -1,22 +1,26 @@
-.hero { position: relative; display: grid; align-items: center; min-height: min(860px, calc(100svh - 60px)); padding-block: 72px 96px; overflow: hidden; background: radial-gradient(120% 80% at 50% 100%, var(--canvas) 0%, var(--background) 62%); }
+.hero { position: relative; display: grid; align-items: center; min-height: min(880px, calc(100svh - 60px)); padding-block: 72px 96px; overflow: hidden; background: radial-gradient(120% 80% at 50% 100%, var(--canvas) 0%, var(--background) 62%); }
 .hero-copy { display: grid; justify-items: center; gap: var(--space-6); text-align: center; }
-.hero-title { font-size: clamp(2.75rem, 7vw, 6rem); }
+.hero-title { font-size: clamp(2.375rem, 6.2vw, 5.5rem); }
 .hero-line { display: block; white-space: nowrap; }
-.hero-lede { max-width: 34rem; }
+.hero-lede { max-width: 36rem; }
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-2); }
-.hero-meta { margin: calc(var(--space-2) * -1) 0 0; color: var(--text-muted); }
+.pill.large { min-height: 48px; padding-inline: 22px 24px; gap: 10px; }
+.hero-plugin { display: inline-flex; align-items: center; gap: 6px; margin-top: calc(var(--space-2) * -1); font-size: var(--text-sm); font-weight: 500; color: var(--quiet); text-decoration: none; transition: color .16s ease; }
+.hero-plugin:hover { color: var(--ink); }
+.hero-plugin svg { transition: transform .2s ease; }
+.hero-plugin:hover svg { transform: translateX(2px); }
 
-/* Icons set into the headline, sized to the type. */
-.title-icon { position: relative; display: inline-block; width: .86em; height: .86em; vertical-align: -0.1em; }
-/* The artwork carries its own margin; let it overlap the word spaces a little. */
-.title-folder { width: 1.24em; height: 1.24em; margin: 0 -.12em; vertical-align: -0.26em; }
+/* Icons set into the headline, sized to the type and centred on its x-height. */
+.title-icon { position: relative; display: inline-block; vertical-align: middle; }
+.title-folder { width: 1.38em; height: 1.38em; margin: -.2em -.08em 0; translate: 0 -.04em; }
 .title-folder .folder-artwork { display: block; width: 100%; height: 100%; overflow: visible; }
-.title-ai { overflow: hidden; border-radius: .22em; background: var(--surface); box-shadow: 0 0 0 1px oklch(0% 0 0 / .05), 0 .04em .12em oklch(0% 0 0 / .08), 0 .1em .3em oklch(0% 0 0 / .06); }
-.title-ai img { position: absolute; inset: 20%; width: 60%; height: 60%; object-fit: contain; }
-:lang(zh) .title-icon { vertical-align: -0.08em; margin-inline: .08em; }
-:lang(zh) .title-folder { margin-inline: -.04em; }
+.title-ai { width: 1em; height: 1em; margin: -.12em .04em 0; translate: 0 -.04em; }
+.title-ai img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+:lang(zh) .title-folder { margin-inline: .02em; }
+:lang(zh) .title-ai { margin-inline: .12em; }
 :lang(zh) .hero-lede { max-width: 40rem; }
 @media (max-width: 640px) {
   .hero { min-height: 0; padding-block: 64px 72px; }
-  .hero-title { font-size: clamp(2.25rem, 10.5vw, 3rem); }
+  .hero-title { font-size: clamp(2rem, 10vw, 2.75rem); }
+  .hero-line { white-space: normal; text-wrap: balance; }
 }

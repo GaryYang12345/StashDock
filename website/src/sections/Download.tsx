@@ -1,4 +1,5 @@
-import { ArrowUpRight, Download as DownloadIcon } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
+import { OsMark } from '../parts/OsMark';
 import brandTile from '../../../src-tauri/icons/icon.png';
 import chatgptMark from '../../../src/assets/brands/chatgpt.svg';
 import chromeMark from '../../../src/assets/brands/chrome.svg';
@@ -21,8 +22,8 @@ export function Download() {
         <img className="download-tile" src={brandTile} alt="" width={72} height={72} />
         <div className="download-text"><h3 className="display-sm">{text.desktop}</h3><p className="small">{text.desktopMeta}</p></div>
         <div className="download-actions">
-          <a className="pill primary" href={links.desktop}><DownloadIcon size={16} strokeWidth={1.75} aria-hidden="true" />{text.desktopAction}</a>
-          <span className="small">{text.mac}</span>
+          <a className="pill primary" href={links.desktop}><OsMark os="windows" size={15} />{text.windows}</a>
+          <a className="pill primary" href={links.mac}><OsMark os="mac" size={16} />{text.mac}</a>
         </div>
       </Reveal>
       <Reveal className="download-card" delay={80}>

@@ -7,7 +7,7 @@ import './platforms.css';
 const logo = (file: string) => `${import.meta.env.BASE_URL}logos/${file}.svg`;
 const rows = [
   [['ChatGPT', 'openai'], ['Claude', 'claude-color'], ['Gemini', 'gemini-color'], ['DeepSeek', 'deepseek-color'], ['Kimi', 'kimi'], ['Qwen', 'qwen-color'], ['Doubao', 'doubao-color'], ['Perplexity', 'perplexity-color']],
-  [['Grok', 'grok'], ['Copilot', 'copilot-color'], ['Cursor', 'cursor'], ['Mistral', 'mistral-color'], ['Zhipu GLM', 'zhipu-color'], ['Yuanbao', 'yuanbao-color'], ['MiniMax', 'minimax-color'], ['Meta AI', 'metaai-color']],
+  [['Grok', 'grok'], ['Copilot', 'copilot-color'], ['Cursor', 'cursor'], ['Mistral', 'mistral-color'], ['Zhipu GLM', 'zhipu-color'], ['Yuanbao', 'yuanbao-color'], ['MiniMax', 'minimax-color'], ['WorkBuddy', 'workbuddy-color'], ['Meta AI', 'metaai-color']],
 ] as const;
 const zhNames: Record<string, string> = { Qwen: '通义千问', Doubao: '豆包', 'Zhipu GLM': '智谱清言', Yuanbao: '元宝' };
 
