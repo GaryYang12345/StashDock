@@ -1,5 +1,7 @@
 // Shared, bounded DOM-only reader. Never collect hidden state or form values.
-export const EXCLUDE = 'script,style,noscript,template,nav,aside,footer,form,input,textarea,select,button,[contenteditable],[hidden],[aria-hidden="true"],[role="navigation"]';
+// Read-only rich-text renderers use contenteditable="false" too. They are
+// document content; editable ancestors and every form field remain excluded.
+export const EXCLUDE = 'script,style,noscript,template,nav,aside,footer,form,input,textarea,select,button,[contenteditable]:not([contenteditable="false"]),[hidden],[aria-hidden="true"],[role="navigation"]';
 const BLOCK = /^(P|DIV|SECTION|ARTICLE|MAIN|H[1-6]|LI|PRE|BLOCKQUOTE|TR|BR)$/;
 export const normalize = text => String(text || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 export const hostIs = (host, domain) => host === domain || host.endsWith(`.${domain}`);

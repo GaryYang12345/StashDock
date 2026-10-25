@@ -87,10 +87,11 @@ export type FolderEvents = {
   onDragging?: (dragging: boolean) => void;
 };
 
-function SearchWindow({ onHeld, close, events }: { onHeld: (held: boolean) => void; close: () => void; events: FolderEvents }) {
+function SearchWindow({ onHeld, close, events, library: editedLibrary }: { onHeld: (held: boolean) => void; close: () => void; events: FolderEvents; library?: StashItem[] }) {
   const { copy, language } = useSite();
   const reduced = useReducedMotion();
-  const library = useMemo(() => demoLibrary(language), [language]);
+  const source = useMemo(() => demoLibrary(language), [language]);
+  const library = editedLibrary ?? source;
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<StashItem[]>([]);
   const [focused, setFocused] = useState(false), [dragging, setDragging] = useState(false);
@@ -168,7 +169,7 @@ function SearchWindow({ onHeld, close, events }: { onHeld: (held: boolean) => vo
 }
 
 /** The folder, draggable inside `bounds`. Click opens the library; hover opens the search. */
-export function DeskFolder({ bounds, events = {}, hidden = false }: { bounds: RefObject<HTMLElement | null>; events?: FolderEvents; hidden?: boolean }) {
+export function DeskFolder({ bounds, events = {}, hidden = false, library }: { bounds: RefObject<HTMLElement | null>; events?: FolderEvents; hidden?: boolean; library?: StashItem[] }) {
   const [open, setOpen] = useState(false);
   const [held, setHeld] = useState(false);
   const [moving, setMoving] = useState(false);
@@ -192,7 +193,7 @@ export function DeskFolder({ bounds, events = {}, hidden = false }: { bounds: Re
     onPointerEnter={() => intent(true)} onPointerLeave={() => intent(false)}
     animate={hidden ? { opacity: 0, scale: .96 } : { opacity: 1, scale: 1 }} transition={{ duration: hidden ? .12 : .2 }}
     data-search-open={raised || undefined} aria-hidden={hidden || undefined}>
-    <AnimatePresence>{visible && <SearchWindow key="search" onHeld={setHeld} close={() => { setHeld(false); setOpen(false); }} events={{ ...events, onOpen: query => { setHeld(false); setOpen(false); events.onOpen?.(query); } }} />}</AnimatePresence>
+    <AnimatePresence>{visible && <SearchWindow key="search" library={library} onHeld={setHeld} close={() => { setHeld(false); setOpen(false); }} events={{ ...events, onOpen: query => { setHeld(false); setOpen(false); events.onOpen?.(query); } }} />}</AnimatePresence>
     <div className="desk-folder-surface">
       <button type="button" className="desk-folder-button" aria-label="Open StashDock" onClick={() => { if (!moved.current) events.onOpen?.(''); }}>
         <FolderArtwork />

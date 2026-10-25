@@ -11,6 +11,9 @@ export default defineConfig({
   resolve: { dedupe: ["react", "react-dom"] },
   plugins: [react()],
   server: { port: 4310, strictPort: true, fs: { allow: [fileURLToPath(new URL("..", import.meta.url))] } },
-  build: { outDir: "dist", emptyOutDir: true },
+  build: { outDir: "dist", emptyOutDir: true, rollupOptions: { input: {
+    main: fileURLToPath(new URL("index.html", import.meta.url)),
+    guide: fileURLToPath(new URL("guide.html", import.meta.url)),
+  } } },
   clearScreen: false,
 });

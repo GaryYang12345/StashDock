@@ -29,7 +29,7 @@ export function Download() {
       </Reveal>
       <Reveal className="download-card" delay={80}>
         <span className="download-marks"><img src={chatgptMark} alt="" width={28} height={28} /></span>
-        <div className="download-text"><h3 className="display-sm">{text.plugin}</h3><p className="small">{text.pluginMeta}</p></div>
+        <div className="download-text"><h3 className="display-sm">{text.plugin}</h3><p className="small">{text.pluginMeta}<br />{text.pluginSoon}</p></div>
         <a className="pill secondary small" href={links.plugin}>{text.pluginAction}<ArrowUpRight size={15} strokeWidth={1.75} aria-hidden="true" /></a>
       </Reveal>
       <Reveal className="download-card" delay={160}>

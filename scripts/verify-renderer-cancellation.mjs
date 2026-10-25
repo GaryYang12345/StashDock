@@ -20,7 +20,9 @@ const processes = async () => {
   return JSON.parse(stdout);
 };
 const cancel = new AbortController();
-const pending = run(helper, { url: 'https://arxiv.org/pdf/2505.22954', lookup: true }, cancel.signal, { timeout: 95_000 });
+// A PDF foreground lookup intentionally does not start a renderer. Exercise a
+// real webpage render so the process/cancellation check covers the current path.
+const pending = run(helper, { url: 'https://www.rust-lang.org/' }, cancel.signal, { timeout: 95_000 });
 let completed = false;
 pending.then(() => { completed = true; }, () => { completed = true; });
 let observed;
@@ -36,8 +38,8 @@ let remaining = await processes();
 if (remaining.count) remaining = await processes();
 assert.equal(remaining.count, 0, 'Cancelled renderer processes remain alive');
 assert.equal(existsSync(profile), false, 'Cancelled scratch directory remains');
-const recovered = await run(helper, { url: 'https://arxiv.org/pdf/2505.22954', lookup: true }, undefined, { timeout: 95_000 });
-assert.ok(recovered.preview && /Darwin/i.test(recovered.title), 'A new renderer did not recover after cancellation');
-const result = { helper, observedRendererProcesses: observed.count, sampledWorkingSetMiB: Math.round(Number(observed.workingSetBytes)/1048576), remainingRendererProcesses: remaining.count, temporaryDirectoryRemoved: true, subsequentPdfSucceeded: true };
+const recovered = await run(helper, { url: 'https://example.org/' }, undefined, { timeout: 95_000 });
+assert.ok(recovered.preview && recovered.previewKind === 'screenshot', 'A new renderer did not recover after cancellation');
+const result = { helper, observedRendererProcesses: observed.count, sampledWorkingSetMiB: Math.round(Number(observed.workingSetBytes)/1048576), remainingRendererProcesses: remaining.count, temporaryDirectoryRemoved: true, subsequentRenderSucceeded: true };
 await writeFile('output/system-renderer/cancellation-report.json', JSON.stringify(result, null, 2));
 console.log(JSON.stringify(result));

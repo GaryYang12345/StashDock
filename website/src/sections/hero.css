@@ -22,7 +22,9 @@
 :lang(zh) .title-icon { margin-inline: .14em; }
 :lang(zh) .hero-lede { max-width: 40rem; }
 @media (max-width: 640px) {
+  .hero { min-height: max(740px, calc(100svh - 60px)); align-content: start; padding-top: 92px; }
   .hero-title { font-size: clamp(2rem, 10vw, 2.75rem); }
   .hero-line { white-space: normal; text-wrap: balance; }
-  .hero-badge { height: 34px; font-size: 13px; }
+  .hero-badge { height: 34px; max-width: calc(100% + 24px); gap: 6px; font-size: var(--text-xs); }
+  .hero-badge-action { padding-inline: 8px; }
 }

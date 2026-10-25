@@ -6,7 +6,7 @@ or both; both use the same local library.
 
 ## Desktop
 
-Run `StashDock_0.2.5_x64-setup.exe`. The installer handles the system WebView2
+Run `StashDock_0.2.6_x64-setup.exe`. The installer handles the system WebView2
 prerequisite. This first release is unsigned, so Windows may show an unknown
 publisher warning. Verify the source and checksum; do not disable SmartScreen.
 
@@ -38,7 +38,7 @@ with the active page and stays open after Save. See [extension documentation](..
 Each Release includes `SHA256SUMS.txt`. For example:
 
 ```powershell
-Get-FileHash .\StashDock_0.2.5_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\StashDock_0.2.6_x64-setup.exe -Algorithm SHA256
 ```
 
 Compare with that file. Plugin packages include a per-file `RELEASE_MANIFEST.json`.

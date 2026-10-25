@@ -23,12 +23,15 @@ import lib from '../../../src/features/library/LibraryView.module.css';
 import card from '../../../src/components/StashCard.module.css';
 import listStyles from '../../../src/components/ReferenceList.module.css';
 import type { CollectionFilter, StashItem } from '../../../src/types';
-import { demoLibrary, matches } from '../demo-data';
+import { matches } from '../demo-data';
+import { useDemoLibrary } from '../demo-editing';
+import { useDemoReferenceEditors } from '../parts/DemoReferenceEditors';
 import { ChatWindow, type Chip } from '../parts/ChatWindow';
 import { DeskFolder, REFERENCE_TYPE } from '../parts/FloatingFolder';
 import { Reveal } from '../parts/Reveal';
 import { useSite } from '../parts/useSite';
-import { inCollection, shown } from './LiveDemo';
+import { inCollection } from './LiveDemo';
+import { demoCard, openDemoReference } from '../demo-navigation';
 import './desktop.css';
 
 const marks = ['openai', 'claude-color', 'gemini-color', 'deepseek-color'].map(file => `${import.meta.env.BASE_URL}logos/${file}.svg`);
@@ -46,7 +49,9 @@ function attachments(item: StashItem): Chip[] {
 export function DesktopDemo() {
   const { copy, language } = useSite();
   const text = copy.desktop;
-  const library = useMemo(() => demoLibrary(language), [language]);
+  const demo = useDemoLibrary(language);
+  const library = demo.library;
+  const editor = useDemoReferenceEditors(demo);
   const area = useRef<HTMLDivElement>(null);
   const [chips, setChips] = useState<Chip[]>([]);
   const [progress, setProgress] = useState({ hovered: false, searched: false, delivered: false });
@@ -89,7 +94,7 @@ export function DesktopDemo() {
   const list = new Intl.ListFormat(language === 'zh' ? 'zh-CN' : 'en', { type: 'conjunction' });
   const steps = [progress.hovered, progress.searched, progress.delivered];
   const current = steps.findIndex(done => !done);
-  const reset = () => { setChips([]); setProgress({ hovered: false, searched: false, delivered: false }); setPanel(null); setHidden(false); setResetToken(value => value + 1); };
+  const reset = () => { demo.resetEdits(); setChips([]); setProgress({ hovered: false, searched: false, delivered: false }); setPanel(null); setHidden(false); setResetToken(value => value + 1); };
 
   return <section className="section desktop" id="desktop" aria-labelledby="desktop-title">
     <Reveal className="page section-head center">
@@ -104,23 +109,24 @@ export function DesktopDemo() {
           </li>)}
           <li className="desk-step-note">{text.open}</li>
         </ol>
-        <DeskFolder key={resetToken} bounds={area} events={events} hidden={Boolean(panel) || hidden} />
+        <DeskFolder key={resetToken} bounds={area} events={events} library={library} hidden={Boolean(panel) || hidden} />
         <AnimatePresence>{hidden && !panel && <motion.button type="button" className="pill secondary small desk-restore" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} onClick={() => setHidden(false)}>{text.restore}</motion.button>}</AnimatePresence>
-        <AnimatePresence>{panel && <DesktopPanel key="panel" query={panel.query} origin={panel.origin} library={library} onCollapse={() => setPanel(null)} onCopied={items => copiedGroups.current.set(normal(buildContext(items)), items)} />}</AnimatePresence>
+        <AnimatePresence>{panel && <DesktopPanel key="panel" query={panel.query} origin={panel.origin} library={library} onEdit={editor.openCard} onEditContent={editor.openContent} onCollapse={() => setPanel(null)} onCopied={items => copiedGroups.current.set(normal(buildContext(items)), items)} />}</AnimatePresence>
       </div>
       <ChatWindow className="desk-chat" chips={chips} drop={drop} onPaste={paste}
         head={<><span className="desk-marks" aria-hidden="true">{marks.map(src => <img key={src} src={src} alt="" width={18} height={18} />)}</span>{text.appTitle}</>}
-        hello={<p>{text.hello}</p>} placeholder={text.placeholder} ask={text.ask}
+        hello={<p>{text.hello}</p>} placeholder={text.placeholder}
         reply={labels => text.reply.replace('{titles}', list.format(labels.map(label => `“${label}”`)))}
         onRemove={key => setChips(current => current.filter(chip => chip.key !== key))} onSent={() => setChips([])}
-        onReset={reset} resetToken={resetToken} canReset={Boolean(chips.length || steps.some(Boolean) || panel || hidden)} />
+        onReset={reset} resetToken={resetToken} canReset={Boolean(demo.edited || chips.length || steps.some(Boolean) || panel || hidden)} />
     </Reveal>
+    {editor.dialogs}
   </section>;
 }
 
 /* The desktop library window (LibraryView): title bar, sidebar, toolbar and
    cards, opened out of the folder and collapsed back into it. */
-function DesktopPanel({ query: initialQuery, origin, library, onCollapse, onCopied }: { query: string; origin: string; library: StashItem[]; onCollapse: () => void; onCopied: (items: StashItem[]) => void }) {
+function DesktopPanel({ query: initialQuery, origin, library, onEdit, onEditContent, onCollapse, onCopied }: { query: string; origin: string; library: StashItem[]; onEdit: (item: StashItem) => void; onEditContent: (item: StashItem) => void; onCollapse: () => void; onCopied: (items: StashItem[]) => void }) {
   const { t } = useI18n();
   const reduced = useReducedMotion();
   const [query, setQuery] = useState(initialQuery);
@@ -174,9 +180,9 @@ function DesktopPanel({ query: initialQuery, origin, library, onCollapse, onCopi
               tagControls={<ShelfTagFilter tags={tags} activeTag={activeTag || ''} disabled={false} busy={false} triggerRef={tagRef} onFilter={name => setActiveTag(name || null)} onEdit={() => {}} />} />
             <ScrollArea className={lib.scroller} viewportClassName={lib.content} label={t('References')} fade={0}>
               {visible.length ? <div className={view === 'grid' ? `${lib.grid} desk-grid` : listStyles.list}>
-                {visible.map(item => <ReferenceCardView key={item.id} item={shown(item)} view={view} selected={selected.includes(item.id)}
+                {visible.map(item => <ReferenceCardView key={item.id} item={demoCard(item)} view={view} selected={selected.includes(item.id)}
                   onToggle={toggle} onFavorite={id => setFavorites(current => ({ ...current, [id]: !(current[id] ?? library.find(entry => entry.id === id)?.favorite) }))}
-                  onDelete={() => {}} onOpen={() => {}}
+                  onDelete={() => {}} onOpen={openDemoReference} onEdit={onEdit} onEditContent={onEditContent}
                   articleProps={{ draggable: true, onDragStart: event => {
                     Object.entries(referenceDragPayload([item])).forEach(([type, value]) => { if (value) event.dataTransfer.setData(type, value); });
                     event.dataTransfer.setData(REFERENCE_TYPE, item.id); event.dataTransfer.effectAllowed = 'copy';

@@ -74,6 +74,7 @@ a { color: inherit; }
 @media (max-width: 640px) { .footer-marks { margin-left: 0; flex-basis: 100%; } }
 
 .os-mark { display: inline-grid; flex: none; }
+.demo-replay { color: var(--quiet); }
 .os-mark svg { width: 100%; height: 100%; display: block; }
 /* The few utilities shared components expect from the app's Tailwind build. */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

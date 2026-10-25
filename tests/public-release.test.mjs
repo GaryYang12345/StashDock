@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { privateSourcePath, containsCredential } from '../scripts/verify-public-source.mjs';
 test('public release gate rejects runtime, data, credential and recovery paths', () => {
-  for (const path of ['output/a.png','artifacts/backup.json','src-tauri/target/a','plugins/stashdock/bin/win32-x64/node.exe','secret.env.key','docs/.env.local','src/foo.sqlite3-wal','profile/Preferences']) assert.equal(privateSourcePath(path),true,path);
-  for (const path of ['src/App.tsx','src-tauri/Cargo.lock','.agents/skills/arc/SKILL.md','plugins/stashdock/server/create-server.mjs']) assert.equal(privateSourcePath(path),false,path);
+  for (const path of ['output/a.png','artifacts/backup.json','src-tauri/target/a','plugins/stashdock/bin/win32-x64/node.exe','secret.env.key','docs/.env.local','src/foo.sqlite3-wal','profile/Preferences','website/dist/index.html','website/Srotone-Regular.ttf']) assert.equal(privateSourcePath(path),true,path);
+  for (const path of ['src/App.tsx','src-tauri/Cargo.lock','.agents/skills/arc/SKILL.md','plugins/stashdock/server/create-server.mjs','website/src/guide/Guide.tsx']) assert.equal(privateSourcePath(path),false,path);
   for (const text of ['gh'+'p_'+'a'.repeat(30),'-----BEGIN '+'PRIVATE KEY-----','sk-'+'b'.repeat(32)]) assert.equal(containsCredential(text),true);
   assert.equal(containsCredential('STASHDOCK_DATA_DIR and source documentation'),false);
 });

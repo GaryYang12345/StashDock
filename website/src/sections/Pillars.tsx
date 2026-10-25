@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowLeft, Check, Download, FileUp, Link, Play, Plus, RefreshCw, SquarePen, X } from 'lucide-react';
+import { ArrowLeft, Check, Download, FileUp, Link, Plus, RefreshCw, SquarePen, X } from 'lucide-react';
 import { Button } from '../../../src/components/arc/button/button';
 import { Input } from '../../../src/components/arc/input/input';
 import { Textarea } from '../../../src/components/arc/textarea/textarea';
@@ -28,10 +28,11 @@ import edgeMark from '../../../src/assets/brands/edge.svg';
 import firefoxMark from '../../../src/assets/brands/firefox.svg';
 import safariMark from '../../../src/assets/brands/safari.svg';
 import type { StashItem } from '../../../src/types';
-import { demoLibrary } from '../demo-data';
+import { demoLibrary, demoTagNames } from '../demo-data';
 import { Cursor, useScript } from '../parts/Cursor';
 import { Reveal } from '../parts/Reveal';
-import { useInView, useSite } from '../parts/useSite';
+import { useSite } from '../parts/useSite';
+import { ReplayButton, useFirstView } from '../parts/DemoPlayback';
 import { shown } from './LiveDemo';
 import './pillars.css';
 
@@ -58,24 +59,6 @@ function Pillar({ id, title, body, flip, extra, stage }: { id?: string; title: s
   </article>;
 }
 
-function ReplayButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
-  return <Button type="button" variant="secondary" size="sm" className="pillar-replay" onClick={onClick} disabled={disabled}><Play size={15} strokeWidth={1.75} aria-hidden="true" />{label}</Button>;
-}
-
-/* Starts once the stage has reached the middle of the screen and stayed a
-   moment, so the reader sees the window before it moves; `run` restarts it. */
-const SETTLE_MS = 1600;
-function useFirstView<T extends Element>(margin = '-48% 0px -48% 0px') {
-  const [ref, inView] = useInView<T>(margin);
-  const [run, setRun] = useState(0);
-  useEffect(() => {
-    if (!inView) return;
-    const id = window.setTimeout(() => setRun(value => value || 1), SETTLE_MS);
-    return () => window.clearTimeout(id);
-  }, [inView]);
-  return { ref, run, restart: () => setRun(value => value + 1) };
-}
-
 /* ---------- Import: Link, Note, File and browser bookmarks, one after another ---------- */
 type Chapter = 0 | 1 | 2;
 type Dialog = { tab: 'link' | 'note' | 'file'; menu?: boolean; browser?: 'reading' | 'list'; progress?: number; url?: string; looking?: boolean; title?: string; content?: string; tags?: string[]; file?: boolean };
@@ -90,12 +73,12 @@ function ImportPillar() {
   const view = useFirstView<HTMLDivElement>();
   const library = useMemo(() => demoLibrary(language), [language]);
   const pick = (id: string) => library.find(item => item.id === id)!;
-  const bookmarks = useMemo(() => ['calm', 'sdk', 'reuse', 'pricing-thread', 'voice'].map(pick), [library]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bookmarks = useMemo(() => ['design-spells', 'sft-rl-opd', 'uiverse', 'basic-pitch', 'arc-ui'].map(pick), [library]); // eslint-disable-line react-hooks/exhaustive-deps
   const [chapter, setChapter] = useState<Chapter>(0);
   const [cards, setCards] = useState<StashItem[]>([]);
   const [modal, setModal] = useState<Dialog | null>(null);
   const [pressed, setPressed] = useState('');
-  const base = useMemo(() => [pick('model'), pick('onboarding'), pick('review')], [library]); // eslint-disable-line react-hooks/exhaustive-deps
+  const base = useMemo(() => [pick('model'), pick('card-ui'), pick('review')], [library]); // eslint-disable-line react-hooks/exhaustive-deps
   const [jump, setJump] = useState<{ chapter: Chapter; run: number }>({ chapter: 0, run: 0 });
   useEffect(() => { if (view.run) setJump(current => ({ chapter: 0, run: current.run + 1 })); }, [view.run]);
   useEffect(() => { if (jump.run) void play(jump.chapter); return () => script.stop(); }, [jump]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -105,7 +88,7 @@ function ImportPillar() {
     const ms = (value: number) => reduced ? 0 : value;
     setModal(null); setPressed('');
     // Each chapter adds to the library the earlier ones built.
-    const earlier: StashItem[][] = [bookmarks, [pick('rules')]];
+    const earlier: StashItem[][] = [bookmarks, [pick('anti-defensive')]];
     setCards([...earlier.slice(0, from).reverse().flat(), ...base]);
     s.place(stage.current ? stage.current.clientWidth - 60 : 400, stage.current ? stage.current.clientHeight - 40 : 400);
     const click = async (selector: string, then: () => void, travel = 650) => {
@@ -144,15 +127,19 @@ function ImportPillar() {
         if (!await s.wait(ms(1500))) return;
       }
       if (next === 1) {
+        const note = pick('anti-defensive');
         if (!await open()) return;
         if (!await click('[data-step="tab-note"]', () => patch({ tab: 'note' }))) return;
         if (!await s.move('[data-step="title"]', ms(500))) return;
-        if (!await type(text.noteTitle, title => patch({ title }), 40)) return;
+        if (!await type(note.title, title => patch({ title }), 40)) return;
         if (!await s.move('[data-step="content"]', ms(500))) return;
-        if (!await type(text.noteBody, content => patch({ content }), 22)) return;
-        patch({ tags: pick('rules').tags.slice(0, 1) });
+        // Paste the reusable note as a whole, rather than slowly typing a long document.
+        if (!await s.press()) return;
+        patch({ content: note.content ?? '' });
+        if (!await s.wait(ms(1100))) return;
+        patch({ tags: note.tags.slice(0, 1) });
         if (!await s.wait(ms(500))) return;
-        if (!await save('[data-step="save"]', [pick('rules')])) return;
+        if (!await save('[data-step="save"]', [note])) return;
       }
       if (next === 2) {
         if (!await open()) return;
@@ -203,7 +190,7 @@ function ImportPillar() {
 // The import dialog drawn from DesktopImportDialog's styles and Arc fields; its
 // values are set by the script, so it never takes focus from the page.
 function ImportDialog({ state, bookmarks }: { state: Dialog; bookmarks: StashItem[] }) {
-  const { copy, language } = useSite();
+  const { language } = useSite();
   const { t } = useI18n();
   const reduced = useReducedMotion();
   const progress = state.progress !== undefined;
@@ -220,10 +207,10 @@ function ImportDialog({ state, bookmarks }: { state: Dialog; bookmarks: StashIte
           {state.browser === 'reading' ? <Skeleton label={t('Reading bookmarks')} lines={4} /> : <>
             <div className={importStyles.selection}><Checkbox label={t('Select all')} checked tabIndex={-1} /><span className={importStyles.counts}>{t('{count} selected', { count: bookmarks.length })}</span></div>
             <div className={importStyles.bookmarks}><ul className={importStyles.list}>
-              {bookmarks.map((item, i) => <li key={item.id} className={importStyles.bookmark}>
+              {bookmarks.map(item => <li key={item.id} className={importStyles.bookmark}>
                 <Checkbox checked tabIndex={-1} aria-label={item.title} />
                 <SiteFavicon candidates={item.origin?.faviconUrl ? [item.origin.faviconUrl] : []} label={item.source} remoteFallback={false} />
-                <div><span className={importStyles.bookmarkTitle}>{copy.importing.bookmarks[i] ?? item.title}</span><div className={importStyles.bookmarkSource}><span>{language === 'zh' ? '书签栏' : 'Bookmarks bar'} / {item.tags[0]}</span></div></div>
+                <div><span className={importStyles.bookmarkTitle}>{item.title}</span><div className={importStyles.bookmarkSource}><span>{language === 'zh' ? '书签栏' : 'Bookmarks bar'} / {item.tags[0]}</span></div></div>
               </li>)}
             </ul></div>
           </>}
@@ -249,7 +236,7 @@ function ImportDialog({ state, bookmarks }: { state: Dialog; bookmarks: StashIte
             {state.tab === 'link' && <>
               <div className={importStyles.linkRow}>
                 <div data-step="url"><Input label={t('Link')} placeholder={t('Paste a link')} value={state.url ?? ''} readOnly tabIndex={-1} /></div>
-                {state.url && <Input label={t('Title')} value={state.title ?? ''} placeholder={state.looking ? `${t('Reading title')}…` : 'journal.example'} readOnly tabIndex={-1} />}
+                {state.url && <Input label={t('Title')} value={state.title ?? ''} placeholder={state.looking ? `${t('Reading title')}…` : 'radix-ui.com'} readOnly tabIndex={-1} />}
               </div>
               {state.url && <Textarea label={t('Content')} rows={3} value={state.content ?? ''} placeholder={state.looking ? `${t('Reading content')}…` : t('Add or edit the content for AI')} readOnly tabIndex={-1} />}
               {state.url && <ReferenceTagsField value={state.tags ?? []} onValueChange={() => {}} availableTags={[]} fieldRef={tagField} />}
@@ -276,7 +263,7 @@ function ImportDialog({ state, bookmarks }: { state: Dialog; bookmarks: StashIte
 
 /* ---------- Save page: the extension's real sidebar reads and saves a page ---------- */
 function SavePillar() {
-  const { copy } = useSite();
+  const { copy, language } = useSite();
   const text = copy.saving;
   const stage = useRef<HTMLDivElement | null>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -285,11 +272,11 @@ function SavePillar() {
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState(0);
   const [pressed, setPressed] = useState(false);
-  const page = useMemo<StashItem>(() => ({ id: 'page', kind: 'web', title: text.pageTitle, source: 'Journal', url: 'https://journal.example/calm-interfaces', excerpt: text.pageBody, content: text.pageBody, tags: [], createdAt: new Date(0).toISOString(), origin: { platform: 'chrome', importMethod: 'browser_extension', importedAt: new Date(0).toISOString() } }), [text]);
+  const page = useMemo(() => demoLibrary(language).find(item => item.id === 'radix')!, [language]);
   // A page-local stand-in for the extension's transport: it reads the page above and saves nowhere.
   const services = useMemo<PopupServices>(() => ({
     capture: () => new Promise(resolve => window.setTimeout(() => resolve(page), 650)),
-    tags: async () => ['Design', 'Writing', 'Research'],
+    tags: async () => [...demoTagNames],
     save: () => new Promise(resolve => window.setTimeout(() => resolve({ saved: true }), 600)),
     close: () => {},
     providerStatus: async () => ({ connected: true }),
@@ -326,14 +313,14 @@ function SavePillar() {
     <div className="browser" data-open={open || undefined}>
       <div className="browser-bar">
         <span className="browser-dots"><i /><i /><i /></span>
-        <span className="browser-address">journal.example/calm-interfaces</span>
+        <span className="browser-address">{new URL(page.url!).hostname}</span>
         <button type="button" className="browser-extension" data-step="extension" data-pressed={pressed || undefined} aria-label="StashDock" tabIndex={-1}><img src={brandMark} alt="" width={16} height={16} /></button>
       </div>
       <div className="browser-body">
         <div className="browser-page" data-step="page" aria-hidden="true">
           <span className="sketch-kicker" />
-          <p className="display browser-headline">{text.pageTitle}</p>
-          <p className="browser-text">{text.pageBody}</p>
+          <p className="display browser-headline">{page.title}</p>
+          <p className="browser-text">{page.excerpt}</p>
           <span className="sketch-line" /><span className="sketch-line short" /><span className="sketch-line" />
           <span className="sketch-figure" />
         </div>
@@ -359,7 +346,7 @@ function AgentsPillar() {
   const reduced = useReducedMotion();
   const view = useFirstView<HTMLDivElement>();
   const [step, setStep] = useState(0);
-  const rule = useMemo(() => demoLibrary(language).find(item => item.id === 'rules')!, [language]);
+  const rule = useMemo(() => demoLibrary(language).find(item => item.id === 'anti-defensive')!, [language]);
   const steps = 7;
   useEffect(() => {
     if (!view.run) return;
@@ -383,10 +370,10 @@ function AgentsPillar() {
     <div className="agents-library" aria-hidden="true">
       <span className="agents-library-label">StashDock</span>
       <AnimatePresence>{step >= 2 && <motion.div className="agents-note" data-reused={step >= 6 || undefined} initial={{ opacity: 0, y: -12, scale: .92 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={reduced ? { duration: 0 } : { ...spring, delay: .2 }}>
-        <ReferenceGlyph kind="note" size={22} />
+        <img className="agents-note-cover" src={rule.preview} alt="" loading="lazy" decoding="async" width={720} height={405} />
         <b>{rule.title}</b>
         <small>{rule.excerpt}</small>
-        <span className="agents-tag">{rule.tags[0]}</span>
+        {rule.tags[0] && <span className="agents-tag">{rule.tags[0]}</span>}
       </motion.div>}</AnimatePresence>
       <span className="agents-ghost" /><span className="agents-ghost" />
     </div>

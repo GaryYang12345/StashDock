@@ -20,6 +20,9 @@ Thumbs.db
 /profile/
 /stashdock.exe
 /uninstall.exe
+/stashdock-preview.exe
+/stashdock-storage.exe
+/Claude outputs/
 *.log
 .env
 .env.*

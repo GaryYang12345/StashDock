@@ -1,0 +1,82 @@
+.guide-walkthrough { margin: 40px 0 0; scroll-margin-top: 96px; }
+.guide-walkthrough figcaption h4 { margin-top: 0; }
+.guide-walkthrough figcaption p { font-size: var(--text-sm); }
+.guide-film { position: relative; height: 560px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--well); container: guide-film / inline-size; }
+.guide-film-scene { --guide-panel-width: 57%; position: absolute; inset: 8px; overflow: hidden; border-radius: calc(var(--radius-panel) - 8px); background: var(--surface); }
+.guide-film-chat { position: absolute; inset: 0 auto 0 0; width: calc(100% - var(--guide-panel-width) * var(--guide-open, 0)); overflow: hidden; }
+.guide-film-chat > header { height: 44px; padding-inline: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--text-sm); border-bottom: 1px solid var(--border-subtle); }
+.guide-film-open { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; }
+.guide-film-open[data-active] { background: var(--well); }
+.guide-film-hello { position: absolute; inset: 44px 16px 120px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 16px; font-size: var(--text-lg); font-weight: 500; }
+.guide-film-hello img { opacity: .35; }
+.guide-film-composer { position: absolute; bottom: 16px; inset-inline: 16px; border: 1px solid var(--border); border-radius: var(--radius-control); padding: 16px; color: var(--quiet); font-size: var(--text-xs); }
+.guide-film-composer > div { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
+.guide-film-composer > div > svg:first-child { margin-right: auto; }
+.guide-film-composer > div > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--well); }
+.guide-film-panel { position: absolute; inset: 0 0 0 auto; width: var(--guide-panel-width); background: var(--surface); border-left: 1px solid var(--border); }
+.guide-film-tab { display: flex; align-items: center; gap: 12px; height: 44px; padding: 8px; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-xs); }
+.guide-film-tab > span { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.guide-film-tab > span > svg:last-child { margin-left: auto; color: var(--quiet); }
+.guide-film-tab > svg:last-child { margin-left: auto; }
+.guide-film-tools { padding: 12px; }
+.guide-film-address { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: var(--radius-pill); background: var(--well); color: var(--quiet); margin-bottom: 24px; }
+.guide-film-tools h5 { font-size: var(--text-sm); font-weight: 500; margin: 0 0 16px; }
+.guide-film-tool { display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 10px; border-radius: 12px; font-size: var(--text-sm); margin-top: 8px; background: var(--canvas); }
+.guide-film-tool > svg { flex: none; color: var(--quiet); }
+.guide-film-tool > svg:last-child { margin-left: auto; }
+.guide-film-tool[data-active] { background: var(--well); }
+.guide-film-menu { position: absolute; top: 252px; right: 12px; min-width: 184px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface-raised); box-shadow: var(--shadow-floating); }
+.guide-film-menu > span { display: block; font-size: var(--text-xs); color: var(--quiet); padding: 6px 8px; }
+.guide-film-menu > div { display: flex; align-items: center; gap: 8px; padding: 10px 8px; font-size: var(--text-sm); }
+.guide-film-library { padding: 16px 12px; }
+.guide-film-library-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.guide-film-brand { width: 128px; height: auto; margin-right: auto; }
+.guide-film-library-head > svg { flex: none; color: var(--quiet); }
+.guide-film-search { display: flex; gap: 8px; align-items: center; height: 36px; padding-inline: 12px; border: 1px solid var(--border); border-radius: var(--radius-pill); font-size: var(--text-xs); color: var(--quiet); }
+.guide-film-filter { display: flex; gap: 16px; align-items: center; margin-block: 12px 16px; font-size: var(--text-xs); color: var(--quiet); }
+.guide-film-filter > span:first-child { color: var(--ink); }
+.guide-film-filter > svg { margin-left: auto; }
+.guide-film-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.guide-film-cards article { min-width: 0; }
+.guide-film-cards article [class*="_controls_"], .guide-film-cards article [class*="_selection_"] { display: none; }
+.guide-film-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
+.guide-film-controls > div { display: flex; align-items: center; gap: 4px; flex: none; }
+.guide-film-controls button { min-height: 44px; }
+.guide-film-caption { display: flex; align-items: center; gap: 12px; font-size: var(--text-xs); color: var(--quiet); min-height: 44px; }
+.guide-film-caption > span { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.guide-film-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; margin: 16px 0 0; padding: 0; list-style: none; }
+.guide-film-steps button { display: flex; align-items: baseline; gap: 10px; min-height: 44px; text-align: left; padding: 8px 0; border: 0; background: transparent; color: var(--quiet); font: inherit; font-size: var(--text-xs); cursor: pointer; }
+.guide-film-steps button > span { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.guide-film-steps button:hover, .guide-film-steps button[aria-current] { color: var(--ink); }
+@container guide-film (max-width: 580px) {
+  .guide-film-brand { width: 104px; }
+  .guide-film-library-head { gap: 8px; }
+  .guide-film-library-head > svg:first-of-type { display: none; }
+  .guide-film-hello { font-size: var(--text-base); }
+}
+@container guide-film (max-width: 380px) {
+  .guide-film-scene { --guide-panel-width: 62%; }
+  .guide-film-chat { max-width: 100%; }
+  .guide-film-hello { font-size: var(--text-xs); inset-inline: 8px; }
+  .guide-film-composer { inset-inline: 8px; padding: 10px; }
+  .guide-film-composer > div > svg:nth-child(2) { display: none; }
+  .guide-film-chat > header { padding-inline: 8px; font-size: var(--text-xs); }
+  .guide-film-tab { gap: 6px; }
+  .guide-film-tab > svg:first-of-type { display: none; }
+  .guide-film-tools { padding: 8px; }
+  .guide-film-tool { padding-inline: 8px; gap: 8px; font-size: var(--text-xs); }
+  .guide-film-menu { min-width: 0; left: 8px; right: 8px; }
+  .guide-film-menu > span { font-size: var(--text-xs); }
+  .guide-film-filter { gap: 12px; }
+  .guide-film-filter > span:nth-child(3) { display: none; }
+  .guide-film-library { padding: 16px 8px; }
+  .guide-film-search { padding-inline: 8px; }
+}
+@media (max-width: 480px) {
+  .guide-film-controls { flex-wrap: wrap; gap: 0; }
+  .guide-film-caption { flex: 1 1 160px; }
+  .guide-film-steps { grid-template-columns: 1fr; gap: 0; }
+}
+@media (max-width: 640px) {
+  .guide-film { height: 460px; }
+}

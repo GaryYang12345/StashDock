@@ -10,10 +10,12 @@ function metadata(doc, name) {
 }
 
 function xPost(doc, url) {
-  const id = url.pathname.match(/^\/(?:[^/]+\/status|i\/web\/status)\/(\d+)(?:\/|$)/)?.[1];
+  const id = url.pathname.match(/^\/(?:[^/]+\/(?:status|article)|i\/web\/status)\/(\d+)(?:\/|$)/)?.[1];
   if (!id) throw Error('Open an individual X post, then save it. Feeds and bookmarks are not imported.');
   const posts = [...doc.querySelectorAll('article[data-testid="tweet"]')].filter(node => renderedRoot(node, doc));
-  const post = posts.find(article => [article.querySelector('time')?.closest('a[href]')].filter(Boolean).some(link => {
+  // An Article can embed several quoted tweets before its own timestamp.
+  // Match an owned permalink, never the first timestamp in the subtree.
+  const post = posts.find(article => [...article.querySelectorAll('time')].map(time => time.closest('a[href]')).filter(Boolean).some(link => {
     const href = safeUrl(link.getAttribute('href'), url.href);
     if (!href) return false;
     const parsed = new URL(href);
@@ -21,7 +23,29 @@ function xPost(doc, url) {
       && parsed.pathname.match(/^\/[^/]+\/status\/(\d+)\/?$/)?.[1] === id
       && link.closest('article') === article && link.querySelector('time');
   }));
-  if (!post) throw Error('This X post is not loaded. Finish signing in or wait for the post, then retry.');
+  let articleView = post && [...post.querySelectorAll('[data-testid="twitterArticleReadView"]')]
+    .find(node => node.closest('article[data-testid="tweet"]') === post && renderedRoot(node, doc));
+  // Focus mode has a standalone read view and no surrounding tweet permalink.
+  // Permit that structure only on an explicit Article route, never on a feed.
+  if (!post && /^\/[^/]+\/article\/\d+\/?$/.test(url.pathname)) {
+    const views = [...doc.querySelectorAll('[data-testid="twitterArticleReadView"]')]
+      .filter(node => !node.closest('article[data-testid="tweet"]') && renderedRoot(node, doc));
+    if (views.length === 1) articleView = views[0];
+  }
+  if (!post && !articleView) throw Error('This X post is not loaded. Finish signing in or wait for the post, then retry.');
+  if (articleView) {
+    const body = firstVisible(articleView, ['[data-testid="twitterArticleRichTextView"]']);
+    const title = renderedText(firstVisible(articleView, ['[data-testid="twitter-article-title"]']), doc);
+    // Quotes remain context; their author metadata, counters and controls do not.
+    const content = renderedText(body, doc, { exclude: '[role="group"],[data-testid="User-Name"],time' });
+    if (!content) throw Error('This X article is not loaded. Wait for its text, then retry.');
+    const owner = post || articleView;
+    const own = selector => [...owner.querySelectorAll(selector)].find(node => node.closest('article') === owner);
+    return { platform: 'X', content: [title, content].filter(Boolean).join('\n\n'), title,
+      author: renderedText(own('[data-testid="User-Name"]'), doc), externalId: id,
+      publishedAt: own('time')?.getAttribute('datetime') || '',
+      truncated: Boolean(body.querySelector('[data-testid="tweet-text-show-more-link"]')) };
+  }
   const text = [...post.querySelectorAll('[data-testid="tweetText"], [data-testid="twitterArticleRichTextView"]')].map(node => renderedText(node, doc)).filter(Boolean);
   const cards = [...post.querySelectorAll('[data-testid="card.wrapper"]')].map(node => renderedText(node, doc)).filter(Boolean);
   const media = [...post.querySelectorAll('[data-testid="tweetPhoto"] img')].map(node => node.getAttribute('alt')).filter(value => value && !/^(image|图片)$/i.test(value));

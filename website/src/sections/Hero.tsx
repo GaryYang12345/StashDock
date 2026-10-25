@@ -7,6 +7,7 @@ import chatgptMark from '../../../src/assets/brands/chatgpt.svg';
 import { links } from '../copy';
 import { useSite } from '../parts/useSite';
 import { OsMark } from '../parts/OsMark';
+import { HeroReferences } from '../parts/HeroReferences';
 import './hero.css';
 
 const cubic = (value: readonly number[]) => value as [number, number, number, number];
@@ -15,10 +16,11 @@ const HOLD_MS = 2200;
 const marks = ['openai', 'claude-color', 'gemini-color', 'deepseek-color', 'workbuddy-color', 'kimi-app', 'grok', 'meta-color', 'cursor']
   .map(file => `${import.meta.env.BASE_URL}logos/${file}.svg`);
 
-export function Hero() {
+export function Hero({ showReferences = true }: { showReferences?: boolean }) {
   const { copy } = useSite();
   const enter = (delay: number) => ({ initial: { opacity: 0, y: 16, filter: 'blur(8px)' }, animate: { opacity: 1, y: 0, filter: 'blur(0px)' }, transition: { duration: .9, delay, ease: cubic(motionTokens.ease.enter) } });
   return <section className="hero" id="top">
+    {showReferences && <HeroReferences />}
     <div className="hero-copy page">
       <motion.h1 className="display display-xl hero-title" aria-label={copy.hero.plain} {...enter(0)}>
         {copy.hero.title.split('\n').map(line => <span key={line} className="hero-line" aria-hidden="true">{inline(line)}</span>)}

@@ -24,7 +24,10 @@ import listStyles from '../../../src/components/ReferenceList.module.css';
 import shelf from '../../../src/features/mcp-app/McpShelf.module.css';
 import chatgptMark from '../../../src/assets/brands/chatgpt.svg';
 import type { StashItem } from '../../../src/types';
-import { demoLibrary, fileKinds, matches } from '../demo-data';
+import { fileKinds, matches } from '../demo-data';
+import { useDemoLibrary } from '../demo-editing';
+import { demoCard, openDemoReference } from '../demo-navigation';
+import { useDemoReferenceEditors } from '../parts/DemoReferenceEditors';
 import { ChatWindow, type Chip } from '../parts/ChatWindow';
 import { Reveal } from '../parts/Reveal';
 import { useSite } from '../parts/useSite';
@@ -34,7 +37,7 @@ const PENDING_MS = 260;
 const ADDED_MS = 1400;
 type Filter = 'all' | 'recent' | 'web' | 'files' | 'favorites';
 
-// On the page there is nothing to open, so cards drop their link and file targets.
+// Autoplay illustrations and composer chips have no source/file actions.
 export const shown = ({ url: _url, assetPath: _asset, hasFile: _file, ...item }: StashItem): StashItem => item;
 const recent = (items: StashItem[]) => [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
 export function inCollection(item: StashItem, filter: string) {
@@ -52,7 +55,8 @@ export function LiveDemo() {
   const { t } = useI18n();
   const text = copy.demo;
   const reduced = useReducedMotion();
-  const source = useMemo(() => demoLibrary(language), [language]);
+  const demo = useDemoLibrary(language);
+  const source = demo.library;
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState('');
@@ -72,6 +76,7 @@ export function LiveDemo() {
   useEffect(() => { setTag(''); setSelected([]); setChips([]); }, [language]);
 
   const library = useMemo(() => source.filter(item => !removed.has(item.id)).map(item => ({ ...item, favorite: favorites[item.id] ?? item.favorite })), [source, removed, favorites]);
+  const editor = useDemoReferenceEditors({ ...demo, library });
   const byId = useMemo(() => new Map(library.map(item => [item.id, item])), [library]);
   const tags = useMemo(() => {
     const counts = new Map<string, number>();
@@ -102,11 +107,11 @@ export function LiveDemo() {
   };
   const reset = () => {
     timers.current.forEach(id => window.clearTimeout(id)); timers.current.clear();
-    setRemoved(new Set()); setFavorites({}); setQuery(''); setFilter('all'); setTag(''); setView('grid');
+    demo.resetEdits(); setRemoved(new Set()); setFavorites({}); setQuery(''); setFilter('all'); setTag(''); setView('grid');
     setSelected([]); setChips([]); setPending([]); setAdded(new Set()); setResetToken(value => value + 1);
   };
   const chipList: Chip[] = chips.flatMap(id => { const item = byId.get(id); return item ? [{ key: id, mark: <ReferenceMark item={shown(item)} />, label: item.title, sub: text.context }] : []; });
-  const changed = Boolean(removed.size || Object.keys(favorites).length || chips.length || selected.length || query || filter !== 'all' || tag || view !== 'grid');
+  const changed = Boolean(demo.edited || removed.size || Object.keys(favorites).length || chips.length || selected.length || query || filter !== 'all' || tag || view !== 'grid');
   const list = new Intl.ListFormat(language === 'zh' ? 'zh-CN' : 'en', { type: 'conjunction' });
   const allSelected = items.length > 0 && items.every(item => selected.includes(item.id));
   const selectionAdded = selected.length > 0 && selected.every(id => added.has(id));
@@ -119,30 +124,30 @@ export function LiveDemo() {
     <Reveal className="demo-desk" delay={80}>
       <ChatWindow className="demo-chat" head="ChatGPT" chips={chipList}
         hello={<><img className="chat-hello-mark" src={chatgptMark} alt="" width={56} height={56} /><p>{text.chatHello}</p></>}
-        placeholder={text.placeholder} ask={text.ask} reply={labels => text.reply.replace('{titles}', list.format(labels.map(label => `“${label}”`)))}
+        placeholder={text.placeholder} reply={labels => text.reply.replace('{titles}', list.format(labels.map(label => `“${label}”`)))}
         onRemove={key => setChips(current => current.filter(id => id !== key))} onSent={() => setChips([])}
         onReset={reset} resetToken={resetToken} canReset={changed} />
 
       <div className="demo-plugin no-delete" aria-label="StashDock">
         <main data-arc-ui className={shelf.root}>
           <header className={header.header}>
-            <div className={header.top}><BrandIcon className={shelf.brand} /><Button variant="secondary" size="sm" onClick={() => document.getElementById('import')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}><Plus size={16} strokeWidth={1.75} aria-hidden="true" />{t('Import references')}</Button></div>
+            <div className={header.top}><BrandIcon className={`${shelf.brand} demo-brand`} /><Button variant="secondary" size="sm" className="demo-import" aria-label={t('Import references')} onClick={() => document.getElementById('import')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}><Plus size={16} strokeWidth={1.75} aria-hidden="true" /><span className="demo-import-label">{t('Import references')}</span></Button></div>
             <div className={`${header.search} ${shelf.searchRow}`}>
               <SearchField label={t('Search references')} placeholder={t('Search references')} value={query} onValueChange={setQuery} autoComplete="off" spellCheck={false} />
               <div className={shelf.viewToolbar}><ReferenceViewToggle value={view} onChange={setView} /></div>
             </div>
-            <div className={`${header.filters} ${shelf.filters}`}>
-              <div className={header.filterOptions}><SegmentedControl label={t('Collection')} options={shelfFilters.map(option => ({ ...option, label: t(option.label) }))} value={filter} onValueChange={value => { setFilter(value as Filter); setTag(''); }} /></div>
+            <div className={`${header.filters} ${shelf.filters} demo-filters`}>
+              <div className={`${header.filterOptions} demo-collections`}><SegmentedControl label={t('Collection')} options={shelfFilters.map(option => ({ ...option, label: t(option.label) }))} value={filter} onValueChange={value => { setFilter(value as Filter); setTag(''); }} /></div>
               <div className={shelf.tagToolbar}><ShelfTagFilter tags={tags} activeTag={tag} disabled={false} busy={false} triggerRef={tagTrigger} onFilter={name => { setTag(name); setFilter('all'); }} onEdit={() => {}} /></div>
               <Button type="button" variant="ghost" size="sm" aria-label={t('Refresh library')} loading={refreshing} onClick={() => { setRefreshing(true); later(() => setRefreshing(false), 600); }}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" /></Button>
             </div>
           </header>
           <ScrollArea label={t('References')} className={shelf.scroller} viewportClassName={`${shelf.content} ${selected.length ? shelf.contentWithSelection : ''}`} fade={0}>
-            {items.length ? <div className={view === 'grid' ? shelf.list : listStyles.list}>
-              {items.map(item => <ReferenceCardView key={item.id} item={shown(item)} view={view} className={shelf.card}
+            {items.length ? <div className={view === 'grid' ? `${shelf.list} demo-card-grid` : listStyles.list}>
+              {items.map(item => <ReferenceCardView key={item.id} item={demoCard(item)} view={view} className={shelf.card}
                 selected={selected.includes(item.id)} selectionDisabled={pending.length > 0}
                 onToggle={toggle} onFavorite={id => setFavorites(current => ({ ...current, [id]: !(current[id] ?? source.find(entry => entry.id === id)?.favorite) }))}
-                onDelete={reference => remove([reference.id])} onOpen={() => {}}
+                onDelete={reference => remove([reference.id])} onOpen={openDemoReference} onEdit={editor.openCard} onEditContent={editor.openContent}
                 action={<Button variant="primary" size="sm" className={`${action.button} ${card.copyAction} ${added.has(item.id) && !pending.includes(item.id) ? action.success : ''}`}
                   loading={pending.includes(item.id)} aria-disabled={pending.length > 0 || undefined} onClick={() => add([item.id])}
                   aria-label={t('Add {title} to chat', { title: item.title })} aria-description={added.has(item.id) ? text.added : undefined}>
@@ -171,5 +176,6 @@ export function LiveDemo() {
         </main>
       </div>
     </Reveal>
+    {editor.dialogs}
   </section>;
 }

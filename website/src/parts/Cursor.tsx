@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { motion } from 'motion/react';
+import './cursor.css';
 
 type Point = { x: number; y: number };
 

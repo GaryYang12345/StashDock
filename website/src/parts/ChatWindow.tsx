@@ -11,8 +11,8 @@ type Message = { id: number; role: 'user' | 'ai'; text: string; chips?: Chip[] }
 
 // A generic AI conversation with a composer that receives references as
 // chips above the input, the way AI apps show attachments and context.
-export function ChatWindow({ head, hello, chips, placeholder, ask, reply, onRemove, onSent, onReset, resetToken, canReset, drop, onPaste, className = '' }: {
-  head: ReactNode; hello: ReactNode; chips: Chip[]; placeholder: string; ask: string;
+export function ChatWindow({ head, hello, chips, placeholder, reply, onRemove, onSent, onReset, resetToken, canReset, drop, onPaste, className = '' }: {
+  head: ReactNode; hello: ReactNode; chips: Chip[]; placeholder: string;
   reply: (labels: string[]) => string; onRemove: (key: string) => void; onSent: () => void;
   onReset: () => void; resetToken: number; canReset: boolean;
   drop?: { accepts: (event: DragEvent) => boolean; onDrop: (event: DragEvent) => void; label: string };
@@ -30,9 +30,9 @@ export function ChatWindow({ head, hello, chips, placeholder, ask, reply, onRemo
   const spring = reduced ? { duration: 0 } : motionTokens.spring.smooth;
   const send = (event: FormEvent) => {
     event.preventDefault();
-    if (!chips.length || thinking) return;
+    if (!chips.length || !draft.trim() || thinking) return;
     const sent = chips, labels = chips.map(chip => chip.label);
-    setMessages(current => [...current, { id: Date.now(), role: 'user', text: draft.trim() || ask, chips: sent }]);
+    setMessages(current => [...current, { id: Date.now(), role: 'user', text: draft.trim(), chips: sent }]);
     setDraft(''); setThinking(true); onSent();
     timer.current = window.setTimeout(() => { setThinking(false); setMessages(current => [...current, { id: Date.now() + 1, role: 'ai', text: reply(labels) }]); }, 1100);
   };
@@ -69,12 +69,12 @@ export function ChatWindow({ head, hello, chips, placeholder, ask, reply, onRemo
           </div>
         </motion.div>}
       </AnimatePresence>
-      <input className="composer-input" value={draft} onChange={event => setDraft(event.target.value)} onPaste={onPaste} placeholder={chips.length ? ask : placeholder} aria-label={placeholder} />
+      <input className="composer-input" value={draft} onChange={event => setDraft(event.target.value)} onPaste={onPaste} placeholder={chips.length ? '' : placeholder} aria-label={placeholder} />
       <div className="composer-row">
         <span className="composer-tool" aria-hidden="true"><Plus size={20} strokeWidth={1.5} /></span>
         <span className="composer-spacer" />
         <span className="composer-tool quiet" aria-hidden="true"><Mic size={18} strokeWidth={1.5} /></span>
-        <Button type="submit" variant="primary" size="sm" className="composer-send" disabled={!chips.length || thinking} aria-label={copy.demo.send}><ArrowUp size={18} strokeWidth={2} aria-hidden="true" /></Button>
+        <Button type="submit" variant="primary" size="sm" className="composer-send" disabled={!chips.length || !draft.trim() || thinking} aria-label={copy.demo.send}><ArrowUp size={18} strokeWidth={2} aria-hidden="true" /></Button>
       </div>
       <AnimatePresence>{over && drop && <motion.div className="composer-drop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{drop.label}</motion.div>}</AnimatePresence>
     </form>

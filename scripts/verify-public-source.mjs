@@ -1,10 +1,11 @@
 // Inspect the exact Git index, not ignored working files. Never print secret values.
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-export const sourceRoots = new Set(['.agents','assets','docs','extension','licenses','plugins','public','scripts','src','src-tauri','tests']);
-const rootFiles = new Set(['.gitattributes','.gitignore','AGENTS.md','README.md','LICENSE','THIRD_PARTY_NOTICES.md','components.json','design.md','index.html','package.json','package-lock.json','tsconfig.app.json','tsconfig.json','tsconfig.node.json','vite.config.ts']);
+export const sourceRoots = new Set(['.agents','assets','docs','extension','licenses','plugins','public','scripts','src','src-tauri','tests','website']);
+const rootFiles = new Set(['.gitattributes','.gitignore','AGENTS.md','CLAUDE.md','README.md','LICENSE','THIRD_PARTY_NOTICES.md','components.json','design.md','index.html','package.json','package-lock.json','tsconfig.app.json','tsconfig.json','tsconfig.node.json','vite.config.ts']);
 export function privateSourcePath(path) {
   return /(^|\/)(node_modules|target|output|artifacts|profile|preview-runtime|connection-runtime|build-runtime|pdf-runtime|\.git|\.codex|\.playwright)(\/|$)/i.test(path)
+    || /^website\/(?:dist\/|[^/]+\.ttf$)/i.test(path)
     || /^plugins\/stashdock\/bin\//.test(path)
     || /(^|\/)\.env($|\.)|\.(exe|dll|pdb|sqlite3?|sqlite3?-\w+|db|db-\w+|log|pem|pfx|p12|key|zip|dmp)$/i.test(path);
 }

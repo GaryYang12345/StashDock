@@ -130,6 +130,46 @@ test('generic reader preserves article text and excludes navigation, hidden text
   assert.doesNotMatch(item.content,/Browse account|Hidden secret|Private draft|password|Sign in|token/);
   assert.equal(item.preview,''); assert.equal(doc.querySelector('textarea').textContent,'Private draft');
 });
+
+test('X Articles match their own late permalink and read noneditable rich text, not replies or counters', () => {
+  const url = 'https://x.com/mira/status/123456789';
+  const html = `<article data-testid="tweet"><div data-testid="User-Name">Mira</div>
+    <article data-testid="twitterArticleReadView"><div data-testid="twitter-article-title">An article</div>
+      <div data-testid="twitterArticleRichTextView"><div contenteditable="false">
+        <p>First section.</p>${tweet('999', 'An embedded quote')}
+        <div role="group">999 reposts</div><h2>Last section</h2><p>Final paragraph.</p>
+        <div hidden>Hidden secret</div><div contenteditable="true">Private draft</div>
+        <form><div contenteditable="false">Private form text</div></form>
+      </div></div></article>
+    <a href="/mira/status/123456789"><time datetime="2026-10-25">Today</time></a>
+  </article>${tweet('888','Unrelated reply')}`;
+  const doc = page(html, url);
+  for (const href of [url, url.replace('/status/', '/article/')]) {
+    const item = capturePage(doc, href);
+    assert.equal(item.title, 'An article'); assert.equal(item.author, 'Mira');
+    assert.equal(item.externalId, '123456789'); assert.equal(item.publishedAt, '2026-10-25');
+    assert.match(item.content, /First section/); assert.match(item.content, /An embedded quote/);
+    assert.match(item.content, /Last section\n\nFinal paragraph/);
+    assert.doesNotMatch(item.content, /reposts|Today|Unrelated|Hidden|Private|Dr Mira/);
+    assert.equal(item.truncated, false);
+  }
+  assert.throws(() => capturePage(doc, 'https://x.com/mira/status/777'), /not loaded/);
+  doc.querySelector('[data-testid="twitterArticleRichTextView"]').innerHTML = '<div contenteditable="true">Private draft</div>';
+  assert.throws(() => capturePage(doc, url), /not loaded/);
+});
+
+test('standalone X Article focus mode never substitutes an embedded tweet or an ambiguous article', () => {
+  const url = 'https://x.com/mira/article/123456789';
+  const view = `<article data-testid="twitterArticleReadView"><div data-testid="twitter-article-title">Focus article</div><div data-testid="twitterArticleRichTextView"><div contenteditable="false"><p>Focus introduction</p>${tweet('999','Quoted example')}<p>Focus conclusion</p></div></div></article>`;
+  const doc = page(view, url);
+  const item = capturePage(doc, url);
+  assert.match(item.content, /Focus introduction/); assert.match(item.content, /Focus conclusion/);
+  assert.equal(item.externalId, '123456789'); assert.equal(item.author, '');
+  assert.throws(() => capturePage(doc, 'https://x.com/mira/status/123456789'), /not loaded/);
+  assert.throws(() => capturePage(doc, 'https://x.com/home'), /individual/);
+  assert.throws(() => capturePage(page(view + view, url), url), /not loaded/);
+  assert.throws(() => capturePage(page(`<div hidden>${view}</div>`, url), url), /not loaded/);
+});
 test('site adapters capture post content, not related cards or comments; unsupported states require selection', () => {
   const cases = [
     ['https://www.xiaohongshu.com/explore/123','<div class="note-detail-mask"><div class="note-content"><h1 id="detail-title">A note</h1><div id="detail-desc">Saved note text</div></div><div class="comments">Comment secret</div></div>','Xiaohongshu','Saved note text'],

@@ -1,0 +1,24 @@
+/* Reserve a little illustration space below the settled hero copy. Its title
+   and CTA do not move; the next section starts after the illustration. */
+.hero:has(> .hero-references) { margin-bottom: 160px; overflow: visible; isolation: isolate; }
+/* Mask the completed, opaque composition once. Individual papers never blend
+   through each other, and both sides dissolve at the same horizontal horizon. */
+.hero-references {
+  position: absolute; inset: 0 0 -160px; overflow: clip; pointer-events: none; isolation: isolate;
+  mask-image: linear-gradient(to bottom, black calc(100% - var(--hero-fade-start-offset)), oklch(0% 0 0 / var(--hero-fade-end-alpha)) calc(100% - var(--hero-fade-end-offset)));
+}
+/* Preserve the exported geometry at 1697 x 1045. Horizontal offsets follow the
+   available width; vertical offsets follow the bottom of the hero illustration. */
+.hero-reference-position {
+  position: absolute; width: 300px; transform-origin: center;
+  z-index: var(--hero-z);
+  left: calc(50% + var(--hero-x) - 150px); top: calc(100% - var(--hero-bottom-offset));
+  transform: rotate(var(--hero-rotation)) scale(var(--hero-scale));
+}
+.hero-reference-paper { box-shadow: var(--shadow-raised); }
+.hero-reference-source { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--text-secondary); font-size: var(--text-xs); line-height: var(--leading-body); }
+.hero-reference-source > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1100px) {
+  .hero:has(> .hero-references) { margin-bottom: 0; }
+  .hero-references { display: none; }
+}
