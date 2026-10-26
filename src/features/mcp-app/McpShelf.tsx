@@ -28,7 +28,7 @@ import { CardActionLabel } from '../../components/CardActionLabel';
 import { SelectAllReferences } from '../../components/SelectAllReferences';
 import { ReferenceViewToggle } from '../../components/ReferenceViewToggle';
 import type { StashItem } from '../../types';
-import { addAttachmentToDraft, parseAttachment, supportsDraft } from './draft';
+import { addAttachmentToDraft, parseAttachment, supportsDraft, DRAFT_REOPEN_HINT, DRAFT_UNAVAILABLE } from './draft';
 import card from '../../components/StashCard.module.css';
 import listStyles from '../../components/ReferenceList.module.css';
 import type { ChosenFile, ChosenFileDraft, FileReferencePayload } from '../../lib/fileReference';
@@ -374,9 +374,9 @@ export function McpShelf() {
       <h2 className={styles.srOnly}>{t('Saved references')}</h2>
       {connectionError ? <Alert tone="danger" title={t('StashDock could not connect')}><span className={styles.retry}><span>{t(connectionError)}</span><Button variant="secondary" onClick={() => setAttempt(value => value + 1)}>{t('Retry connection')}</Button></span></Alert>
         : !connected ? <LoadingReferences className={styles.list} /> : <>
-          {!draftSupported && <Alert tone="warning" className={styles.notice} title={t('Adding to chat is unavailable')}>{t('Open StashDock beside an active conversation to add references. No message will be sent.')}</Alert>}
+          {!draftSupported && <Alert tone="warning" className={styles.notice} title={t('Adding to chat is unavailable')}>{t(DRAFT_REOPEN_HINT)}</Alert>}
           {readError && <Alert tone="danger" className={styles.notice} title={t('References could not be refreshed')}><span className={styles.retry}><span>{t(readError)}</span><Button variant="secondary" onClick={refresh} loading={refreshing}>{t('Retry connection')}</Button></span></Alert>}
-          {addError && <Alert tone="danger" className={styles.notice} title={t('Could not confirm the reference was added')} onDismiss={() => setAddError('')}>{t(addError)}{addError !== COMPOSER_UNAVAILABLE && <> {t('Check the input box before trying again.')}</>}</Alert>}
+          {addError && <Alert tone="danger" className={styles.notice} title={t('Could not confirm the reference was added')} onDismiss={() => setAddError('')}>{t(addError)}{addError !== COMPOSER_UNAVAILABLE && addError !== DRAFT_UNAVAILABLE && <> {t('Check the input box before trying again.')}</>}</Alert>}
           {managementError && <Alert tone="danger" className={styles.notice} title={t('The library change could not be saved')} onDismiss={() => setManagementError('')}>{t(managementError)}</Alert>}
           <Alert tone="info" className={styles.notice} title={t(notice)} open={Boolean(notice)} onDismiss={() => setNotice('')} />
           {!ready ? <LoadingReferences compact={view === 'list'} className={view === 'grid' ? styles.list : undefined} /> : items.length ? <div className={view === 'grid' ? styles.list : listStyles.list} aria-busy={refreshing}>

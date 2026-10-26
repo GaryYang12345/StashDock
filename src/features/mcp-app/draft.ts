@@ -7,6 +7,8 @@ export type ReferenceAttachment = {
   content: { type: 'resource'; resource: { uri: string; mimeType: 'text/markdown'; text: string; _meta?: Record<string, unknown> } }[];
 };
 type DraftHost = Pick<App, 'getHostCapabilities' | 'sendMessage'>;
+export const DRAFT_REOPEN_HINT = 'Close the StashDock panel and reopen it.';
+export const DRAFT_UNAVAILABLE = 'Adding to chat is unavailable. Close the StashDock panel and reopen it.';
 
 export function supportsDraft(host: DraftHost): boolean {
   const capabilities = host.getHostCapabilities();
@@ -32,7 +34,7 @@ export function parseAttachment(raw: unknown): ReferenceAttachment {
 }
 
 export async function addAttachmentToDraft(host: DraftHost, attachment: ReferenceAttachment): Promise<void> {
-  if (!supportsDraft(host)) throw new Error('Adding to chat is unavailable here. Open StashDock beside an active conversation.');
+  if (!supportsDraft(host)) throw new Error(DRAFT_UNAVAILABLE);
   const checked = parseAttachment(attachment);
   const title = checked.ids.length > 1 ? 'Multiple contexts' : checked.title.trim() || 'Untitled reference';
   const characters = Array.from(title);
