@@ -1,11 +1,17 @@
 // Inspect the exact Git index, not ignored working files. Never print secret values.
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-export const sourceRoots = new Set(['.agents','assets','docs','extension','licenses','plugins','public','scripts','src','src-tauri','tests','website']);
-const rootFiles = new Set(['.gitattributes','.gitignore','AGENTS.md','CLAUDE.md','README.md','LICENSE','THIRD_PARTY_NOTICES.md','components.json','design.md','index.html','package.json','package-lock.json','tsconfig.app.json','tsconfig.json','tsconfig.node.json','vite.config.ts']);
+export const sourceRoots = new Set(['.agents','assets','docs','extension','licenses','plugins','public','scripts','src','src-tauri','tests']);
+const rootFiles = new Set(['.gitattributes','.gitignore','README.md','LICENSE','THIRD_PARTY_NOTICES.md','components.json','index.html','package.json','package-lock.json','tsconfig.app.json','tsconfig.json','tsconfig.node.json','vite.config.ts']);
+export const publicDocuments = new Set(['docs/INSTALL_WINDOWS.md','docs/windows-plugin-install.md','docs/RELEASE_NOTES_v0.2.6.md','docs/RELEASE_NOTES_plugin-v0.4.36.md']);
 export function privateSourcePath(path) {
   return /(^|\/)(node_modules|target|output|artifacts|profile|preview-runtime|connection-runtime|build-runtime|pdf-runtime|\.git|\.codex|\.playwright)(\/|$)/i.test(path)
-    || /^website\/(?:dist\/|[^/]+\.ttf$)/i.test(path)
+    || /^website\//i.test(path)
+    || /^(?:AGENTS|CLAUDE)\.md$|^design\.md$/.test(path)
+    || /^\.agents\/(?!plugins\/)/.test(path)
+    || /^docs\//.test(path) && !publicDocuments.has(path)
+    || /^tests\/(?:website|stage-review|internal-source)/.test(path)
+    || /^scripts\/(?:package-mac-handoff\.ps1|verify-handoff\.mjs|verify-website-dist\.mjs|README\.md)$/.test(path)
     || /^plugins\/stashdock\/bin\//.test(path)
     || /(^|\/)\.env($|\.)|\.(exe|dll|pdb|sqlite3?|sqlite3?-\w+|db|db-\w+|log|pem|pfx|p12|key|zip|dmp)$/i.test(path);
 }
@@ -34,9 +40,9 @@ export function verifyIndex(cwd = resolve(import.meta.dirname, '..')) {
     if (data.subarray(0,16).toString('utf8') === 'SQLite format 3\0' || data.subarray(0,2).toString() === 'MZ') throw Error(`Runtime or library in source: ${entry.path}`);
     if (!data.includes(0) && containsCredential(data.toString('utf8'))) throw Error(`Potential credential in staged file (value withheld): ${entry.path}`);
   }
-  for (const required of ['AGENTS.md','package-lock.json','src-tauri/Cargo.lock','.agents/skills/arc/SKILL.md','.agents/skills/arc/LICENSE','plugins/stashdock/skills/use-stashdock/SKILL.md']) {
+  for (const required of ['package-lock.json','src-tauri/Cargo.lock','.agents/plugins/marketplace.json','plugins/stashdock/skills/use-stashdock/SKILL.md']) {
     if (!entries.some(e=>e.path===required)) throw Error(`Missing public source: ${required}`);
   }
   return { files:entries.length, bytes, privateFilesIncluded:false, credentialPatternMatches:0 };
 }
-if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) console.log(JSON.stringify(verifyIndex()));
+if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) console.log(JSON.stringify(verifyIndex(process.argv[2])));

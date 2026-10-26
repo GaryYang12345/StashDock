@@ -7,8 +7,7 @@ import { EventEmitter } from 'node:events';
 import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
 import { openManagedFile } from '../plugins/stashdock/server/open-file.mjs';
 const source = path => readFileSync(path, 'utf8');
-test('Rule 1 and shared forms prevent card context-menu and file-flow forks', () => {
-  assert.match(source('AGENTS.md'), /Rule 1: Consistency/);
+test('shared forms prevent card context-menu and file-flow forks', () => {
   for (const path of ['src/components/StashCard.tsx','src/features/mcp-app/McpShelf.tsx']) assert.doesNotMatch(source(path), /<DesktopMenu context[^>]*actions=\{(?:editActions|referenceEditActions)/);
   assert.doesNotMatch(source('src/components/StashCard.tsx'), /<DesktopMenu context/);
   const form = source('src/components/ReferenceFileImport.tsx');

@@ -1,5 +1,6 @@
 param(
   [Parameter(Mandatory=$true)][string]$PluginArchive,
+  [Parameter(Mandatory=$true)][string]$PublicSource,
   [string]$Destination = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -7,11 +8,16 @@ $taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $taskVersion = (Get-Content -Raw -LiteralPath (Join-Path $taskRoot 'package.json') | ConvertFrom-Json).version
 $taskPluginVersion = (Get-Content -Raw -LiteralPath (Join-Path $taskRoot 'plugins/stashdock/.codex-plugin/plugin.json') | ConvertFrom-Json).version
 $taskExtensionVersion = (Get-Content -Raw -LiteralPath (Join-Path $taskRoot 'extension/manifest.json') | ConvertFrom-Json).version
-$taskCommit = & git -C $taskRoot rev-parse HEAD
+$taskPublicRoot = [IO.Path]::GetFullPath($PublicSource)
+$taskPublicRemote = & git -C $taskPublicRoot remote get-url origin
+if ($LASTEXITCODE -ne 0 -or $taskPublicRemote -ne 'https://github.com/GaryYang12345/StashDock.git') { throw 'PublicSource must be the reviewed public distribution checkout.' }
+$taskCommit = & git -C $taskPublicRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Commit the source baseline first.' }
 $taskStatus = & git -C $taskRoot status --porcelain
 if ($LASTEXITCODE -ne 0 -or $taskStatus) { throw 'Commit intended source changes before assembling a release.' }
-& node (Join-Path $PSScriptRoot 'verify-public-source.mjs')
+$taskPublicStatus = & git -C $taskPublicRoot status --porcelain
+if ($LASTEXITCODE -ne 0 -or $taskPublicStatus) { throw 'Commit the reviewed public source before assembling a release.' }
+& node (Join-Path $PSScriptRoot 'verify-public-source.mjs') $taskPublicRoot
 if ($LASTEXITCODE -ne 0) { throw 'Public source check failed.' }
 if (-not $Destination) { $Destination = Join-Path $taskRoot "output/releases/v$taskVersion" }
 $taskRelease = [IO.Path]::GetFullPath($Destination)
@@ -30,8 +36,7 @@ foreach ($taskBrowser in @('chrome','edge','firefox')) {
   if ($taskManifest.version -ne $taskExtensionVersion) { throw "Rebuild $taskBrowser extension." }
   [IO.Compression.ZipFile]::CreateFromDirectory($taskBrowserFolder,(Join-Path $taskRelease "stashdock-extension-$taskBrowser-$taskExtensionVersion.zip"),[IO.Compression.CompressionLevel]::Optimal,$false)
 }
-& (Join-Path $PSScriptRoot 'package-mac-handoff.ps1') -Destination (Join-Path $taskRelease "StashDock-Mac-Handoff-v$taskVersion.zip")
-if (-not $?) { throw 'Mac handoff packaging failed.' }
+# Internal handoff archives contain development rules and must never be public release assets.
 $taskFiles = @(Get-ChildItem -LiteralPath $taskRelease -File | Sort-Object Name | ForEach-Object {
   [pscustomobject]@{name=$_.Name;bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()}
 })

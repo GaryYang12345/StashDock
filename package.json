@@ -30,12 +30,7 @@
     "desktop:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-msvc.ps1 build",
     "postdesktop:build": "node scripts/verify-windows-icons.mjs src-tauri/target/release/stashdock.exe",
     "desktop:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-msvc.ps1 check",
-    "desktop:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-msvc.ps1 test",
-    "prewebsite:dev": "npm run icons:reference",
-    "website:dev": "vite --config website/vite.config.ts",
-    "prewebsite:build": "npm run icons:reference",
-    "website:build": "vite build --config website/vite.config.ts",
-    "website:preview": "vite preview --config website/vite.config.ts"
+    "desktop:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-msvc.ps1 test"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
