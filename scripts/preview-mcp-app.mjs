@@ -33,11 +33,12 @@ addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin || event.data?.jsonrpc!=='2.0')return;
  const request=event.data;if(request.id===undefined)return;let result;
  try{
-  if(request.method==='ui/initialize') result={protocolVersion:request.params.protocolVersion,hostInfo:{name:'Development harness',version:'1'},hostContext:{theme:options.get('theme')||'light',locale:options.get('locale')||'en-US',displayMode:options.get('mode')||'fullscreen',availableDisplayModes:['fullscreen']},hostCapabilities:{serverTools:{},serverResources:{},message:{text:{},resource:{}},experimental:{'openai/message':options.get('draft')==='0'?{}:{draft:{}}}}};
+  if(request.method==='ui/initialize') result={protocolVersion:request.params.protocolVersion,hostInfo:{name:'Development harness',version:'1'},hostContext:{theme:options.get('theme')||'light',locale:options.get('locale')||'en-US',displayMode:options.get('mode')||'fullscreen',availableDisplayModes:['fullscreen']},hostCapabilities:{serverTools:{},serverResources:{},message:{text:{},resource:{}},experimental:options.get('draft')==='0'?{}:{'openai/message':options.get('draft')==='hint'?{draft:{}}:{}}}};
   else if(request.method==='ui/request-display-mode') {window.testModeRequest=request.params;result={mode:'fullscreen'};}
   else if(request.method==='tools/call') {const response=await fetch('/tool',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request.params)});if(!response.ok)throw Error('Test bridge failure');result=await response.json();}
   else if(request.method==='ui/message') {
    requests.push(request);if(options.get('reject')==='1')throw Error('Simulated host rejection');
+   if(options.get('rejectFirst')==='1'&&requests.length===1)throw Error('The composer is unavailable');
    if(request.params._meta?.['openai/message']?.send!==false || request.params.content.some(block=>block.type!=='text' || !block._meta?.['openai/title']))throw Error('Unsafe draft payload');
    const chip=document.createElement('span');chip.className='chip';chip.textContent=request.params.content[0]._meta['openai/title'];
    const remove=document.createElement('button');remove.textContent='×';remove.setAttribute('aria-label','Remove test attachment');remove.onclick=()=>chip.remove();chip.append(remove);document.querySelector('#attachments').append(chip);

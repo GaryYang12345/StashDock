@@ -22,7 +22,7 @@ const PLUGIN_VERSION = pluginManifest.version;
 import { fileURLToPath } from 'node:url';
 import { contextSaveSchema, readContextBatch, tagCatalog } from './ai-context.mjs';
 
-export const SHELF_URI = 'ui://stashdock/shelf-v60.html';
+export const SHELF_URI = 'ui://stashdock/shelf-v61.html';
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const searchSchema = { query: z.string().max(1000).optional(), tag: z.string().max(200).optional(),
   favoriteOnly: z.boolean().optional(), limit: z.number().int().min(1).max(50).optional(),

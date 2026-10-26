@@ -141,7 +141,7 @@ test('MCP SDK registers App resource/entrypoint and app-only tools without remou
   } finally { await client.close(); await server.close(); rmSync(dataDir, { recursive: true, force: true }); }
 });
 
-test('real App SDK transport preserves send:false and exact context in a titled inline attachment', async () => {
+for (const messageCapability of [{}, { draft: {} }]) test(`real App SDK transport preserves send:false with ${JSON.stringify(messageCapability)} and exact context in a titled inline attachment`, async () => {
   const app = new App({ name: 'test', version: '1' }, {}, { autoResize: false });
   const [view, host] = InMemoryTransport.createLinkedPair();
   const received = [];
@@ -150,7 +150,7 @@ test('real App SDK transport preserves send:false and exact context in a titled 
     if (request.method === 'ui/initialize') {
       await host.send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion,
         hostInfo: { name: 'test host', version: '1' }, hostContext: {},
-        hostCapabilities: { message: { text: {}, resource: {} }, experimental: { 'openai/message': { draft: {} } } } } });
+        hostCapabilities: { message: { text: {}, resource: {} }, experimental: { 'openai/message': messageCapability } } } });
     } else { received.push(request); await host.send({ jsonrpc: '2.0', id: request.id, result: {} }); }
   };
   await host.start();
@@ -171,18 +171,64 @@ test('real App SDK transport preserves send:false and exact context in a titled 
   } finally { await app.close(); await host.close(); }
 });
 
-test('no draft capability, malformed payload or host rejection cannot produce success or fallback send', async () => {
+test('missing message extension, malformed payload or host rejection cannot produce success or fallback send', async () => {
   let calls = 0;
-  const host = { getHostCapabilities: () => ({ experimental: { 'openai/message': {} } }), sendMessage: async () => { calls++; return {}; } };
+  const host = { getHostCapabilities: () => ({ message: { text: {} }, experimental: {} }), sendMessage: async () => { calls++; return {}; } };
   assert.equal(draft.supportsDraft(host), false);
   await assert.rejects(draft.addAttachmentToDraft(host, prepareAttachment([item], ['a'])), /Adding to chat is unavailable here/);
   assert.equal(calls, 0);
-  host.getHostCapabilities = () => ({ experimental: { 'openai/message': { draft: {} } } });
+  host.getHostCapabilities = () => ({ message: { text: {} }, experimental: { 'openai/message': {} } });
   await assert.rejects(draft.addAttachmentToDraft(host, { title: 'bad', ids: ['a'], content: [{ type: 'text', text: 'paste this' }] }), /invalid/);
   assert.equal(calls, 0);
   host.sendMessage = async () => { calls++; return { isError: true }; };
   await assert.rejects(draft.addAttachmentToDraft(host, prepareAttachment([item], ['a'])), /did not accept/);
   assert.equal(calls, 1);
+});
+
+test('a restored panel without the transient draft hint can retry after its composer mounts', async () => {
+  const app = new App({ name: 'restored panel', version: '1' }, {}, { autoResize: false });
+  const [view, host] = InMemoryTransport.createLinkedPair();
+  const received = [];
+  host.onmessage = async request => {
+    if (request.id === undefined) return;
+    if (request.method === 'ui/initialize') {
+      await host.send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion,
+        hostInfo: { name: 'test host', version: '1' }, hostContext: {},
+        hostCapabilities: { message: { text: {} }, experimental: { 'openai/message': {} } } } });
+    } else if (request.method === 'ui/message') {
+      received.push(request);
+      await host.send(received.length === 1
+        ? { jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'The composer is unavailable' } }
+        : { jsonrpc: '2.0', id: request.id, result: {} });
+    }
+  };
+  await host.start();
+  try {
+    await app.connect(view);
+    assert.equal(draft.supportsDraft(app), true);
+    const attachment = prepareAttachment([item], ['a']);
+    await assert.rejects(draft.addAttachmentToDraft(app, attachment), /composer is unavailable/);
+    assert.equal(received.length, 1, 'an uncertain write must never retry automatically');
+    assert.equal(draft.supportsDraft(app), true, 'a temporarily absent composer must not permanently disable Add');
+    await draft.addAttachmentToDraft(app, attachment);
+    assert.equal(received.length, 2);
+    for (const request of received) {
+      assert.deepEqual(request.params._meta['openai/message'], { target: 'active', send: false });
+      assert.equal(request.params.content[0].text, buildContext([item]));
+    }
+  } finally { await app.close(); await host.close(); }
+});
+
+test('draft actions need the message extension and text transport, not a host name or legacy hint', () => {
+  for (const capabilities of [undefined, {}, { message: { text: {} } },
+    { experimental: { 'openai/message': {} } },
+    { message: { text: {} }, experimental: { 'openai/message': null } },
+    { message: { text: {} }, experimental: { 'openai/message': [] } }]) {
+    assert.equal(draft.supportsDraft({ getHostCapabilities: () => capabilities }), false);
+  }
+  assert.equal(draft.supportsDraft({ getHostCapabilities: () => ({
+    message: { text: {} }, experimental: { 'openai/message': {} },
+  }) }), true);
 });
 
 test('portable plugin stdio server starts independently from its shipped bundle', async () => {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { App } from '@modelcontextprotocol/ext-apps';
+import plugin from '../../../plugins/stashdock/.codex-plugin/plugin.json';
 import { Check, Plus, RefreshCw, Settings } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { motionTokens } from '../../components/arc/lib/motion-tokens';
@@ -172,12 +173,17 @@ export function McpShelf() {
     alive.current = true;
     // Panel height belongs to the host. Inline autoResize would feed viewport
     // height back to it instead of filling the available side-panel space.
-    const app = new App({ name: 'StashDock', version: '0.4.34' }, { availableDisplayModes: ['fullscreen'] }, { autoResize: false, strict: true });
+    const app = new App({ name: 'StashDock', version: plugin.version }, { availableDisplayModes: ['fullscreen'] }, { autoResize: false, strict: true });
     appRef.current = app;
     let disposed = false;
     setConnected(false); setConnectionError('');
-    const syncTheme = () => { const context = app.getHostContext(); if (context) setHost({ theme: context.theme, locale: context.locale }); };
-    app.onhostcontextchanged = syncTheme;
+    const syncHost = () => {
+      if (disposed) return;
+      const context = app.getHostContext();
+      if (context) setHost({ theme: context.theme, locale: context.locale });
+      setDraftSupported(supportsDraft(app));
+    };
+    app.onhostcontextchanged = syncHost;
     void app.connect(undefined, { timeout: 10_000 }).then(async () => {
       if (disposed) return;
       const host = app.getHostContext();
@@ -185,7 +191,7 @@ export function McpShelf() {
         await app.requestDisplayMode({ mode: 'fullscreen' });
         if (disposed) return;
       }
-      syncTheme(); setClient(app); setDraftSupported(supportsDraft(app)); setConnected(true);
+      syncHost(); setClient(app); setConnected(true);
     }).catch(error => { if (!disposed) setConnectionError(message(error)); });
     return () => {
       disposed = true; alive.current = false; ++sequence.current; ++editorSequence.current;

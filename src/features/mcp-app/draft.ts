@@ -9,9 +9,14 @@ export type ReferenceAttachment = {
 type DraftHost = Pick<App, 'getHostCapabilities' | 'sendMessage'>;
 
 export function supportsDraft(host: DraftHost): boolean {
-  const options = host.getHostCapabilities()?.experimental?.[OPENAI_MESSAGE_KEY];
-  return typeof options === 'object' && options !== null &&
-    'draft' in options && typeof options.draft === 'object' && options.draft !== null;
+  const capabilities = host.getHostCapabilities();
+  const options = capabilities?.experimental?.[OPENAI_MESSAGE_KEY];
+  // openai/message: {} is the published extension capability. The extra draft
+  // field in some desktop handshakes reflects composer mount timing, not a
+  // durable capability: restored panels may never receive it. Let the host
+  // accept or reject each explicit send:false request when the user presses Add.
+  return typeof options === 'object' && options !== null && !Array.isArray(options) &&
+    capabilities?.message?.text !== undefined;
 }
 
 export function parseAttachment(raw: unknown): ReferenceAttachment {
@@ -32,9 +37,9 @@ export async function addAttachmentToDraft(host: DraftHost, attachment: Referenc
   const title = checked.ids.length > 1 ? 'Multiple contexts' : checked.title.trim() || 'Untitled reference';
   const characters = Array.from(title);
   const displayTitle = characters.length > 48 ? characters.slice(0, 47).join('') + '…' : title;
-  // The public 0.1 SDK wrapper accepts send:true only. The host's explicitly
-  // advertised experimental draft extension adds send:false. Keep this extension
-  // isolated and capability-gated; never fall back to the default send operation.
+  // The public 0.1 extension wrapper still accepts send:true only; the published
+  // message protocol also supports send:false. Pass it through the App bridge,
+  // gated on openai/message, and never fall back to the default send operation.
   // Titled text is a removable attachment, not ordinary composer text.
   // The installed Codex host reads openai/title for the entry inside its popover,
   // but groups all content blocks under a localized Context-count outer chip.
