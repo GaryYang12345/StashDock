@@ -8,7 +8,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer } from '../plugins/stashdock/server/create-server.mjs';
 import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
-import { CODEX_PREFERENCES_KEY, readStorageInfo } from '../plugins/stashdock/server/settings.mjs';
+import { CODEX_PREFERENCES_KEY, readCodexPreferences, readStorageInfo } from '../plugins/stashdock/server/settings.mjs';
+
+test('plugin defaults to English without resetting valid saved language choices', () => {
+  for (const raw of [undefined, 'broken JSON', '{}', '{"language":"unsupported"}']) {
+    assert.deepEqual(readCodexPreferences(raw), { language: 'en', theme: 'system' });
+  }
+  for (const language of ['en', 'zh', 'system']) {
+    assert.deepEqual(readCodexPreferences(JSON.stringify({ language, theme: 'dark' })), { language, theme: 'dark' });
+  }
+});
 
 test('Codex preferences are durable, patch-safe across sessions and separate from desktop', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stashdock-codex-settings-'));
@@ -16,14 +25,14 @@ test('Codex preferences are durable, patch-safe across sessions and separate fro
   const db = new DatabaseSync(join(root, 'stashdock.sqlite3'));
   try {
     db.prepare('INSERT INTO app_meta VALUES (?,?)').run('desktop_preferences_v1', '{"language":"en","theme":"light","shortcut":"Alt+Shift+Space"}');
-    assert.deepEqual(one.getCodexPreferences(), { language: 'system', theme: 'system' });
+    assert.deepEqual(one.getCodexPreferences(), { language: 'en', theme: 'system' });
     one.saveCodexPreferences({ theme: 'dark' }); two.saveCodexPreferences({ language: 'zh' });
     assert.deepEqual(one.getCodexPreferences(), { language: 'zh', theme: 'dark' });
     assert.equal(JSON.parse(db.prepare('SELECT value FROM app_meta WHERE key=?').get('desktop_preferences_v1').value).theme, 'light');
     for (const patch of [{}, { theme: 'blue' }, { shortcut: 'x' }, { language: 'zh', path: 'C:/' }]) assert.throws(() => one.saveCodexPreferences(patch));
     assert.deepEqual(two.getCodexPreferences(), { language: 'zh', theme: 'dark' });
     db.prepare('UPDATE app_meta SET value=? WHERE key=?').run('broken JSON', CODEX_PREFERENCES_KEY);
-    assert.deepEqual(one.getCodexPreferences(), { language: 'system', theme: 'system' });
+    assert.deepEqual(one.getCodexPreferences(), { language: 'en', theme: 'system' });
     assert.equal(db.prepare('SELECT value FROM app_meta WHERE key=?').get(CODEX_PREFERENCES_KEY).value, 'broken JSON');
   } finally { one.close(); two.close(); db.close(); rmSync(root, { recursive: true, force: true }); }
 });

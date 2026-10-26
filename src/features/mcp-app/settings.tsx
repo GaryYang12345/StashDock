@@ -54,7 +54,7 @@ export function McpSettingsProvider({ children }: { children: ReactNode }) {
     return () => { ++generation.current; };
   }, [client, reload]);
   const preferences = info?.preferences;
-  const language = resolveLanguage(preferences?.language ?? 'system', host.locale ?? systemLanguage);
+  const language = resolveLanguage(preferences?.language ?? 'en', host.locale ?? systemLanguage);
   useEffect(() => {
     const theme = preferences?.theme === 'light' || preferences?.theme === 'dark' ? preferences.theme : host.theme ?? 'light';
     applyDocumentTheme(theme); document.documentElement.style.colorScheme = theme;

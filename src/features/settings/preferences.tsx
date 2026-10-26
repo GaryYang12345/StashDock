@@ -8,7 +8,7 @@ import { errorText } from '../../lib/errorText';
 
 export type DesktopPreferences = { language: 'system' | 'en' | 'zh'; theme: 'system' | 'light' | 'dark'; shortcut: string; floatingWindow: boolean };
 export type SettingsInfo = { preferences: DesktopPreferences; launchAtLogin: boolean; version: string; githubUrl: string | null; systemLanguage?: string };
-const DEFAULT: DesktopPreferences = { language: 'system', theme: 'system', shortcut: 'Ctrl+Shift+Space', floatingWindow: true };
+const DEFAULT: DesktopPreferences = { language: 'en', theme: 'system', shortcut: 'Ctrl+Shift+Space', floatingWindow: true };
 const CACHE = 'stashdock.desktop-appearance.v1';
 function cached(): DesktopPreferences {
   try {

@@ -38,8 +38,8 @@ pub const SHORTCUTS: [&str; 4] = ["Ctrl+Shift+Space", "Ctrl+Alt+Space", "Alt+Shi
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
-    #[default]
     System,
+    #[default]
     En,
     Zh,
 }
@@ -66,7 +66,7 @@ fn default_floating_window() -> bool {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
-            language: Language::System,
+            language: Language::En,
             theme: Theme::System,
             shortcut: SHORTCUTS[0].into(),
             floating_window: true,
@@ -481,6 +481,8 @@ mod tests {
     #[test]
     fn defaults_and_shortcuts_are_validated() {
         assert!(validate(&Preferences::default()).is_ok());
+        assert_eq!(Preferences::default().language, Language::En);
+        assert_eq!(Language::default(), Language::En);
         let mut prefs = Preferences::default();
         prefs.shortcut = "invalid shortcut".into();
         assert!(validate(&prefs).is_err());

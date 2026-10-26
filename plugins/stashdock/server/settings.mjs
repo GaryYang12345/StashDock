@@ -4,10 +4,11 @@ import { displayLibraryDirectory } from './library-location.mjs';
 
 export const CODEX_PREFERENCES_KEY = 'codex_preferences_v1';
 const values = { language: ['system', 'en', 'zh'], theme: ['system', 'light', 'dark'] };
+const defaults = { language: 'en', theme: 'system' };
 export function readCodexPreferences(raw) {
   let value;
   try { value = JSON.parse(raw); } catch { /* Invalid optional preferences never prevent opening the shelf. */ }
-  return Object.fromEntries(Object.entries(values).map(([key, options]) => [key, options.includes(value?.[key]) ? value[key] : 'system']));
+  return Object.fromEntries(Object.entries(values).map(([key, options]) => [key, options.includes(value?.[key]) ? value[key] : defaults[key]]));
 }
 export function patchCodexPreferences(current, patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch) || !Object.keys(patch).length ||
