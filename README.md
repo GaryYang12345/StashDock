@@ -17,7 +17,7 @@ computer; either can provide the local connection for browser saving.
 | --- | --- |
 | Windows Desktop | [Latest Desktop release](https://github.com/GaryYang12345/StashDock/releases/latest) |
 | ChatGPT plugin | [Plugin releases](https://github.com/GaryYang12345/StashDock/releases) |
-| Chrome, Edge, Firefox | [Extension packages](https://github.com/GaryYang12345/StashDock/releases/latest) |
+| Chrome extension | [Chrome extension package](https://github.com/GaryYang12345/StashDock/releases/latest) |
 
 - [Windows installation](docs/INSTALL_WINDOWS.md)
 - [ChatGPT plugin installation](docs/windows-plugin-install.md)
@@ -25,8 +25,7 @@ computer; either can provide the local connection for browser saving.
 
 The ChatGPT plugin ZIP includes its runtime and native helpers. Download the
 complete matching ZIP; GitHub's automatic Source code archives are development
-source, not installable plugins. Firefox's unsigned package is temporary and is
-removed when Firefox closes. macOS, Claude and Safari remain Coming soon.
+source, not installable plugins. macOS and Claude remain Coming soon.
 
 ## Open-source product code
 

@@ -21,13 +21,9 @@ StashDock Desktop, Node.js or npm separately.
 
 ## Browser extension
 
-Download the matching browser ZIP and extract it to a permanent folder:
+Download the Chrome extension ZIP and extract it to a permanent folder:
 
 - Chrome: `chrome://extensions` → Developer mode → Load unpacked → extracted folder.
-- Edge: `edge://extensions` → Developer mode → Load unpacked → extracted folder.
-- Firefox: `about:debugging#/runtime/this-firefox` → Load Temporary Add-on →
-  select `manifest.json` in the extracted folder. This development installation
-  ends when Firefox restarts. A signed permanent package is not yet published.
 
 Open Desktop or the AI plugin, click the extension toolbar icon on a normal
 webpage and approve website access in the browser prompt. The sidebar refreshes
