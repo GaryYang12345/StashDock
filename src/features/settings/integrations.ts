@@ -1,7 +1,7 @@
 export type IntegrationId = 'chrome' | 'edge' | 'firefox' | 'safari' | 'codex' | 'claude' | 'desktop';
 export type IntegrationState = { id: IntegrationId; detected: boolean; version?: string };
 export type IntegrationInfo = { items: IntegrationState[]; links?: Partial<Record<IntegrationId, string | null>>; githubUrl?: string | null };
-export const browsers: IntegrationId[] = ['chrome', 'edge', 'firefox', 'safari'];
+export const browsers: IntegrationId[] = ['chrome'];
 export const agents: IntegrationId[] = ['codex', 'claude'];
 const browserPurpose = 'Save pages while you browse.';
 export const referencePurpose = 'Browse your library and use references as context in conversations.';

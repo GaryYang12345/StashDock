@@ -24,7 +24,7 @@ export async function buildExtensions() {
   const destination = join(root, 'output', 'extensions');
   const base = JSON.parse(await readFile(join(source, 'manifest.json'), 'utf8'));
   const files = (await readdir(source)).filter(name => name !== 'manifest.json' && name !== 'README.md');
-  for (const browser of ['chrome', 'edge', 'firefox']) {
+  for (const browser of ['chrome']) {
     const directory = join(destination, browser);
     if (!directory.startsWith(destination + sep)) throw Error('Invalid generated package directory.');
     // Only the three named generated directories, never source or user profiles.
