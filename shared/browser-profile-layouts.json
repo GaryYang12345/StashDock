@@ -1,0 +1,73 @@
+{
+  "win32": [
+    {
+      "id": "chrome",
+      "browser": "Chrome",
+      "base": "LOCALAPPDATA",
+      "path": "Google/Chrome/User Data",
+      "files": [
+        "Bookmarks",
+        "AccountBookmarks"
+      ]
+    },
+    {
+      "id": "edge",
+      "browser": "Edge",
+      "base": "LOCALAPPDATA",
+      "path": "Microsoft/Edge/User Data",
+      "files": [
+        "Bookmarks",
+        "AccountBookmarks"
+      ]
+    },
+    {
+      "id": "firefox",
+      "browser": "Firefox",
+      "base": "APPDATA",
+      "path": "Mozilla/Firefox/Profiles",
+      "files": [
+        "places.sqlite"
+      ]
+    }
+  ],
+  "darwin": [
+    {
+      "id": "chrome",
+      "browser": "Chrome",
+      "base": "HOME",
+      "path": "Library/Application Support/Google/Chrome",
+      "files": [
+        "Bookmarks",
+        "AccountBookmarks"
+      ]
+    },
+    {
+      "id": "edge",
+      "browser": "Edge",
+      "base": "HOME",
+      "path": "Library/Application Support/Microsoft Edge",
+      "files": [
+        "Bookmarks",
+        "AccountBookmarks"
+      ]
+    },
+    {
+      "id": "firefox",
+      "browser": "Firefox",
+      "base": "HOME",
+      "path": "Library/Application Support/Firefox/Profiles",
+      "files": [
+        "places.sqlite"
+      ]
+    },
+    {
+      "id": "safari",
+      "browser": "Safari",
+      "base": "HOME",
+      "path": "Library/Safari",
+      "files": [
+        "Bookmarks.plist"
+      ]
+    }
+  ]
+}

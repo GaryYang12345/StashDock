@@ -1,0 +1,21 @@
+[
+ {"kind":"file","name":"photo.HEIC","mime":"","visual":"image"},
+ {"kind":"image","name":"unknown","mime":"","visual":"image"},
+ {"kind":"file","name":"unknown","mime":"image/png","visual":"image"},
+ {"kind":"pdf","name":"unknown","mime":"","visual":"pdf"},
+ {"kind":"file","name":"report.PDF","mime":"","visual":"pdf"},
+ {"kind":"file","name":"draft.docx","mime":"","visual":"document"},
+ {"kind":"file","name":"unknown","mime":"application/msword","visual":"document"},
+ {"kind":"file","name":"plan.csv","mime":"","visual":"spreadsheet"},
+ {"kind":"file","name":"deck.odp","mime":"","visual":"presentation"},
+ {"kind":"file","name":"backup.tar","mime":"","visual":"archive"},
+ {"kind":"file","name":"clip.avi","mime":"","visual":"video"},
+ {"kind":"file","name":"unknown","mime":"video/mp4","visual":"video"},
+ {"kind":"file","name":"unknown","mime":"audio/flac","visual":"audio"},
+ {"kind":"file","name":"config.toml","mime":"text/plain","visual":"data"},
+ {"kind":"file","name":"README.mdx","mime":"text/plain","visual":"markdown"},
+ {"kind":"file","name":"unknown","mime":"text/markdown","visual":"markdown"},
+ {"kind":"file","name":"main.swift","mime":"text/plain","visual":"code"},
+ {"kind":"file","name":"unknown","mime":"text/plain","visual":"text"},
+ {"kind":"file","name":"unknown","mime":"application/octet-stream","visual":"file"}
+]

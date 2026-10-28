@@ -1,6 +1,6 @@
 [package]
 name = "stashdock"
-version = "0.2.6"
+version = "1.0.0"
 description = "A local-first context dock for AI coding agents"
 authors = ["StashDock contributors"]
 edition = "2021"
@@ -13,6 +13,10 @@ name = "stashdock-preview"
 path = "src/bin/preview-helper.rs"
 
 [[bin]]
+name = "stashdock-browser"
+path = "src/bin/browser-host.rs"
+
+[[bin]]
 name = "stashdock-storage"
 path = "src/bin/storage-helper.rs"
 
@@ -21,9 +25,10 @@ name = "stashdock_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7.1", features = [] }
 
 [dependencies]
+plist = "=1.10.1"
 rusqlite = { version = "0.40.0", features = ["bundled", "backup"] }
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 brotli = { version = "9", default-features = false, features = ["std"] }
@@ -35,7 +40,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "=0.8.2"
 sha2 = "0.10"
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2.12.1", features = ["tray-icon", "image-png", "unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
@@ -46,9 +51,23 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
 
+[target.'cfg(target_os = "macos")'.build-dependencies]
+resvg = { version = "0.45", default-features = false }
+serde_json = "1"
+base64 = "0.22"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
+libc = "0.2"
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGEvent"] }
+objc2 = { version = "0.6.4", features = ["exception"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSPasteboard", "NSPasteboardItem", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSApplication", "NSEvent", "NSImage", "NSView", "NSWindow", "NSResponder", "NSButton", "NSButtonCell", "NSCell", "NSControl", "NSAccessibilityProtocols", "NSAccessibility", "NSTrackingArea", "NSGraphicsContext", "NSImageRep", "objc2-quartz-core", "NSWorkspace", "NSRunningApplication", "objc2-core-graphics"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSString", "NSURL", "NSData", "NSGeometry", "NSObject", "NSValue", "NSLocale", "NSOperation", "NSError", "NSBundle"] }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "CABase", "CALayer", "CAAnimation", "CAMediaTiming", "CAMediaTimingFunction", "CATransaction", "CATransform3D", "objc2-core-foundation"] }
+objc2-service-management = { version = "0.3.2", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }
 # One TLS stack per platform: Windows uses the system's (native-tls, SChannel).
 [target.'cfg(not(windows))'.dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "json", "socks"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.39.1"

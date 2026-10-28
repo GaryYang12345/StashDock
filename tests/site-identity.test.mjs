@@ -43,3 +43,8 @@ test('browser extension persists the same validated favicon metadata', async () 
   const capture = await readFile(new URL('../extension/sidepanel.js',import.meta.url),'utf8');
   assert.match(capture,/faviconUrl:normalizeFavicon\(page.faviconUrl \|\| entry.faviconUrl, url.href\)/);
 });
+
+test('native and web identity adapters use the same candidate contract', async () => {
+  const cases = JSON.parse(await readFile(new URL('./fixtures/site-favicon-candidates.json', import.meta.url), 'utf8'));
+  for (const fixture of cases) assert.deepEqual(faviconCandidates({url:fixture.page,origin:{faviconUrl:fixture.saved}}),fixture.candidates);
+});

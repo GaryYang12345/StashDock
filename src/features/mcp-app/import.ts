@@ -1,5 +1,5 @@
 import type { App } from '@modelcontextprotocol/ext-apps';
-import type { BrowserBookmark, BrowserSource, LinkImportService, LinkPreview } from '../../lib/linkImport';
+import type { BrowserBookmark, BrowserImportState, BrowserSource, LinkImportService, LinkPreview } from '../../lib/linkImport';
 import { customCapturePlatform, type CapturePlatform } from '../../lib/captureSites';
 import { readReferenceCover } from '../../lib/referenceCover';
 
@@ -8,7 +8,7 @@ export function mcpLinkImport(getApp: () => App | null): LinkImportService {
   async function read(name: string, args: Record<string, unknown> = {}) {
     const app = getApp();
     if (!app) throw new Error('StashDock is not connected. Retry the connection.');
-    const result = await app.callServerTool({ name, arguments: args }, { timeout: name === 'preview_stashdock_link' ? 55_000 : 30_000 });
+    const result = await app.callServerTool({ name, arguments: args }, { timeout: name === 'read_stashdock_browser_import' && args.requestAccess === true ? 300_000 : name === 'preview_stashdock_link' ? 55_000 : 30_000 });
     if (result.isError) throw new Error(result.content.find(block => block.type === 'text')?.text || 'The import could not be read. Retry.');
     return result._meta;
   }
@@ -23,6 +23,13 @@ export function mcpLinkImport(getApp: () => App | null): LinkImportService {
     });
   }
   return {
+    readBrowser: async (browser, requestAccess = false) => {
+      const state = (await read('read_stashdock_browser_import', { browser, requestAccess }))?.state as BrowserImportState | undefined;
+      if (!state || !['ready', 'needsAccess', 'unavailable'].includes(state.status) ||
+          state.status === 'ready' && (!Array.isArray(state.bookmarks) || state.bookmarks.some(value => !value || typeof value.title !== 'string' || typeof value.url !== 'string' || !Array.isArray(value.folderPath))))
+        throw Error('Bookmarks could not be read. Retry.');
+      return state;
+    },
     prepareCover: async file => {
       const value = (await read('prepare_stashdock_cover', { base64: await readReferenceCover(file) }))?.preview;
       if (typeof value !== 'string' || value.length > 750_000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) throw Error('The cover could not be prepared. Choose another image.');

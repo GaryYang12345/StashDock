@@ -20,6 +20,10 @@ pub async fn save_items(app: AppHandle, items: Vec<StashItem>) -> Result<(), Str
     run(app, move |s| super::save_items(items, s)).await
 }
 #[tauri::command]
+pub async fn replace_saved_link(app: AppHandle, item: StashItem) -> Result<(), String> {
+    run(app, move |s| super::replace_saved_link(item, s)).await
+}
+#[tauri::command]
 pub async fn list_items(app: AppHandle) -> Result<Vec<StashItem>, String> {
     run(app, super::list_items)
         .await

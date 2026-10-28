@@ -14,6 +14,19 @@ new Function('module', 'exports', result.outputFiles[0].text)(module, module.exp
 const { createLibraryStore, buildSearchIndex, filterItems, selectItems, summarizeItems, buildContext } = module.exports;
 const item = (id, overrides = {}) => ({ id, title: id, kind: 'web', source: 'Example', url: `https://example.com/${id}`, excerpt: 'reference', tags: ['Design'], createdAt: new Date().toISOString(), ...overrides });
 
+test('confirmed link replacement uses the replacement adapter and the new final context', async () => {
+  const old = item('saved', { contextOverride: 'Old final context', content: 'Old body', favorite: true, preview: 'old-cover' });
+  let written;
+  const store = createLibraryStore({ load: async () => [old], add: async () => assert.fail('An ordinary upsert preserves edited context'),
+    replace: async (incoming, next) => { written = incoming; return next; }, remove: async () => {}, favorite: async () => {} });
+  await store.refresh();
+  await store.replaceLink(item('draft', { url: old.url, title: 'Fresh page', content: 'New body' }));
+  assert.equal(written.id, old.id);assert.equal(written.createdAt, old.createdAt);
+  assert.equal(written.contextOverride, undefined);assert.equal(written.preview, undefined);assert.equal(written.favorite, false);
+  const context = buildContext(store.getSnapshot().items);
+  assert.match(context, /New body/);assert.doesNotMatch(context, /Old final context|Old body/);
+});
+
 test('import publishes canonical saved assets immediately instead of stale pre-save form objects', async () => {
   const draft = item('note-file', { kind: 'note', url: undefined });
   const saved = { ...draft, assetPath: 'managed/Note.txt', mimeType: 'text/plain' };

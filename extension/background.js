@@ -5,12 +5,21 @@ import { synchronizeActionBehavior } from './panel-behavior.js';
 import { createCaptureSessions } from './capture-sessions.js';
 import { checkProvider, createSetupConnection } from './setup-client.js';
 import { extensionApi as chrome, createBrowserHost } from './browser-host.js';
+import { createSafariFetcher } from './safari-provider.js';
+import { createFirefoxFetcher } from './firefox-provider.js';
+import { createNativeClient } from './native-client.js';
+import { createSafariNativeClient } from './safari-native.js';
 const host = createBrowserHost(chrome);
-const setup = createSetupConnection({ browser: host.name, version: chrome.runtime.getManifest().version, extensionId: chrome.runtime.id });
+// Safari uses its containing Swift extension, whose API and wire format differ.
+const native = host.name === 'safari' ? createSafariNativeClient(chrome.runtime) : createNativeClient(chrome.runtime);
+const fetcher = host.name === 'safari' ? createSafariFetcher(chrome) : host.name === 'firefox' ? createFirefoxFetcher(chrome) : (...args) => fetch(...args);
+// Native transports include process startup; this is a deadline, not an added wait.
+const connectionTimeout = ['firefox','safari'].includes(host.name) ? 2500 : 700;
+const setup = createSetupConnection({ timeout: connectionTimeout, browser: host.name, version: chrome.runtime.getManifest().version, extensionId: chrome.runtime.id, fetcher, native });
 chrome.runtime.onInstalled.addListener(() => { void setup().catch(() => {}); });
 chrome.runtime.onStartup.addListener(() => { void setup().catch(() => {}); });
 void synchronizeActionBehavior(chrome).catch(error=>console.warn('StashDock action behavior could not be restored:',error));
-const library=createBrowserLibrary({storage:chrome.storage.local,fetcher:(...args)=>fetch(...args),setup});
+const library=createBrowserLibrary({storage:chrome.storage.local,fetcher,setup,native});
 const key=windowId=>`stashdock-sidepanel:${windowId}`;
 const sessions=createCaptureSessions(chrome,captureActivePage,compressScreenshotInWorker);
 const clients=new Map();
@@ -34,7 +43,10 @@ chrome.action.onClicked.addListener(tab=>{
   const epoch=sessions.epoch(tab.windowId);
   const authorization=chrome.permissions.request({origins:['<all_urls>']}).catch(()=>false);
   const opening=host.open(tab.windowId);
-  void Promise.all([opening,authorization]).then(()=>sessions.read(tab.windowId,true,epoch)).catch(error=>console.warn('StashDock could not open the save sidebar:',error));
+  void Promise.all([opening,authorization]).then(async()=>{
+    if(host.name === 'firefox') await setup();
+    return sessions.read(tab.windowId,true,epoch);
+  }).catch(error=>console.warn('StashDock could not open the save sidebar:',error));
 });
 chrome.windows.onRemoved.addListener(windowId=>{void closeSession(windowId);});
 host.onClosed?.addListener(info=>{if(info.path==='sidepanel.html')void closeSession(info.windowId,false);});
@@ -53,7 +65,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
     if(client?.id!==message.clientId)throw Error('This sidebar was closed.');
     const entry=(await chrome.storage.session.get(key(message.windowId)))[key(message.windowId)];
     if(clients.get(message.windowId)!==client)throw Error('This sidebar was closed.');
-    if(message.type==='provider-status')return checkProvider();
+    if(message.type==='provider-status')return checkProvider({fetcher,timeout:connectionTimeout,native});
     if(message.type==='close-panel'){await closeSession(message.windowId);await host.close(message.windowId);return {closed:true};}
     if(message.type==='dismiss-panel'){await closeSession(message.windowId);return {closed:true};}
     if(message.type==='read-tags'){void library.recoverPending().catch(()=>{});return {tags:await library.tags()};}

@@ -6,7 +6,7 @@ import { FluidDialog } from '../../components/FluidDialog';
 import { IntegrationIcon } from './IntegrationIcon';
 import { IntegrationGuide } from './IntegrationGuide';
 import { SettingHelp } from './SettingHelp';
-import { agents, browsers, integrationCatalog, integrationGuides, type IntegrationId, type IntegrationInfo } from './integrations';
+import { agents, browsers, integrationCatalog, integrationGuides, integrationReady, type IntegrationId, type IntegrationInfo } from './integrations';
 import { useI18n } from './locale';
 import settings from './SettingsView.module.css';
 import styles from './IntegrationSections.module.css';
@@ -39,10 +39,10 @@ export function IntegrationSections({ host, load, openLink, openApp, disabled }:
     {groups.map(({ title, ids }, group) => <section className={settings.section} key={title} aria-labelledby={`integrations-${group}`} data-integration-section={title}>
       <div className={styles.heading}><div className={styles.headingTitle}><h2 id={`integrations-${group}`}>{t(title)}</h2><SettingHelp label={t('About {section}', { section: t(title) })}>{t(integrationCatalog[ids[0]].purpose)}</SettingHelp></div>{group === 0 && <Button variant="ghost" size="sm" aria-label={t('Check installation status')} data-tooltip={t('Check installation status')} loading={loading} disabled={disabled} onClick={() => void refresh()}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" /></Button>}</div>
       <div className={settings.group}>{ids.map(id => {
-        const entry = integrationCatalog[id], state = info?.items.find(item => item.id === id);
+        const entry = { ...integrationCatalog[id], ready: integrationReady(id, info) }, state = info?.items.find(item => item.id === id);
         return <div className={styles.row} key={id} data-integration-row={id}>
           <IntegrationIcon id={id} /><div className={styles.identity}><span className={settings.label}>{entry.name}</span></div>
-          <div className={styles.actions}>{entry.ready && state?.detected && <span className={styles.status} data-detected>{t('Detected')}</span>}{!entry.ready && <span className={styles.status}>{t('Coming soon')}</span>}{entry.ready &&
+          <div className={styles.actions}>{entry.ready && state?.detected && <span className={styles.status} data-detected>{t('Detected')}</span>}{!entry.ready && info && <span className={styles.status}>{t('Coming soon')}</span>}{entry.ready &&
             <Button variant="secondary" size="sm" loading={loading} disabled={disabled} aria-haspopup="dialog" aria-label={t(entry.ready && state?.detected ? 'View guide for {name}' : 'Set up {name}', { name: entry.name })} onClick={event => { returnFocus.current = event.currentTarget; setGuide({ id, kind: entry.ready && state?.detected ? 'usage' : 'setup' }); }}>{t(entry.ready && state?.detected ? 'View guide' : 'Set up')}</Button>
           }</div>
         </div>;

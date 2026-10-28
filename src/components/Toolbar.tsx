@@ -6,6 +6,7 @@ import { ReferenceViewToggle } from './ReferenceViewToggle';
 import styles from "./Toolbar.module.css";
 
 type ToolbarProps = {
+  compactBrand?: React.ReactNode;
   query: string;
   searching?: boolean;
   refreshing: boolean;
@@ -21,11 +22,11 @@ type ToolbarProps = {
   tagControls?: React.ReactNode;
 };
 
-export function Toolbar({ query, searching = false, refreshing, onRefresh, view, searchRef, onQueryChange, onViewChange, onAdd, onSettings, settingsDisabled, collectionControls, tagControls }: ToolbarProps) {
+export function Toolbar({ compactBrand, query, searching = false, refreshing, onRefresh, view, searchRef, onQueryChange, onViewChange, onAdd, onSettings, settingsDisabled, collectionControls, tagControls }: ToolbarProps) {
   const { t } = useI18n();
   return <header data-arc-ui className={styles.toolbar}>
     <div className={styles.headingRow}>
-      <div className={styles.title}><h1>{t("Context library")}</h1></div>
+      <div className={styles.title}>{compactBrand && <span className={styles.compactBrand}>{compactBrand}</span>}<h1 className={compactBrand ? styles.brandedTitle : undefined}>{t("Context library")}</h1></div>
       <div className={styles.actions}>
         {onSettings && <Button className={styles.compactSettings} variant="ghost" size="sm" disabled={settingsDisabled} onClick={onSettings} aria-label={t('Settings')}><Settings size={16} strokeWidth={1.75} aria-hidden="true" /></Button>}
         <Button type="button" variant="secondary" size="sm" onClick={onAdd} aria-haspopup="dialog" aria-keyshortcuts="Control+n"><Plus size={16} strokeWidth={1.75} aria-hidden="true"  />{t("Import references")}</Button>

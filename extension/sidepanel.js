@@ -5,7 +5,8 @@ import { installTooltips } from './ui/tooltips.js';
 import { motionTokens } from './ui/motion-tokens.js';
 import { synchronizeActionBehavior } from './panel-behavior.js';
 import { createSidebarClient } from './sidebar-client.js';
-import { extensionApi as chrome } from './browser-host.js';
+import { extensionApi as chrome, createBrowserHost } from './browser-host.js';
+const host = createBrowserHost(chrome);
 // Also migrate a previously auto-opened sidebar if its worker has not woken.
 await synchronizeActionBehavior(chrome).catch(error=>console.warn('StashDock action behavior could not be restored:',error));
 const disposeTooltips = installTooltips(document, { enter:motionTokens.duration.fast, exit:motionTokens.duration.instant, ease:motionTokens.ease.enter });
@@ -19,7 +20,7 @@ const services=createSidebarClient(chrome,windowId,entry=>{
     return { id:entry.token,title:page.title||entry.title||host,kind:host==='github.com'?'repo':'web',source:page.platform||host,url:url.href,content:page.content,excerpt:'',tags:[],createdAt:now,preview:page.preview,
       origin:{platform:page.platform||host,importMethod:'browser_extension',importedAt:now,externalId:url.href,faviconUrl:normalizeFavicon(page.faviconUrl || entry.faviconUrl, url.href),author:page.author,publishedAt:page.publishedAt,captureMethod:page.captureMethod,truncated:page.truncated,previewKind:page.previewKind} };
 },{live:()=>document.visibilityState!=='hidden'});
-const unmount=renderPopup(document.querySelector('#root'),{...services,close:()=>{void services.close().catch(()=>window.close());}});
+const unmount=renderPopup(document.querySelector('#root'),{...services,close:()=>{void services.close().then(()=>{if(host.name==='safari')window.close();}).catch(()=>window.close());}});
 window.addEventListener('pagehide',()=>{
   unmount();
   services.dispose();

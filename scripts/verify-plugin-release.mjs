@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join, relative, isAbsolute } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -28,15 +29,24 @@ assert.match(config.command, /^\.\/bin\/win32-x64\/node\.exe$/);
 assert.equal(config.cwd, '.');
 assert.deepEqual(config.args, ['scripts/mcp-server.mjs']);
 const node = resolve(plugin, config.command);
-for (const binary of ['node.exe', 'stashdock-preview.exe', 'stashdock-storage.exe']) {
+for (const binary of ['node.exe', 'stashdock-preview.exe', 'stashdock-storage.exe', 'stashdock-browser.exe']) {
   const bytes = await readFile(join(plugin, 'bin/win32-x64', binary));
   assert.equal(bytes.readUInt16LE(bytes.readUInt32LE(0x3c) + 4), 0x8664, `${binary} is not x64`);
 }
 const lock = JSON.parse(await readFile(new URL('./node-runtime-lock.json', import.meta.url), 'utf8'));
 assert.equal(createHash('sha256').update(await readFile(node)).digest('hex'), lock.sha256);
-assert.equal(execFileSync(node, ['--version'], { env: { ...process.env, PATH: '' }, encoding: 'utf8', windowsHide: true }).trim(), `v${manifest.node}`);
+assert.equal(execFileSync(node, ['--version'], { env: { ...process.env, STASHDOCK_NATIVE_HOST_REGISTRATION: 'off', PATH: '' }, encoding: 'utf8', windowsHide: true }).trim(), `v${manifest.node}`);
 const fixture = await mkdtemp(join(tmpdir(), 'stashdock-release-check-'));
-const env = { ...process.env, PATH: '', STASHDOCK_DATA_DIR: join(fixture, 'library'), APPDATA: join(fixture, 'profile'), LOCALAPPDATA: join(fixture, 'local'), XDG_DATA_HOME: join(fixture, 'profile') };
+const portGuard = join(fixture, 'guard-browser-ports.mjs');
+await writeFile(portGuard, `import net from 'node:net';
+const listen = net.Server.prototype.listen;
+net.Server.prototype.listen = function (...args) {
+  const port = typeof args[0] === 'object' ? args[0]?.port : args[0];
+  if ([17863, 17864].includes(Number(port))) throw Error('An isolated release check must not claim a browser provider port.');
+  return listen.apply(this, args);
+};\n`);
+const env = { ...process.env, STASHDOCK_NATIVE_HOST_REGISTRATION: 'off', PATH: '', STASHDOCK_DATA_DIR: join(fixture, 'library'), APPDATA: join(fixture, 'profile'), LOCALAPPDATA: join(fixture, 'local'), XDG_DATA_HOME: join(fixture, 'profile') };
+env.NODE_OPTIONS = `--import=${pathToFileURL(portGuard).href}`;
 const client = new Client({ name: 'StashDock extracted-release verification', version: '1' });
 const transport = new StdioClientTransport({ command: config.command, args: config.args, cwd: resolve(plugin, config.cwd), env, stderr: 'pipe' });
 let diagnostics = '';

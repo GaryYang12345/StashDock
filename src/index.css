@@ -13,6 +13,12 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* AppKit's system typography on the native Mac desktop only. */
+html[data-desktop-platform="macos"] {
+  --font-inter: -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-geist: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
 /* Arc owns the outline. Modifier-only presses must not promote mouse focus.
    The root token also covers native and body-portaled menus/dialogs. */
 :root[data-desktop-focus="pointer"] { --focus-outline-width: 0px; }

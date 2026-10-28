@@ -70,4 +70,3 @@ export async function searchItems(query: string, items: StashItem[]): Promise<st
   if (!isTauri()) return items.filter(item => matchesSearchTerms(referenceSearchText(item), terms)).map(item => item.id);
   return invoke<string[]>("search_items", { query });
 }
-

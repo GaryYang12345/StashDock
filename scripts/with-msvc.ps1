@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true, Position = 0)]
-  [ValidateSet("dev", "build", "check", "test", "preview-build", "preview-debug", "release-binaries")]
+  [ValidateSet("dev", "build", "check", "test", "preview-build", "preview-debug", "release-binaries", "browser-build")]
   [string]$Action
 )
 
@@ -129,7 +129,16 @@ if (-not $resourceCompiler) {
   $env:RC = $rcWrapper
 }
 
-if ($Action -in @("check", "test", "preview-build", "preview-debug", "release-binaries")) {
+if ($Action -in @("check", "test", "preview-build", "preview-debug", "release-binaries", "browser-build")) {
+  # Helpers and library tests are built before the installer resources exist.
+  # Only the actual desktop build embeds/bundles those external resources.
+  $taskOriginalTauriConfig = $env:TAURI_CONFIG
+  if ($Action -ne "release-binaries") {
+    $taskCompileConfig = if ($env:TAURI_CONFIG) { $env:TAURI_CONFIG | ConvertFrom-Json } else { [pscustomobject]@{} }
+    if (-not $taskCompileConfig.bundle) { $taskCompileConfig | Add-Member -NotePropertyName bundle -NotePropertyValue ([pscustomobject]@{}) }
+    $taskCompileConfig.bundle | Add-Member -NotePropertyName resources -NotePropertyValue $null -Force
+    $env:TAURI_CONFIG = $taskCompileConfig | ConvertTo-Json -Depth 20 -Compress
+  }
   Push-Location (Join-Path $PSScriptRoot "..\src-tauri")
   try {
     if ($Action -eq "release-binaries") {
@@ -141,7 +150,10 @@ if ($Action -in @("check", "test", "preview-build", "preview-debug", "release-bi
       & cargo build --release --bins --features tauri/custom-protocol
     }
     elseif ($Action -eq "preview-build") {
-      & cargo build --release --bin stashdock-preview --bin stashdock-storage --features tauri/custom-protocol
+      & cargo build --release --bin stashdock-preview --bin stashdock-storage --bin stashdock-browser --features tauri/custom-protocol
+    }
+    elseif ($Action -eq "browser-build") {
+      & cargo build --release --bin stashdock-browser --features tauri/custom-protocol
     }
     elseif ($Action -eq "preview-debug") {
       & cargo build --bin stashdock-preview
@@ -155,6 +167,7 @@ if ($Action -in @("check", "test", "preview-build", "preview-debug", "release-bi
     exit $LASTEXITCODE
   }
   finally {
+    $env:TAURI_CONFIG = $taskOriginalTauriConfig
     Pop-Location
   }
 }

@@ -55,6 +55,12 @@ pub(crate) fn detected(browser: &str, id: &str) -> bool {
     if !crate::integrations::valid_extension_id(browser, id) {
         return false;
     }
+    if browser == "safari" {
+        #[cfg(target_os = "macos")]
+        return crate::safari_services::enabled(id);
+        #[cfg(not(target_os = "macos"))]
+        return false;
+    }
     let Some(home) =
         std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)
     else {

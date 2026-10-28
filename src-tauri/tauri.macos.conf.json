@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": [
+      "app"
+    ],
+    "icon": [
+      "icons/macos/icon.icns"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "infoPlist": "native/Desktop-Info.plist"
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "StashDock",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 560,
+        "minHeight": 640,
+        "center": false,
+        "resizable": true,
+        "dragDropEnabled": false,
+        "maximizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "shadow": true,
+        "visible": false,
+        "titleBarStyle": "Overlay"
+      },
+      {
+        "label": "folder",
+        "url": "index.html?surface=folder",
+        "title": "StashDock folder",
+        "width": 144,
+        "height": 144,
+        "resizable": false,
+        "dragDropEnabled": false,
+        "maximizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "create": false
+      }
+    ]
+  }
+}

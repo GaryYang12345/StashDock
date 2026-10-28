@@ -42,7 +42,7 @@ export function createSidebarClient(api, windowId, toDraft, {live=()=>true, inte
       try{
         if(!port)connect();
         await bounded(ready,'Sidebar connection');
-        const result=await bounded(api.runtime.sendMessage({type,windowId,clientId,token,...extra}),'Page request',timeout);
+        const result=await bounded(api.runtime.sendMessage({type,windowId,clientId,token,...extra}),'Page request',type==='save-current-page'?30000:type==='provider-status'||type==='read-tags'?16000:timeout);
         if(!result||typeof result!=='object')throw Error('The sidebar connection returned no response.');
         if(result?.error)throw Error(result.error);
         return result;

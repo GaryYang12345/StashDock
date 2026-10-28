@@ -4,7 +4,7 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { once } from 'node:events';
-import { browserManifest } from '../scripts/build-browser-extensions.mjs';
+import { browserManifest, chromiumIdentity } from '../scripts/build-browser-extensions.mjs';
 import { createBrowserHost } from '../extension/browser-host.js';
 import { synchronizeActionBehavior } from '../extension/panel-behavior.js';
 import { browserRegistration, firefoxExtensionId } from '../src/lib/browser-extension-identity.mjs';
@@ -13,6 +13,19 @@ import { startCaptureBridge } from '../plugins/stashdock/server/capture-bridge.m
 import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
 
 const base = JSON.parse(readFileSync('extension/manifest.json', 'utf8'));
+test('Chromium identities follow their public keys across paths and stay out of Firefox and Safari', () => {
+  const ids = new Set();
+  for (const browser of ['chrome', 'edge']) {
+    const identity = chromiumIdentity(browser);
+    assert.match(identity.id, /^[a-p]{32}$/);
+    ids.add(identity.id);
+    assert.equal(browserManifest(base, browser).key, identity.publicKey);
+    assert.equal(browserManifest(structuredClone(base), browser).key, identity.publicKey);
+  }
+  assert.deepEqual([...ids], ['bbglcpbhnobjhgccjinejnnlcefelkee', 'fgipdcmmnimccgdepghiecnngnakoeok'], 'Each browser uses its existing store identity on both operating systems');
+  assert.equal(base.key, chromiumIdentity('chrome').publicKey);
+  for (const browser of ['firefox', 'safari']) assert.equal(browserManifest(base, browser).key, undefined);
+});
 test('all browser packages share capture/UI code, optional website access and save-only scope', () => {
   const unchanged = structuredClone(base);
   for (const browser of ['chrome', 'edge', 'firefox']) {

@@ -3,12 +3,20 @@ import { createServer as createHttpServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { readFileSync } from 'node:fs';
-import { createServer, SHELF_URI } from '../plugins/stashdock/server/create-server.mjs';
+// Mac preview exercises the assembled server and its matching native helpers.
+const { createServer, SHELF_URI } = await import(process.platform === 'darwin'
+  ? '../output/plugin-build/darwin-arm64/plugins/stashdock/dist/mcp-server.mjs'
+  : '../plugins/stashdock/server/create-server.mjs');
 
-const htmlUrl = new URL('../plugins/stashdock/web/shelf.html', import.meta.url);
+const htmlUrl = new URL(process.platform === 'darwin' ? '../output/plugin-build/darwin-arm64/plugins/stashdock/web/shelf.html' : '../plugins/stashdock/web/shelf.html', import.meta.url);
 const importFixture = process.env.STASHDOCK_PREVIEW_IMPORT_FIXTURE === '1' && process.env.STASHDOCK_PREVIEW_MUTATIONS === '1' && process.env.STASHDOCK_DATA_DIR?.includes('mcp-test-');
 const fixtureIcon = importFixture ? `data:image/png;base64,${readFileSync(new URL('../assets/brand/icon.png', import.meta.url)).toString('base64')}` : '';
 const importServices = importFixture ? {
+  readBrowser: async browser => {
+    const profiles = await importServices.sources();
+    const matching = profiles.filter(source => source.browser === browser);
+    return matching.length ? { status: 'ready', bookmarks: (await Promise.all(matching.map(source => importServices.bookmarks(source.id)))).flat() } : { status: 'unavailable' };
+  },
   openCaptureSite: async site => ({ opened: true, site }),
   sources: async () => { await new Promise(resolve => setTimeout(resolve, 700)); return [{ id: 'chrome:Default', browser: 'Chrome', profile: 'Personal' }, { id: 'chrome:Profile 1', browser: 'Chrome', profile: 'Work' }, { id: 'edge:Default', browser: 'Edge', profile: 'Personal' }]; },
   bookmarks: async id => id === 'chrome:Profile 1' ? [{ title: 'Other profile', url: 'https://example.org/other-profile', folderPath: ['Work'] }] : [{ title: 'Already saved', url: 'https://example.org/0', folderPath: ['Research'] }, { title: 'New browser link', url: 'https://example.org/new-bookmark', folderPath: ['Research'] }],
@@ -65,11 +73,11 @@ const http = createHttpServer(async (request, response) => {
       let text = ''; for await (const chunk of request) { text += chunk; if (text.length > 14_000_000) throw new Error('Request too large'); }
       const input = JSON.parse(text);
       if (input.name === 'open_stashdock_integration' && isolatedLibrary) {
-        if (!['chrome','edge','firefox','codex','claude','desktop'].includes(input.arguments?.id)) throw Error('Invalid fixture app.');
+        if (!['chrome','edge','firefox','safari','codex','claude','desktop'].includes(input.arguments?.id)) throw Error('Invalid fixture app.');
         // Exercise the actual SDK/UI path without launching the user's real AI app.
         response.setHeader('Content-Type','application/json');response.end(JSON.stringify({content:[{type:'text',text:'{"opened":true}'}],structuredContent:{opened:true}}));return;
       }
-      const readTools = ['get_stashdock_integrations', 'get_stashdock_settings', 'get_stashdock_storage_info', 'list_stashdock_shelf', 'select_stashdock_shelf', 'prepare_stashdock_attachment', 'prepare_stashdock_cover', 'get_stashdock_context', 'list_stashdock_import_sources', 'read_stashdock_browser_bookmarks', 'read_stashdock_bookmark_icons', 'preview_stashdock_link','list_stashdock_capture_platforms'];
+      const readTools = ['read_stashdock_browser_import', 'get_stashdock_integrations', 'get_stashdock_settings', 'get_stashdock_storage_info', 'list_stashdock_shelf', 'select_stashdock_shelf', 'prepare_stashdock_attachment', 'prepare_stashdock_cover', 'get_stashdock_context', 'list_stashdock_import_sources', 'read_stashdock_browser_bookmarks', 'read_stashdock_bookmark_icons', 'preview_stashdock_link','list_stashdock_capture_platforms'];
       const writeTools = ['open_stashdock_storage_folder', 'choose_stashdock_storage_location', 'move_stashdock_storage', 'save_stashdock_preferences', 'import_stashdock_references', 'import_stashdock_files', 'set_stashdock_favorite', 'set_stashdock_tags', 'edit_stashdock_reference', 'edit_stashdock_context', 'rename_stashdock_tag', 'delete_stashdock_tag', 'delete_stashdock_reference','open_stashdock_capture_site','save_stashdock_capture_platform'];
       // Test mutations must never target the actual user's collection.
       readTools.push('search_stashdock', 'list_stashdock_tags', 'get_stashdock_items', 'get_stashdock_file');

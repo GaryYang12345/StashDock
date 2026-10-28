@@ -29,6 +29,8 @@ import styles from './DesktopImportDialog.module.css';
 import chromeIcon from '../assets/brands/chrome.svg?inline';
 import edgeIcon from '../assets/brands/edge.svg?inline';
 import firefoxIcon from '../assets/brands/firefox.svg?inline';
+import safariIcon from '../assets/brands/safari.svg?inline';
+import { bookmarkBrowsers, readBookmarkFile } from '../lib/bookmarkFile';
 import { BrowserCapturePanel } from './BrowserCapturePanel';
 import { ReferenceCoverField } from './ReferenceCoverField';
 import { withReferenceCover, type ReferenceCover } from '../lib/referenceCover';
@@ -49,7 +51,7 @@ type Props = {
 type Candidate = ReturnType<typeof bookmarkCandidates>[number];
 function BrowserIcon({ browser }: {
     browser: string;
-}) { return <img className={styles.browserIcon} src={({ Chrome: chromeIcon, Edge: edgeIcon, Firefox: firefoxIcon } as Record<string, string>)[browser]} alt="" aria-hidden="true"/>; }
+}) { return <img className={styles.browserIcon} src={({ Chrome: chromeIcon, Edge: edgeIcon, Firefox: firefoxIcon, Safari: safariIcon } as Record<string, string>)[browser]} alt="" aria-hidden="true"/>; }
 // Shortest time the batch progress surface stays up, so an import is felt.
 const BATCH_PROGRESS_MIN_MS = 900;
 export function DesktopImportDialog({ open, onClose, onAdd, onReplace, availableTags = [], existingItems = [], services = desktopLinkImport, onImportFiles = importReferenceFiles, onChooseFiles = services === desktopLinkImport && isTauri() ? chooseReferenceFiles : undefined, onImportChosenFiles = importChosenReferenceFiles }: Props) {
@@ -67,6 +69,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, onReplace, available
     const [coverReading, setCoverReading] = useState(false);
     const [sources, setSources] = useState<BrowserSource[]>([]);
     const [sourceLoading, setSourceLoading] = useState(false);
+    const [browserPhase, setBrowserPhase] = useState<'ready' | 'needsAccess' | 'unavailable' | 'error'>('ready');
     const [source, setSource] = useState<BrowserSource | null>(null);
     const [platform, setPlatform] = useState<boolean | null>(null);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -110,6 +113,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, onReplace, available
     const attemptedIcons = useRef(new Set<string>());
     const iconView = useRef({ open, mode, sourceId: source?.id, busy });
     iconView.current = { open, mode, sourceId: source?.id, busy };
+    const bookmarkInput = useRef<HTMLInputElement>(null);
     const tagField = useRef<HTMLDivElement>(null);
     const currentTags = useRef<string[]>([]);
     let normalized = '';
@@ -123,9 +127,10 @@ export function DesktopImportDialog({ open, onClose, onAdd, onReplace, available
             return;
         let current = true;
         setSourceLoading(true);
+        setSources([]);
         services.sources().then(items => { if (current)
-            setSources(items); }).catch(() => { if (current)
-            setError('Browser profiles could not be found. Retry or add a link manually.'); }).finally(() => { if (current)
+            setSources(items); }).catch(reason => { if (current)
+            setError(typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : 'Browser profiles could not be found. Retry or add a link manually.'); }).finally(() => { if (current)
             setSourceLoading(false); });
         return () => { current = false; };
     }, [open, services]);
@@ -229,40 +234,45 @@ export function DesktopImportDialog({ open, onClose, onAdd, onReplace, available
             setProgress(null);
         }
     };
-    const readSource = async (next: BrowserSource) => {
+    const readSource = async (next: BrowserSource, file?: File, requestAccess = false) => {
         const version = ++generation.current;
         attemptedIcons.current.clear();
-        setSource(next);
-        setReading(true);
-        setError('');
-        setCandidates([]);
-        setSelected(new Set());
-        setVisibleCount(100);
+        const sameBrowser = source?.browser === next.browser;
+        setSource(next); setReading(true); setError('');
+        if (!sameBrowser) { setCandidates([]); setSelected(new Set()); }
         try {
-            const profiles = sources.filter(item => item.browser === next.browser);
-            const bookmarks = [];
-            // Profiles can each contain a large collection. Read one at a time,
-            // and stop scheduling work as soon as the user leaves this import.
-            for (const profile of profiles.length ? profiles : [next]) {
+            let bookmarks;
+            if (file) bookmarks = await readBookmarkFile(file);
+            else if (services.readBrowser) {
+                const result = await services.readBrowser(next.browser, requestAccess);
                 if (generation.current !== version) return;
-                bookmarks.push(...await services.bookmarks(profile.id));
-                if (bookmarks.length > 50_000) throw Error('This bookmark collection is too large to read in one import.');
+                if (result.status !== 'ready') {
+                    setBrowserPhase(result.status); setCandidates([]); setSelected(new Set()); return;
+                }
+                bookmarks = result.bookmarks;
+            } else {
+                const profiles = sources.filter(item => item.browser === next.browser);
+                if (!profiles.length) { setBrowserPhase('unavailable'); setCandidates([]); setSelected(new Set()); return; }
+                bookmarks = [];
+                for (const profile of profiles) {
+                    if (generation.current !== version) return;
+                    bookmarks.push(...await services.bookmarks(profile.id));
+                    if (bookmarks.length > 50_000) throw Error('This bookmark collection is too large to read in one import.');
+                }
             }
             if (generation.current !== version) return;
             const urls = await services.existingUrls?.() ?? [];
             const items = bookmarkCandidates(bookmarks, next, [...existingItems, ...urls.map(url => ({ url } as StashItem))]);
-            if (generation.current !== version)
-                return;
-            setCandidates(items);
+            if (generation.current !== version) return;
+            setBrowserPhase('ready'); setVisibleCount(100); setCandidates(items);
             setSelected(new Set(items.filter(item => !item.saved).map(item => item.key)));
-        }
-        catch (reason) {
-            if (generation.current === version)
+        } catch (reason) {
+            if (generation.current === version) {
+                setBrowserPhase('error');
                 setError(typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : 'Bookmarks could not be read. Retry the import.');
-        }
-        finally {
-            if (generation.current === version)
-                setReading(false);
+            }
+        } finally {
+            if (generation.current === version) setReading(false);
         }
     };
     const tagsField = <ReferenceTagsField value={tags} onValueChange={updateTags} availableTags={availableTags} fieldRef={tagField} busy={busy} />;
@@ -315,7 +325,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, onReplace, available
         }
     };
     const available = candidates.filter(item => !item.saved);
-    const browsers = sources.filter((item, index) => sources.findIndex(other => other.browser === item.browser) === index);
+    const browsers = services.available() ? bookmarkBrowsers.map(browser => sources.find(item => item.browser === browser) ?? { id: `export:${browser}`, browser, profile: '' }) : [];
     const selectedCount = available.filter(item => selected.has(item.key)).length;
     return <FluidDialog open={open} onClose={onClose} onExited={reset} busy={busy || coverReading} size="import" title={t(progress ? 'Importing references' : 'Import references')} progress={progress && <ImportProgress completed={progress.completed} total={progress.total} />}>
     <Tabs className={styles.importTabs} value={mode} onValueChange={next => { if (busy || coverReading)
@@ -329,14 +339,23 @@ export function DesktopImportDialog({ open, onClose, onAdd, onReplace, available
       {mode === "link" && <TabsContent value="link" forceMount className={styles.importPanel}>
         {platform && services.openCaptureSite ? <BrowserCapturePanel services={services} onBack={() => setPlatform(null)}/> : source ? <div className={`${styles.fields} ${styles.importForm}`}>
           <div className={styles.previewHeading}><Button variant="ghost" size="sm" aria-label={t("Back to Link")} disabled={busy} onClick={() => { generation.current++; setReading(false); setSource(null); setError(''); }}><ArrowLeft size={16} strokeWidth={1.75} aria-hidden="true"/></Button><BrowserIcon browser={source.browser}/><h3>{source.browser}</h3></div>
-          {reading ? <Skeleton label={t("Reading bookmarks")} lines={4}/> : <>
+          <input ref={bookmarkInput} type="file" accept=".html,.htm,text/html" hidden aria-label={t("Choose bookmark file")} disabled={busy || reading} onChange={event => {
+            const file = event.target.files?.[0]; event.target.value = '';
+            if (file) void readSource(source, file);
+          }}/>
+          {reading ? <Skeleton label={t("Reading bookmarks")} lines={4}/> : browserPhase === 'needsAccess' ? <p className={styles.status} role="status">{t('Click Read bookmarks, then click Open in the system window to allow access.')}</p>
+            : browserPhase === 'unavailable' ? <p className={styles.status} role="status">{t('No local bookmarks were found for {browser}. You can import an exported bookmark HTML file.', { browser: source.browser })}</p> : error && !candidates.length ? null : <>
             <div className={styles.selection}><Checkbox label={t("Select all")} checked={selectedCount === 0 ? false : selectedCount === available.length ? true : 'indeterminate'} disabled={busy || !available.length} onCheckedChange={checked => setSelected(checked === true ? new Set(available.map(item => item.key)) : new Set())}/><span className={styles.counts} role="status">{t('{count} selected', { count: selectedCount })}</span></div>
             <div className={styles.bookmarks}><ul className={styles.list}>{candidates.slice(0, visibleCount).map(item => <li key={item.key} className={styles.bookmark}><Checkbox checked={selected.has(item.key) && !item.saved} disabled={busy || item.saved} aria-label={t('Select {title}', { title: item.title })} onCheckedChange={checked => setSelected(previous => { const next = new Set(previous); if (checked === true)
                 next.add(item.key);
             else
-                next.delete(item.key); return next; })}/><SiteFavicon candidates={faviconCandidates(item)} remoteFallback={!services.icons} label={new URL(item.url).hostname}/><div><span className={styles.bookmarkTitle} data-tooltip={item.title}>{item.title}</span><div className={styles.bookmarkSource}><span>{item.folderPath.length ? item.folderPath.join(' / ') : new URL(item.url).hostname}</span>{item.saved && <span className={styles.saved}><Check size={12} aria-hidden="true"/>{t("Saved")}</span>}</div></div></li>)}</ul>{candidates.length > visibleCount && <Button variant="ghost" size="sm" disabled={busy} onClick={() => setVisibleCount(count => count + 100)}>{t("Show 100 more")}</Button>}{!candidates.length && <p className={styles.status}>{t("No web bookmarks found")}</p>}</div>
+                next.delete(item.key); return next; })}/><SiteFavicon candidates={faviconCandidates(item)} remoteFallback={!services.icons} label={new URL(item.url).hostname}/><div><span className={styles.bookmarkTitle} data-tooltip={item.title}>{item.title}</span><div className={styles.bookmarkSource}><span>{item.folderPath.length ? item.folderPath.join(' / ') : new URL(item.url).hostname}</span>{item.saved && <span className={styles.saved}><Check size={12} aria-hidden="true"/>{t("Saved")}</span>}</div></div></li>)}</ul>{candidates.length > visibleCount && <Button variant="ghost" size="sm" disabled={busy} onClick={() => setVisibleCount(count => count + 100)}>{t("Show 100 more")}</Button>}{!candidates.length && !error && <p className={styles.status}>{t("No web bookmarks found")}</p>}</div>
           </>}
-          <div className={styles.actions}><Button variant="secondary" disabled={busy || reading} onClick={() => void readSource(source)}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Refresh bookmarks")}</Button><Button variant="primary" disabled={busy || reading || !selectedCount} onClick={() => { try {
+          <div className={styles.actions}><Button variant="secondary" disabled={busy || reading} onClick={() => {
+            if (browserPhase === 'needsAccess') void readSource(source, undefined, true);
+            else if (browserPhase === 'unavailable' || (!candidates.length && !error)) bookmarkInput.current?.click();
+            else void readSource(source);
+          }}>{browserPhase === 'needsAccess' ? t("Read bookmarks") : browserPhase === 'unavailable' || (!candidates.length && !error && !reading) ? t("Choose bookmark file") : <><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true"/>{t("Refresh bookmarks")}</>}</Button><Button variant="primary" disabled={busy || reading || browserPhase !== 'ready' || !selectedCount} onClick={() => { try {
             const items = makeBrowserLinks(available.filter(item => selected.has(item.key)), source);
             const version = generation.current;
             // Links are saved at once; text and covers are read in the background
@@ -346,7 +365,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, onReplace, available
         }
         catch (reason) {
             setError(reason instanceof Error ? reason.message : 'Links could not be imported.');
-        } }}><Download size={16} strokeWidth={1.75} aria-hidden="true"/>{t(selectedCount === 1 ? 'Import {count} link' : 'Import {count} links', { count: selectedCount })}</Button></div>
+        } }}><Download size={16} strokeWidth={1.75} aria-hidden="true"/>{t(reading || browserPhase !== 'ready' ? 'Import links' : selectedCount === 1 ? 'Import {count} link' : 'Import {count} links', { count: selectedCount })}</Button></div>
         </div> : <>
           <form className={`${styles.fields} ${styles.importForm}`} onSubmit={event => { void submit(event); }}>
             <div className={styles.linkRow}>
@@ -382,7 +401,7 @@ export function DesktopImportDialog({ open, onClose, onAdd, onReplace, available
     <Alert className={styles.error} tone="danger" title={t("Import could not be completed")} open={Boolean(error)}>{t(error)}</Alert>
     <FluidDialog open={Boolean(replacing)} onClose={() => { if (!busy) setReplacing(null); }} busy={busy} title={t('Replace saved link?')}
       description={replacing?.title ? t('“{title}” is already in your library.', { title: replacing.title }) : t('This link is already in your library.')}>
-      <p className={styles.replaceCopy}>{t('Replace its title, content, tags and cover. Your AI context is kept.')}</p>
+      <p className={styles.replaceCopy}>{t('This will replace the saved reference with the current page.')}</p>
       <Alert tone="danger" title={t('Import could not be completed')} open={Boolean(replacing && error)}>{t(error)}</Alert>
       <div className={styles.replaceActions}>
         <Button type="button" variant="secondary" disabled={busy} onClick={() => setReplacing(null)}>{t('Keep existing')}</Button>

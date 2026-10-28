@@ -16,6 +16,7 @@ export type BrowserBookmark = {
     savedAt?: string;
     faviconUrl?: string;
 };
+export type BrowserImportState = { status: 'ready'; bookmarks: BrowserBookmark[] } | { status: 'needsAccess'; folder?: string } | { status: 'unavailable' };
 export type LinkPreview = {
     title: string;
     content: string;
@@ -33,6 +34,7 @@ export const desktopLinkImport = {
         if (!value) throw Error('This platform is no longer saved. Reopen the platform list.');
         await openUrl(customCapturePlatform(value.url).url);
     },
+    readBrowser: (browser: string, requestAccess = false) => invoke<BrowserImportState>('read_browser_import', { browser, requestAccess }),
     available: isTauri,
     sources: () => invoke<BrowserSource[]>('list_browser_sources'),
     bookmarks: (sourceId: string) => invoke<BrowserBookmark[]>('read_browser_bookmarks', { sourceId }),
@@ -40,6 +42,7 @@ export const desktopLinkImport = {
     preview: (url: string) => invoke<LinkPreview>('preview_link', { url }),
 };
 export type LinkImportService = {
+    readBrowser?: (browser: string, requestAccess?: boolean) => Promise<BrowserImportState>;
     prepareCover?: PrepareReferenceCover;
     openCaptureSite?: (site: string) => Promise<void>;
     listCapturePlatforms?: () => Promise<CapturePlatform[]>;

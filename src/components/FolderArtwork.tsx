@@ -1,5 +1,6 @@
 import { memo, useId } from "react";
 import { Link } from "lucide-react";
+import { FolderCloseArtwork } from "./FolderCloseArtwork";
 import brandMark from "../../assets/brand/icon.svg";
 
 const front = "M92 126H153C167 126 175 131 184 141L194 153C201 162 208 165 220 165H271C299 165 317 185 314 213L309 265C306 293 292 311 263 311H100C72 311 58 296 56 271L48 174C46 145 65 126 92 126Z"
@@ -12,7 +13,7 @@ const references = [
     { type: "photo", x: 151, y: 92, w: 101, h: 105, radius: 16, rotate: 3 },
 ]
 
-export const FolderArtwork = memo(function FolderArtwork() {
+export const FolderArtwork = memo(function FolderArtwork({ layer, nativeClose = false }: { layer?: "rear" | "cards" | "front"; nativeClose?: boolean } = {}) {
     const uid = "folder" + useId().replace(/[^a-zA-Z0-9]/g, "");
     const url = (name: string) => `url(#${uid}${name})`;
     const face = front;
@@ -72,11 +73,16 @@ export const FolderArtwork = memo(function FolderArtwork() {
                 <clipPath id={uid + "faceClip"}><path d={face} /></clipPath>
                 <mask id={uid + "exposed"} maskUnits="userSpaceOnUse" x="0" y="0" width="360" height="360"><rect width="360" height="360" fill="white" /><path d={face} fill="black" /></mask>
             </defs>
+            {(!layer || layer === "rear") && <g>
             <path d={face} fill="white" filter={url("shadow")} />
             <path d={rear} fill={url("rear")} />
             <path d="M100 93H260C286 93 302 109 302 135" fill="none" stroke="white" strokeOpacity=".7" strokeWidth="1.8" />
+            </g>}
+            {(!layer || layer === "cards") && <g>
             {<g clipPath={url("pocket")}><g mask={url("exposed")}>{cardLayer()}</g></g>}
             {<g clipPath={url("faceClip")}><g clipPath={url("pocket")} filter={url("blur")} opacity=".53">{cardLayer(true)}</g></g>}
+            </g>}
+            {(!layer || layer === "front") && <g>
             <path className="folder-pocket-outline" d={face} fill={url("face")} stroke="#A1A1A1" strokeOpacity=".19" strokeWidth="1.2" />
             <path d={face} fill="white" filter={url("inset")} />
             <path d={rim} fill="none" stroke={url("edge")} strokeWidth="2.5" />
@@ -85,6 +91,8 @@ export const FolderArtwork = memo(function FolderArtwork() {
                 <g transform="translate(0 .7)"><rect x="81" y="255" width="46" height="38" fill="white" opacity=".64" mask={url("brand")} /></g>
                 <rect x="81" y="255" width="46" height="38" fill={url("mark")} mask={url("brand")} />
             </g>
+            {nativeClose && <g transform="translate(240.75 168.75) scale(2.25)"><FolderCloseArtwork /></g>}
+            </g>}
         </svg>
     );
 });

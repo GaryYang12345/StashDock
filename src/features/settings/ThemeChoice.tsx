@@ -25,7 +25,7 @@ export function ThemeChoice({ value, disabled, host, onChange }: { value: Theme;
   const options: { value: Theme; label: string }[] = [
     { value: 'light', label: t('Light') },
     { value: 'dark', label: t('Dark') },
-    { value: 'system', label: t(host ? 'Follow ChatGPT' : 'Follow system') },
+    { value: 'system', label: t(host ? 'Automatic' : 'Follow system') },
   ];
   // Keep keyboard focus during the short save. Native `disabled` blurs the
   // selected radio; aria-disabled plus blocked input preserves the group.

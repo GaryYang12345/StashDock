@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -233,9 +234,14 @@ test('draft actions need the message extension and text transport, not a host na
 
 test('portable plugin stdio server starts independently from its shipped bundle', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'stashdock-mcp-test-stdio-'));
+  // macOS ignores APPDATA/XDG_DATA_HOME. Isolate os.homedir in this child only,
+  // without changing HOME or touching the user's authoritative registration.
+  const profile = join(dataDir, 'profile');
+  const bootstrap = join(dataDir, 'isolated-profile.mjs');
+  writeFileSync(bootstrap, `import os from 'node:os'; import { syncBuiltinESMExports } from 'node:module'; os.homedir = () => ${JSON.stringify(profile)}; syncBuiltinESMExports();`);
   const client = new Client({ name: 'portable test', version: '1' });
   const transport = new StdioClientTransport({ command: process.execPath,
-    args: [new URL('../plugins/stashdock/scripts/mcp-server.mjs', import.meta.url).pathname.replace(/^\/(\w:)/, '$1')],
+    args: ['--import', pathToFileURL(bootstrap).href, new URL('../plugins/stashdock/scripts/mcp-server.mjs', import.meta.url).pathname.replace(/^\/(\w:)/, '$1')],
     // The override seeds a new user anchor; it cannot fork an existing user's
     // library. Isolate the profile registration as well as the database.
     env: { ...process.env, STASHDOCK_DATA_DIR: dataDir, APPDATA: join(dataDir, 'profile'), XDG_DATA_HOME: join(dataDir, 'profile') }, stderr: 'pipe' });

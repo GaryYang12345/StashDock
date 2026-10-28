@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 export function createPreviewHelperRunner({ launch = spawn, maximum = 4 } = {}) {
   let active = 0;
-  return (helper, job, signal, { maxOutput = 1_000_000, timeout = 55_000 } = {}) => {
+  return (helper, job, signal, { maxOutput = 1_000_000, timeout = 55_000, args = [] } = {}) => {
     if (signal?.aborted) return Promise.reject(Error('Screenshot cancelled'));
     if (active >= maximum) return Promise.reject(Error('The renderer is busy. Retry in a moment.'));
     active++;
@@ -18,8 +18,8 @@ export function createPreviewHelperRunner({ launch = spawn, maximum = 4 } = {}) 
       try {
         // Parent-owned scratch directory also survives forced-child cancellation
         // long enough for the parent to remove it after the renderer job exits.
-        if (!job.browserOperation && !job.imageOperation) profileRoot = mkdtempSync(join(tmpdir(), 'stashdock-capture-owner-'));
-        child = launch(helper, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'],
+        if (!job.browserOperation && !job.imageOperation && !job.integrationOperation) profileRoot = mkdtempSync(join(tmpdir(), 'stashdock-capture-owner-'));
+        child = launch(helper, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'],
           env: { ...process.env, ...(profileRoot ? { STASHDOCK_CAPTURE_PROFILE_ROOT: profileRoot } : {}) } });
       }
       catch (error) { cleanup().catch(() => {}).finally(() => { active--; reject(error); }); return; }
@@ -45,7 +45,7 @@ export function createPreviewHelperRunner({ launch = spawn, maximum = 4 } = {}) 
         try { resolve(JSON.parse(output + decoder.end())); } catch { reject(Error('Invalid screenshot result')); }
       });
       if (signal?.aborted) cancel();
-      try { child.stdin.end(JSON.stringify(job.browserOperation || job.imageOperation ? job : { url: job.url, needPreview: !job.lookup && job.needsPreview !== false, ...(job.lookup ? { lookup: true } : {}), ...(job.contentOnly ? { contentOnly: true } : {}), ...(job.faviconUrl ? { faviconUrl: job.faviconUrl } : {}) })); }
+      try { child.stdin.end(JSON.stringify(job.browserOperation || job.imageOperation || job.integrationOperation ? job : { url: job.url, needPreview: !job.lookup && job.needsPreview !== false, ...(job.lookup ? { lookup: true } : {}), ...(job.contentOnly ? { contentOnly: true } : {}), ...(job.faviconUrl ? { faviconUrl: job.faviconUrl } : {}) })); }
       catch (error) { kill(error); }
     });
   };

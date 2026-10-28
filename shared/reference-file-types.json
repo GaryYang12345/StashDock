@@ -1,0 +1,14 @@
+[
+  {"visual":"image","label":"Image","kinds":["image"],"extensions":["png","jpg","jpeg","gif","webp","svg","avif","heic"],"mimeStarts":["image/"]},
+  {"visual":"pdf","label":"PDF","kinds":["pdf"],"extensions":["pdf"]},
+  {"visual":"document","label":"Document","extensions":["doc","docx","odt","rtf"],"mimeIncludes":["word"]},
+  {"visual":"spreadsheet","label":"Spreadsheet","extensions":["xls","xlsx","csv","ods"],"mimeIncludes":["spreadsheet"]},
+  {"visual":"presentation","label":"Presentation","extensions":["ppt","pptx","odp"],"mimeIncludes":["presentation","powerpoint"]},
+  {"visual":"archive","label":"Archive","extensions":["zip","rar","7z","gz","tar"]},
+  {"visual":"video","label":"Video","extensions":["mp4","mov","webm","avi"],"mimeStarts":["video/"]},
+  {"visual":"audio","label":"Audio","extensions":["mp3","wav","m4a","ogg","flac"],"mimeStarts":["audio/"]},
+  {"visual":"data","label":"Structured data","extensions":["json","xml","yaml","yml","toml"],"mimeIncludes":["json","xml","yaml","toml"]},
+  {"visual":"markdown","label":"Markdown","extensions":["md","mdx"],"mimeEquals":["text/markdown"]},
+  {"visual":"code","label":"Code","extensions":["js","jsx","ts","tsx","rs","py","go","java","html","css","sql","c","cpp","h","swift","rb","sh"]},
+  {"visual":"text","label":"Text file","extensions":["txt","log"],"mimeStarts":["text/"]}
+]

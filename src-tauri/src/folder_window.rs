@@ -1,5 +1,9 @@
 //! Folder pointer dragging. Exact native bounds need no custom hit region.
 use tauri::Manager;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::{cancel_gesture, install, search_visible, update_labels};
 fn require_folder(window: &tauri::WebviewWindow) -> Result<(), String> {
     if window.label() == "folder" {
         Ok(())
@@ -106,11 +110,17 @@ pub async fn drag_folder_window(
         })
         .await
         .map_err(|e| e.to_string())??;
-        crate::desktop_windows::remember(window.app_handle(), &window);
+        if let Some(native) = window.app_handle().get_window("folder") {
+            crate::desktop_windows::remember(window.app_handle(), &native);
+        }
         crate::desktop_windows::persist_later(window.app_handle());
         return Ok(moved);
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        Err("The Mac floating folder handles gestures natively.".into())
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         window.start_dragging().map_err(|e| e.to_string())?;
         Ok(true)

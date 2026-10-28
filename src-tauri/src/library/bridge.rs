@@ -64,7 +64,10 @@ fn request_origin(request: &Request) -> Option<String> {
 }
 
 fn extension_origin_allowed(origin: &str) -> bool {
-    origin.starts_with("chrome-extension://") || origin.starts_with("moz-extension://")
+    origin.starts_with("chrome-extension://")
+        || origin.starts_with("moz-extension://")
+        || crate::integrations::safari_native_origin(origin)
+        || crate::native_messaging::trusted_origin(origin)
 }
 
 pub(super) fn json_response(
@@ -100,7 +103,9 @@ pub(super) fn json_response(
     response
 }
 
-fn handle_extension_request(mut request: Request, database_path: &Path, app: &AppHandle) {
+type Notify<'a> = dyn Fn(&str, serde_json::Value) + 'a;
+
+fn handle_extension_request(mut request: Request, database_path: &Path, notify: &Notify<'_>) {
     let origin = request_origin(&request);
     let allowed_origin = origin
         .as_deref()
@@ -217,7 +222,7 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
         let response = match result {
             Ok(value) => {
                 if value["saved"] == true {
-                    let _ = app.emit("extension-imported", serde_json::json!({"updated":1}));
+                    notify("extension-imported", serde_json::json!({"updated":1}));
                 }
                 json_response(value.to_string(), 200, allowed_origin)
             }
@@ -298,7 +303,12 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
                     .ok_or("Invalid StashDock extension.")?,
                 allowed_origin.ok_or("Invalid StashDock extension.")?,
             )?;
-            Ok(serde_json::json!({"connected":true,"owner":"desktop","integrations":crate::integrations::read(&db)?}).to_string())
+            // Connection acknowledgement never scans unrelated applications or
+            // waits for SafariServices. Settings queries presence separately.
+            Ok(
+                serde_json::json!({"connected":true,"owner":"desktop","integrations":{"items":[]}})
+                    .to_string(),
+            )
         })();
         let response = match result {
             Ok(value) => json_response(value, 200, allowed_origin),
@@ -373,19 +383,7 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
             connection
                 .busy_timeout(std::time::Duration::from_secs(3))
                 .map_err(|e| e.to_string())?;
-            let mut statement = connection
-                .prepare("SELECT tags_json FROM stash_items")
-                .map_err(|e| e.to_string())?;
-            let rows = statement
-                .query_map([], |row| row.get::<_, String>(0))
-                .map_err(|e| e.to_string())?;
-            let mut tags = std::collections::BTreeSet::new();
-            for row in rows {
-                let values: Vec<String> = serde_json::from_str(&row.map_err(|e| e.to_string())?)
-                    .map_err(|e| e.to_string())?;
-                tags.extend(values);
-            }
-            Ok(serde_json::json!({"tags":tags}).to_string())
+            Ok(super::browser_capture::tags(&connection)?.to_string())
         })();
         let response = match result {
             Ok(body) => json_response(body, 200, allowed_origin),
@@ -442,7 +440,7 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
         })();
         let response = match result {
             Ok(()) => {
-                let _ = app.emit("extension-imported", serde_json::json!({"updated":1}));
+                notify("extension-imported", serde_json::json!({"updated":1}));
                 json_response(r#"{"updated":true}"#, 200, allowed_origin)
             }
             Err(error) => json_response(
@@ -487,7 +485,7 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
         let response = match result {
             Ok(deleted) => {
                 if deleted {
-                    let _ = app.emit("extension-deleted", serde_json::json!({ "id": id }));
+                    notify("extension-deleted", serde_json::json!({ "id": id }));
                 }
                 json_response(
                     serde_json::json!({ "deleted": deleted }).to_string(),
@@ -543,7 +541,7 @@ fn handle_extension_request(mut request: Request, database_path: &Path, app: &Ap
 
     match result {
         Ok(summary) => {
-            let _ = app.emit("extension-imported", summary.clone());
+            notify("extension-imported", serde_json::json!(summary));
             let body = serde_json::to_string(&summary).unwrap_or_else(|_| "{}".to_string());
             let _ = request.respond(json_response(body, 200, allowed_origin));
         }
@@ -569,8 +567,11 @@ pub fn start_extension_server(app: AppHandle, database_path: PathBuf) {
         for _ in 0..BRIDGE_WORKERS {
             let (server, app, database_path) = (server.clone(), app.clone(), database_path.clone());
             thread::spawn(move || {
+                let notify = move |event: &str, payload: serde_json::Value| {
+                    let _ = app.emit(event, payload);
+                };
                 for request in server.incoming_requests() {
-                    serve(request, &database_path, &app);
+                    serve(request, &database_path, &notify);
                 }
             });
         }
@@ -590,7 +591,7 @@ fn host_allowed(host: Option<&str>) -> bool {
     })
 }
 
-fn serve(request: Request, database_path: &Path, app: &AppHandle) {
+fn serve(request: Request, database_path: &Path, notify: &Notify<'_>) {
     if !host_allowed(request_header(&request, "Host").as_deref()) {
         let _ = request.respond(json_response(r#"{"error":"Forbidden host."}"#, 403, None));
         return;
@@ -600,7 +601,7 @@ fn serve(request: Request, database_path: &Path, app: &AppHandle) {
         .ok_or_else(|| "The library location is unavailable.".to_string())
         .and_then(crate::library_location::resolve);
     match location {
-        Ok(root) => handle_extension_request(request, &root.join("stashdock.sqlite3"), app),
+        Ok(root) => handle_extension_request(request, &root.join("stashdock.sqlite3"), notify),
         Err(error) => {
             let origin = request_origin(&request).filter(|value| extension_origin_allowed(value));
             let _ = request.respond(json_response(
@@ -614,6 +615,170 @@ fn serve(request: Request, database_path: &Path, app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn real_http_capture_requires_confirmation_and_notifies_after_commit() {
+        use super::*;
+        use serde_json::json;
+        let root = std::env::temp_dir().join(format!("stashdock-wire-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let database = root.join("stashdock.sqlite3");
+        let db = Connection::open(&database).unwrap();
+        super::super::initialize_schema(&db).unwrap();
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../../product-links.json")).unwrap();
+        let id = config["browserExtensions"]["edge"]["id"].as_str().unwrap();
+        let origin = format!("chrome-extension://{id}");
+        let server = Server::http("127.0.0.1:0").unwrap();
+        let address = format!("http://{}", server.server_addr());
+        let path = database.clone();
+        let task = thread::spawn(move || {
+            let changes = std::cell::RefCell::new(Vec::new());
+            for _ in 0..8 {
+                let request = server
+                    .recv_timeout(std::time::Duration::from_secs(3))
+                    .unwrap()
+                    .unwrap();
+                serve(request, &path, &|event, payload| {
+                    // The receiving observer can already read the committed row.
+                    let connection = Connection::open(&path).unwrap();
+                    let title: String = connection
+                        .query_row("SELECT title FROM stash_items LIMIT 1", [], |row| {
+                            row.get(0)
+                        })
+                        .unwrap();
+                    changes
+                        .borrow_mut()
+                        .push((event.to_owned(), payload, title));
+                });
+            }
+            changes.into_inner()
+        });
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_secs(3))
+            .build()
+            .unwrap();
+        let post = |path: &str, body: serde_json::Value| {
+            client
+                .post(format!("{address}{path}"))
+                .header("Host", "127.0.0.1:17863")
+                .header("Origin", &origin)
+                .header("X-StashDock-Client", "chrome-extension-v1")
+                .json(&body)
+                .send()
+                .unwrap()
+                .json::<serde_json::Value>()
+                .unwrap()
+        };
+        let item = json!({"id":"draft","title":"First wire title","kind":"web","source":"Example","url":"https://example.org/wire","excerpt":"Body","content":"Wire body","tags":[],"createdAt":"2026-10-25T00:00:00Z"});
+        assert_eq!(
+            post("/v1/capture/lookup", json!({"url":item["url"]}))["error"],
+            "An extension request is required."
+        );
+        let setup = post(
+            "/v1/setup",
+            json!({"browser":"edge","version":"0.4.17","extensionId":id}),
+        );
+        assert_eq!(setup["connected"], true);
+        assert_eq!(setup["integrations"]["items"], json!([]));
+        assert!(post("/v1/capture/lookup", json!({"url":item["url"]}))["duplicate"].is_null());
+        assert_eq!(
+            post(
+                "/v1/capture",
+                json!({"item":item,"operationId":"wire-first-save-1234"})
+            )["saved"],
+            true
+        );
+        let duplicate = post("/v1/capture/lookup", json!({"url":item["url"]}))["duplicate"].clone();
+        let mut changed = item.clone();
+        changed["title"] = json!("Confirmed wire replacement");
+        let request = json!({"item":changed,"operationId":"wire-replacement-1234"});
+        assert_eq!(post("/v1/capture", request.clone())["duplicate"], duplicate);
+        assert_eq!(
+            db.query_row("SELECT title FROM stash_items", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "First wire title"
+        );
+        let mut confirmed = request;
+        confirmed["replace"] = duplicate;
+        assert_eq!(post("/v1/capture", confirmed)["saved"], true);
+        let rejected = client
+            .post(format!("{address}/v1/capture"))
+            .header("Host", "127.0.0.1:17863")
+            .header("Origin", "https://example.org")
+            .header("X-StashDock-Client", "chrome-extension-v1")
+            .json(&json!({"item":item}))
+            .send()
+            .unwrap();
+        assert_eq!(rejected.status(), 403);
+        let changes = task.join().unwrap();
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].2, "First wire title");
+        assert_eq!(changes[1].2, "Confirmed wire replacement");
+        assert_eq!(
+            db.query_row("SELECT COUNT(*) FROM stash_items", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    // Operator-run acceptance server. This is compiled only into the test
+    // executable; the shipped Desktop has no test port or data-routing switch.
+    #[test]
+    #[ignore = "owned real-browser acceptance; requires a fresh temporary QA directory"]
+    fn isolated_browser_acceptance_server() {
+        use super::*;
+        use std::{
+            fs,
+            io::Write,
+            time::{Duration, Instant},
+        };
+        let root = PathBuf::from(
+            std::env::var_os("STASHDOCK_BRIDGE_QA_DIRECTORY")
+                .expect("Explicit QA directory required"),
+        );
+        assert!(root.starts_with(std::env::temp_dir()));
+        assert!(root
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("stashdock-native-bridge-qa-"));
+        assert!(root.join("ISOLATED_QA").is_file());
+        let database = root.join("stashdock.sqlite3");
+        let db = Connection::open(&database).unwrap();
+        super::super::initialize_schema(&db).unwrap();
+        drop(db);
+        let server = Server::http(EXTENSION_SERVER_ADDRESS)
+            .expect("Close only the known Desktop provider before starting QA");
+        fs::write(
+            root.join("ready.json"),
+            serde_json::json!({"address":EXTENSION_SERVER_ADDRESS,"database":database}).to_string(),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(600);
+        while !root.join("STOP").exists() && Instant::now() < deadline {
+            if let Some(request) = server.recv_timeout(Duration::from_millis(100)).unwrap() {
+                serve(request, &database, &|event, payload| {
+                    let mut log = fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(root.join("events.jsonl"))
+                        .unwrap();
+                    writeln!(
+                        log,
+                        "{}",
+                        serde_json::json!({"event":event,"payload":payload})
+                    )
+                    .unwrap();
+                });
+            }
+        }
+    }
+
     #[test]
     fn only_requests_addressed_to_the_loopback_bridge_are_served() {
         assert!(super::host_allowed(Some("127.0.0.1:17863")));

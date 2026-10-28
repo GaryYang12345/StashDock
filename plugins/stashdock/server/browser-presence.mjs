@@ -29,6 +29,9 @@ export function extensionEnabled(value, id, name = value?.extensions?.settings?.
 }
 export function browserExtensionDetected(browser, id, { root } = {}) {
   if (!validBrowserExtensionId(browser, id)) return false;
+  // Safari enablement belongs to SafariServices in its containing Mac app.
+  // Never probe Edge's profile as a fallback for this browser.
+  if (browser === 'safari') return false;
   const home = homedir();
   if (browser === 'firefox') return firefoxDetected(id, root || (process.platform === 'win32'
     ? join(process.env.APPDATA || join(home, 'AppData/Roaming'), 'Mozilla/Firefox/Profiles')

@@ -134,7 +134,7 @@ pub fn anchored_folder(area: WorkArea, center: (f64, f64)) -> Geometry {
     )
 }
 /// The folder's quick search: a fixed transparent canvas beside the
-/// folder (above it, or below when the work area has no room above). Only its
+/// folder (always above it, including near the screen's top edge). Only its
 /// visible pieces take input, through a window region set by the search itself.
 pub const SEARCH_WIDTH: f64 = 480.0;
 pub const SEARCH_HEIGHT: f64 = 316.0;
@@ -155,12 +155,21 @@ pub struct SearchPlacement {
 /// How far left of the folder's geometric centre the search axis sits (CSS px).
 pub const SEARCH_OPTICAL_SHIFT: f64 = 4.0;
 pub fn search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) -> SearchPlacement {
+    search_placement_with_shift(folder, folder_size, area, SEARCH_OPTICAL_SHIFT)
+}
+/// The native Mac accessory shares the folder window's geometric centre. Keep
+/// Windows' approved optical adjustment in its adapter, rather than adding a
+/// compensating offset to individual native controls.
+pub fn centred_search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) -> SearchPlacement {
+    search_placement_with_shift(folder, folder_size, area, 0.0)
+}
+fn search_placement_with_shift(folder: (i32, i32), folder_size: f64, area: WorkArea, shift: f64) -> SearchPlacement {
     let scale = area.scale;
     let (w, h) = ((SEARCH_WIDTH * scale).round(), (SEARCH_HEIGHT * scale).round());
     let overlap = SEARCH_OVERLAP * scale;
     // The folder artwork's visual mass sits right of its geometric centre:
     // the field and cards share an axis nudged slightly left to look centred.
-    let centre = folder.0 as f64 + folder_size / 2.0 - SEARCH_OPTICAL_SHIFT * scale;
+    let centre = folder.0 as f64 + folder_size / 2.0 - shift * scale;
     // Always centred on the folder's (optical) axis, even if the outer cards then reach
     // past the screen edge: symmetry matters more than showing every side card.
     let x = (centre - w / 2.0).round();
@@ -178,6 +187,21 @@ pub fn search_placement(folder: (i32, i32), folder_size: f64, area: WorkArea) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_search_and_folder_have_one_axis_at_every_scale_and_edge() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let area = WorkArea { x: -1920, y: -1080, width: 3840, height: 2160, scale };
+            let size = FOLDER_SIZE * scale;
+            for position in [(-1920, -1080), (-1920, 300), (1600, 300)] {
+                let placed = centred_search_placement(position, size, area);
+                assert!((placed.x as f64 + placed.anchor_px - (position.0 as f64 + size / 2.0)).abs() < 0.00001);
+                assert!((placed.anchor_px - placed.width as f64 / 2.0).abs() <= 0.5);
+                assert!(placed.y < position.1);
+                let win = search_placement(position, size, area);
+                assert!((placed.x as f64 + placed.anchor_px - win.x as f64 - win.anchor_px - SEARCH_OPTICAL_SHIFT * scale).abs() < 0.00001);
+            }
+        }
+    }
     #[test]
     fn search_is_centred_on_the_folder_and_always_above_it() {
         let area = WorkArea { x: 0, y: 0, width: 1920, height: 1040, scale: 1.5 };

@@ -1,9 +1,9 @@
 //! Static client/frame sizing. Handoffs never animate native bounds.
-use tauri::WebviewWindow;
+use tauri::Window;
 
 /// Apply the same policy before SHOW as before HIDE. Setting this only when
 /// hiding leaves the folder's first reveal subject to the OS entrance fade.
-fn disable_transitions(window: &WebviewWindow) -> Result<(), String> {
+fn disable_transitions(window: &Window) -> Result<(), String> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::Graphics::Dwm::{
@@ -23,16 +23,26 @@ fn disable_transitions(window: &WebviewWindow) -> Result<(), String> {
             }
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        objc2::MainThreadMarker::new().ok_or("Window visibility requires the UI thread.")?;
+        let pointer = window.ns_window().map_err(|e| e.to_string())?;
+        let native = unsafe { pointer.cast::<objc2_app_kit::NSWindow>().as_ref() }
+            .ok_or("The native window is unavailable.")?;
+        // AppKit's automatic orderFront/orderOut animations would otherwise
+        // run underneath the explicit handoff and survive its final frame.
+        native.setAnimationBehavior(objc2_app_kit::NSWindowAnimationBehavior::None);
+    }
     let _ = window;
     Ok(())
 }
 
-pub fn show_immediately(window: &WebviewWindow) -> Result<(), String> {
+pub fn show_immediately(window: &Window) -> Result<(), String> {
     disable_transitions(window)?;
     window.show().map_err(|e| e.to_string())
 }
 
-pub fn minimize_immediately(window: &WebviewWindow) -> Result<(), String> {
+pub fn minimize_immediately(window: &Window) -> Result<(), String> {
     disable_transitions(window)?;
     window.minimize().map_err(|e| e.to_string())
 }
@@ -41,11 +51,11 @@ pub fn minimize_immediately(window: &WebviewWindow) -> Result<(), String> {
 /// client frame. Keep that preparation out of sight, without changing Tauri's
 /// visibility cache or using a transparent/layered dashboard window.
 pub struct PreparedRestore {
-    window: WebviewWindow,
+    window: Window,
     cloaked: bool,
 }
 impl PreparedRestore {
-    pub fn new(window: &WebviewWindow) -> Result<Self, String> {
+    pub fn new(window: &Window) -> Result<Self, String> {
         let mut restore = Self {
             window: window.clone(),
             cloaked: false,
@@ -94,13 +104,16 @@ impl Drop for PreparedRestore {
 /// A window kept invisible (still composed by DWM) until released; dropping
 /// it without releasing also uncloaks, so failures never strand a window.
 pub struct Cloak {
-    window: WebviewWindow,
+    window: Window,
     active: bool,
 }
 impl Cloak {
-    pub fn new(window: &WebviewWindow) -> Result<Self, String> {
+    pub fn new(window: &Window) -> Result<Self, String> {
         set_cloaked(window, true)?;
-        Ok(Self { window: window.clone(), active: true })
+        Ok(Self {
+            window: window.clone(),
+            active: true,
+        })
     }
     pub fn release(mut self) -> Result<(), String> {
         self.active = false;
@@ -114,7 +127,7 @@ impl Drop for Cloak {
         }
     }
 }
-fn set_cloaked(window: &WebviewWindow, cloaked: bool) -> Result<(), String> {
+fn set_cloaked(window: &Window, cloaked: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
@@ -140,7 +153,7 @@ fn set_cloaked(window: &WebviewWindow, cloaked: bool) -> Result<(), String> {
 /// image as ICON_BIG instead of letting Shell fall back to a class/default icon.
 /// Tao owns this handle for the window's lifetime; never destroy this borrowed
 /// handle or introduce a second icon cache/owner.
-pub fn set_taskbar_icon(window: &WebviewWindow) -> Result<(), String> {
+pub fn set_taskbar_icon(window: &Window) -> Result<(), String> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -160,7 +173,7 @@ pub fn set_taskbar_icon(window: &WebviewWindow) -> Result<(), String> {
 }
 
 /// Framework visibility remains authoritative, including on repeated switches.
-pub fn hide_immediately(window: &WebviewWindow) -> Result<(), String> {
+pub fn hide_immediately(window: &Window) -> Result<(), String> {
     disable_transitions(window)?;
     window.hide().map_err(|e| e.to_string())?;
     #[cfg(windows)]
@@ -180,7 +193,35 @@ pub fn client_frame_size(outer: (u32, u32), inner: (u32, u32), desired: (u32, u3
     )
 }
 
-pub fn set_client_size(window: &WebviewWindow, width: u32, height: u32) -> Result<(), String> {
+/// Handoff placement must be complete before its actual anchor is recorded.
+/// Tao's macOS setters always enqueue, even when already on the UI thread.
+/// Use the native synchronous setter here; visibility remains Tauri-owned.
+pub fn set_outer_position(
+    window: &Window,
+    position: tauri::PhysicalPosition<i32>,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        objc2::MainThreadMarker::new().ok_or("Window placement requires the UI thread.")?;
+        let pointer = window.ns_window().map_err(|e| e.to_string())?;
+        let native = unsafe { pointer.cast::<objc2_app_kit::NSWindow>().as_ref() }
+            .ok_or("The native window is unavailable.")?;
+        let current = window.outer_position().map_err(|e| e.to_string())?;
+        let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        let frame = native.frame();
+        // Convert the delta from the same live Tauri/AppKit snapshot, avoiding
+        // a second global-screen origin convention for Retina/negative displays.
+        native.setFrameTopLeftPoint(objc2_foundation::NSPoint::new(
+            frame.origin.x + (position.x - current.x) as f64 / scale,
+            frame.origin.y + frame.size.height - (position.y - current.y) as f64 / scale,
+        ));
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    window.set_position(position).map_err(|e| e.to_string())
+}
+
+pub fn set_client_size(window: &Window, width: u32, height: u32) -> Result<(), String> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -210,7 +251,20 @@ pub fn set_client_size(window: &WebviewWindow, width: u32, height: u32) -> Resul
         }
         Ok(())
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        objc2::MainThreadMarker::new().ok_or("Window sizing requires the UI thread.")?;
+        let pointer = window.ns_window().map_err(|e| e.to_string())?;
+        let native = unsafe { pointer.cast::<objc2_app_kit::NSWindow>().as_ref() }
+            .ok_or("The native window is unavailable.")?;
+        let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        native.setContentSize(objc2_foundation::NSSize::new(
+            width as f64 / scale,
+            height as f64 / scale,
+        ));
+        Ok(())
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     window
         .set_size(tauri::PhysicalSize::new(width, height))
         .map_err(|e| e.to_string())

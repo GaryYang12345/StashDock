@@ -231,4 +231,3 @@ export function FolderSearch() {
     {status.open && <SearchPanel key={session} status={status} onHeld={onHeld} />}
   </AnimatePresence>;
 }
-

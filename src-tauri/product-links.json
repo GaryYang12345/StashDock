@@ -1,13 +1,99 @@
 {
   "githubRepository": "GaryYang12345/StashDock",
-  "browserExtensions": { "firefox": { "id": "stashdock@stashdock.app", "minimumVersion": "153.0" } },
-  "installationUrls": { "chrome": null, "edge": null, "firefox": null, "safari": null, "codex": "https://github.com/GaryYang12345/StashDock/blob/main/docs/windows-plugin-install.md", "claude": null, "desktop": "https://github.com/GaryYang12345/StashDock/releases/latest" },
+  "publicBrowserExtensions": ["chrome"],
+  "browserExtensions": {
+    "firefox": {
+      "id": "stashdock@stashdock.app",
+      "minimumVersion": "153.0",
+      "nativeHost": "app.stashdock.firefox"
+    },
+    "safari": {
+      "id": "app.stashdock.desktop.SafariExtension",
+      "containingAppId": "app.stashdock.desktop"
+    },
+    "chrome": {
+      "id": "bbglcpbhnobjhgccjinejnnlcefelkee",
+      "publicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsYzy4uhC8yR9oEPGdKANFHGpJfUNh18Zm/JojJum9DGeBkBoBnOr0nb2p19VpJhwu+9YQK+4fldBYyfliYLin4/CpnEUJOxCKAfVIor0u7H1J/UfBnGBw3IfX8b+/T/LJ4mvFkS37dNEybJFTtaVtR1b/1wCCSsr6X08pLKs6mutf/fVbHQ3OecbL4CD1IQsBGxZBtl9vDYVWEjMHJ2uNvmASxdYN2VR719UMcFDcaV/LmWINR7eytXtb1diPU6Wj2DycsYo9R0zMwqZMmlV2/hdQLDRX4T4CMZJ1B8vqpRy8f9cslY0BQY0D4U9tAvrAtZfnQgw/XgPQMKXrwP1YQIDAQAB",
+      "distribution": "store",
+      "legacyIds": [
+        "kighddgomododmcjgmiojgoekgijgkbp",
+        "ncngoflndkbefnlblbmjhnkafehpempg"
+      ]
+    },
+    "edge": {
+      "id": "fgipdcmmnimccgdepghiecnngnakoeok",
+      "publicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsp+nYDciyYnGIM4UhUZJnbhDJdcL/Zx7/Mj+0AK2jt/KYPmJXO4lTYyKnsdA1mcx/SrNNVoXIcLQ0KYSOdg57aClm4p3s4nVV23zXoiyRjSvcX4AVeExhHWT2CX0+XDf9Tlj9GyqCac7UQZPJZMbMDeFWVczG8JlJYOdPAIAnTFhO9y3WQPx9AruCmNJWCEFp3xgxVVcZR5NANCva5ISiAzyrlbHCW7xwSyJyoBHmrkyrJT5fVTkyx4jhobJKskiLOFLpAoSCSZNqjQLOs/UPW+eS3QY8pfF2LmolZlql9xIa9joumBMaRz4OzdhnO4Oa92pKY8HL4NQ7+FTG4Sf7wIDAQAB",
+      "distribution": "store",
+      "compatibleIds": ["bbglcpbhnobjhgccjinejnnlcefelkee"],
+      "legacyIds": [
+        "kighddgomododmcjgmiojgoekgijgkbp",
+        "ncjjbbmdgeicjhfmilnmjbnnnhmhbdpa"
+      ]
+    }
+  },
+  "installationUrls": {
+    "chrome": "https://stashdock.app/guide#install-browser",
+    "edge": null,
+    "firefox": null,
+    "safari": null,
+    "codex": "https://stashdock.app/guide#install-plugin",
+    "claude": null,
+    "desktop": "https://stashdock.app/guide#install-desktop"
+  },
   "applications": {
-    "chrome": { "executable": "chrome.exe", "website": "https://www.google.com/chrome/" },
-    "edge": { "executable": "msedge.exe", "website": "https://www.microsoft.com/edge" },
-    "firefox": { "executable": "firefox.exe", "website": "https://www.firefox.com/" },
-    "codex": { "protocols": ["chatgpt", "codex"], "website": "https://chatgpt.com/" },
-    "claude": { "protocols": ["claude"], "website": "https://claude.ai/" },
-    "desktop": { "website": null }
-  }
+    "chrome": {
+      "executable": "chrome.exe",
+      "website": "https://www.google.com/chrome/",
+      "bundleIdentifiers": [
+        "com.google.Chrome"
+      ]
+    },
+    "edge": {
+      "executable": "msedge.exe",
+      "website": "https://www.microsoft.com/edge",
+      "bundleIdentifiers": [
+        "com.microsoft.edgemac"
+      ]
+    },
+    "firefox": {
+      "executable": "firefox.exe",
+      "website": "https://www.firefox.com/",
+      "bundleIdentifiers": [
+        "org.mozilla.firefox"
+      ]
+    },
+    "codex": {
+      "protocols": [
+        "chatgpt",
+        "codex"
+      ],
+      "website": "https://chatgpt.com/",
+      "bundleIdentifiers": [
+        "com.openai.codex",
+        "com.openai.chat"
+      ]
+    },
+    "claude": {
+      "protocols": [
+        "claude"
+      ],
+      "website": "https://claude.ai/",
+      "bundleIdentifiers": [
+        "com.anthropic.claudefordesktop"
+      ]
+    },
+    "desktop": {
+      "website": null,
+      "bundleIdentifiers": [
+        "app.stashdock.desktop"
+      ]
+    },
+    "safari": {
+      "website": "https://www.apple.com/safari/",
+      "bundleIdentifiers": [
+        "com.apple.Safari"
+      ]
+    }
+  },
+  "macInstallationUrls": {}
 }

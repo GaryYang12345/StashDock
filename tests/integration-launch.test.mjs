@@ -13,7 +13,7 @@ test('application opening prefers registered clients and otherwise official site
   assert.equal(chrome.target, 'C:\\Chrome\\chrome.exe');
   assert.equal((await integrationDestination('desktop', { platform:'win32', desktopPath:'D:\\StashDock\\stashdock.exe', file:()=>true })).target,'D:\\StashDock\\stashdock.exe');
   for (const id of ['__proto__','file:///private','../codex','powershell']) await assert.rejects(integrationDestination(id), /supported/);
-  assert.equal((await integrationDestination('desktop', {platform:'win32',desktopPath:'D:\\other.exe',file:()=>true,readRegistry:async()=>null})).target, 'https://github.com/GaryYang12345/StashDock/releases/latest');
+  assert.equal((await integrationDestination('desktop', {platform:'win32',desktopPath:'D:\\other.exe',file:()=>true,readRegistry:async()=>null})).target, 'https://stashdock.app/guide#install-desktop');
 });
 test('launches use OS shell dispatch without shell strings or ownership of the opened app', async () => {
   const calls=[];
@@ -37,4 +37,22 @@ test('browser app opening is limited to trusted extension requests and fixed IDs
   assert.equal((await fetch(url,{method:'POST',headers,body:'{"id":"file:///private"}'})).status,400);
   assert.equal((await fetch(url,{method:'POST',headers,body:'{"id":"claude","url":"https://evil.test"}'})).status,400);
   assert.deepEqual(calls,['claude']);
+});
+
+ test('Mac integrations resolve native clients first and never hide their failure with a website', async () => {
+  const calls=[];
+  const macApplication=async (id,path)=>{calls.push([id,path]);return id==='chrome'?'/Applications/Google Chrome.app':null;};
+  assert.deepEqual(await integrationDestination('chrome',{platform:'darwin',macApplication}),{target:'/Applications/Google Chrome.app',fallback:null});
+  assert.equal((await integrationDestination('claude',{platform:'darwin',macApplication})).target,'https://claude.ai/');
+  await assert.rejects(integrationDestination('../arbitrary',{platform:'darwin',macApplication}),/supported/);
+  assert.deepEqual(calls,[['chrome',undefined],['claude',undefined]]);
+});
+
+
+test('Mac Safari opens its registered system application', async () => {
+  const calls = [];
+  const destination = await integrationDestination('safari', { platform:'darwin', macApplication: async id => { calls.push(id); return '/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app'; } });
+  assert.deepEqual(calls, ['safari']);
+  assert.ok(destination.target.endsWith('/Safari.app'));
+  assert.equal(destination.fallback, null);
 });

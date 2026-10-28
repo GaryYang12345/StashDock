@@ -4,6 +4,13 @@
 mod link_import;
 #[path = "../link_metadata.rs"]
 mod link_metadata;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+#[path = "../macos_services.rs"]
+mod macos_services;
+#[allow(dead_code)]
+#[path = "../native_messaging.rs"]
+mod native_messaging;
 #[allow(dead_code)]
 #[path = "../preview_browser.rs"]
 mod preview_browser;
@@ -43,6 +50,9 @@ struct BrowserRequest {
     browser_operation: String,
     source_id: Option<String>,
     urls: Option<Vec<String>>,
+    browser: Option<String>,
+    #[serde(default)]
+    request_access: bool,
 }
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -50,12 +60,61 @@ enum Request {
     Web(WebRequest),
     Browser(BrowserRequest),
     Image(ImageRequest),
+    Integration(IntegrationRequest),
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImageRequest {
     image_operation: String,
     base64: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct IntegrationRequest {
+    integration_operation: String,
+    id: String,
+    desktop_path: Option<String>,
+}
+fn integration(request: IntegrationRequest) -> Result<serde_json::Value, String> {
+    if request.integration_operation == "registerFirefox" && request.id == "firefox" && request.desktop_path.is_none() {
+        let helper = std::env::current_exe().map_err(|e|e.to_string())?;
+        let manifest = native_messaging::register(&helper)?;
+        return Ok(json!({"registered":true,"manifest":manifest}));
+    }
+    if request.integration_operation != "resolve" {
+        return Err("Unsupported integration request.".into());
+    }
+    let config: serde_json::Value = serde_json::from_str(include_str!("../../product-links.json"))
+        .map_err(|_| "Application configuration is unavailable.")?;
+    let application = config["applications"]
+        .get(&request.id)
+        .ok_or("Choose a supported StashDock app.")?;
+    #[cfg(target_os = "macos")]
+    {
+        let registered = if request.id == "desktop" {
+            request
+                .desktop_path
+                .as_deref()
+                .and_then(macos_services::desktop_bundle)
+        } else {
+            None
+        };
+        let ids: Vec<_> = application["bundleIdentifiers"]
+            .as_array()
+            .map(|ids| ids.iter().filter_map(serde_json::Value::as_str).collect())
+            .unwrap_or_default();
+        let path = registered.or_else(|| macos_services::application_path(&ids));
+        let probe = request.id == "desktop"
+            && path
+                .as_deref()
+                .is_some_and(macos_services::supports_safari_status);
+        Ok(json!({"application":path,"safariStatusProbe":probe}))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = application;
+        Err("Use the platform application adapter.".into())
+    }
 }
 fn yes() -> bool {
     true
@@ -66,6 +125,7 @@ fn run(
 ) -> Result<serde_json::Value, String> {
     match request {
         Request::Web(request) => web(request, progress),
+        Request::Integration(request) => integration(request),
         Request::Image(request) => {
             if request.image_operation != "cover" {
                 return Err("Unsupported image request.".into());
@@ -73,6 +133,11 @@ fn run(
             Ok(json!({"preview":web_images::cover_base64(&request.base64)?}))
         }
         Request::Browser(request) => match request.browser_operation.as_str() {
+            "read" => serde_json::to_value(link_import::read_browser_import_snapshot(
+                &request.browser.ok_or("Choose a supported browser.")?,
+                request.request_access,
+            )?)
+            .map_err(|_| "Bookmarks could not be read.".into()),
             "sources" => serde_json::to_value(link_import::browser_sources_snapshot()?)
                 .map_err(|_| "Browser profiles could not be read.".into()),
             "bookmarks" => serde_json::to_value(link_import::browser_bookmarks_snapshot(
@@ -117,6 +182,7 @@ fn main() {
         preview_browser::shutdown_renderer();
         return;
     }
+    if native_messaging::run_if_invoked() { return; }
     let mut bytes = Vec::new();
     let result = io::stdin()
         .take(6_670_001)

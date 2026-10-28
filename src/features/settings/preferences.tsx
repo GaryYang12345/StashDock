@@ -1,3 +1,4 @@
+import desktopManifest from '../../../package.json';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -7,7 +8,7 @@ import { resolveLanguage } from './messages.mjs';
 import { errorText } from '../../lib/errorText';
 
 export type DesktopPreferences = { language: 'system' | 'en' | 'zh'; theme: 'system' | 'light' | 'dark'; shortcut: string; floatingWindow: boolean };
-export type SettingsInfo = { preferences: DesktopPreferences; launchAtLogin: boolean; version: string; githubUrl: string | null; systemLanguage?: string };
+export type SettingsInfo = { preferences: DesktopPreferences; launchAtLogin: boolean; launchAtLoginRequiresApproval?: boolean; version: string; githubUrl: string | null; systemLanguage?: string; platform?: string; shortcuts?: string[] };
 const DEFAULT: DesktopPreferences = { language: 'en', theme: 'system', shortcut: 'Ctrl+Shift+Space', floatingWindow: true };
 const CACHE = 'stashdock.desktop-appearance.v1';
 function cached(): DesktopPreferences {
@@ -33,6 +34,7 @@ export function DesktopPreferencesProvider({ children }: { children: ReactNode }
   const [loading, setLoading] = useState(true), [pending, setPending] = useState(false), [error, setError] = useState('');
   const [systemLanguage, setSystemLanguage] = useState('en');
   const alive = useRef(true), flight = useRef(false), generation = useRef(0);
+  const loginRevision = useRef(0);
   const earlyPreferences = useRef<DesktopPreferences | null>(null);
   const current = useRef(info); current.current = info;
   const reload = useCallback(async () => {
@@ -40,7 +42,7 @@ export function DesktopPreferencesProvider({ children }: { children: ReactNode }
     earlyPreferences.current = null;
     setLoading(true); setError('');
     try {
-      const value = isTauri() ? await invoke<SettingsInfo>('get_desktop_settings') : { preferences: cached(), launchAtLogin: false, version: '0.2.5', githubUrl: null };
+      const value = isTauri() ? await invoke<SettingsInfo>('get_desktop_settings') : { preferences: cached(), launchAtLogin: false, version: desktopManifest.version, githubUrl: null };
       if (alive.current && generation.current === version) {
         setInfo({ ...value, preferences: earlyPreferences.current ?? value.preferences });
         earlyPreferences.current = null;
@@ -68,6 +70,17 @@ export function DesktopPreferencesProvider({ children }: { children: ReactNode }
     })().catch(reason => { if (!disposed) { setError(errorText(reason)); setLoading(false); } });
     return () => { disposed = true; alive.current = false; ++generation.current; unlisten?.(); window.removeEventListener('languagechange', language); };
   }, [reload]);
+  useEffect(() => {
+    const refreshLogin = () => {
+      if (!isTauri() || flight.current) return;
+      const revision = ++loginRevision.current;
+      void invoke<SettingsInfo>('get_desktop_settings').then(value => {
+        if (alive.current && !flight.current && loginRevision.current === revision) setInfo(current => current ? { ...current, launchAtLogin: value.launchAtLogin, launchAtLoginRequiresApproval: value.launchAtLoginRequiresApproval } : current);
+      }).catch(console.warn);
+    };
+    window.addEventListener('focus', refreshLogin);
+    return () => window.removeEventListener('focus', refreshLogin);
+  }, []);
   const preferences = info?.preferences ?? DEFAULT;
   useEffect(() => {
     // Keep the pre-paint appearance cache until the authoritative native read
@@ -92,10 +105,11 @@ export function DesktopPreferencesProvider({ children }: { children: ReactNode }
   };
   const setStartup = async (enabled: boolean) => {
     if (flight.current || !current.current) return;
+    ++loginRevision.current;
     flight.current = true; setPending(true); setError('');
     try {
-      const value = await invoke<boolean>('set_launch_at_login', { enabled });
-      if (alive.current) setInfo(current => current ? { ...current, launchAtLogin: value } : current);
+      const value = await invoke<{ enabled: boolean; requiresApproval: boolean }>('set_launch_at_login', { enabled });
+      if (alive.current) setInfo(current => current ? { ...current, launchAtLogin: value.enabled, launchAtLoginRequiresApproval: value.requiresApproval } : current);
     } catch (reason) { if (alive.current) setError(errorText(reason)); throw reason; }
     finally { flight.current = false; if (alive.current) setPending(false); }
   };

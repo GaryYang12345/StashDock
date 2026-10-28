@@ -19,4 +19,3 @@
 .stage3d { position: relative; width: 232px; height: 168px; transform-style: preserve-3d; perspective: 1100px; }
 .slot { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform, opacity; }
 .empty { bottom: var(--above-field); margin: 0; white-space: nowrap; font-size: var(--text-sm); color: var(--text-secondary); text-shadow: 0 0 12px var(--surface); }
-

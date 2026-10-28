@@ -7,7 +7,7 @@ import { Alert } from "./arc/alert/alert";
 import { useI18n } from '../features/settings/locale';
 import { useDesktopPreferences } from '../features/settings/preferences';
 
-type Props = { renderLibrary: (collapse: () => void, active: boolean, maximized: boolean, floatingWindow: boolean) => React.ReactNode };
+type Props = { renderLibrary: (collapse: () => void, active: boolean, maximized: boolean, floatingWindow: boolean, nativeChrome: boolean) => React.ReactNode };
 /** Native windows persist; switching does not remount the shelf. */
 export function DesktopWindows({ renderLibrary }: Props) {
   const { t } = useI18n();
@@ -41,6 +41,6 @@ export function DesktopWindows({ renderLibrary }: Props) {
   if (surface === "folder") return <div className="desktop-folder-content"><FloatingFolder onOpen={() => switchTo("panel")} /></div>;
   return <div className="desktop-panel">
     {error && <div className="desktop-window-error"><Alert tone="danger" title={t(error)} onDismiss={() => setError("")} /></div>}
-    {renderLibrary(() => { void switchTo("folder"); }, status.visible === "panel", status.maximized, floatingWindow)}
+    {renderLibrary(() => { void switchTo("folder"); }, status.visible === "panel", status.maximized, floatingWindow, info?.platform === "macos")}
   </div>;
 }

@@ -18,6 +18,8 @@ async function emit(path, content) {
     await writeIfChanged(path, bytes);
   }
 }
+const productLinks = JSON.parse(await readFile(resolve(root,'src-tauri/product-links.json'),'utf8'));
+await emit(resolve(root,'extension/ui/native-host.js'),`// Generated from product-links.json.\nexport const firefoxNativeHost = ${JSON.stringify(productLinks.browserExtensions.firefox.nativeHost)};\n`);
 const shelf = await build({ entryPoints: [resolve(root, 'src/features/browser-extension/Popup.tsx')], bundle: true, write: false,
   format: 'esm', target: 'es2022', minify: true, metafile: true, outdir: resolve(root, 'extension/ui'), entryNames: 'popup',
   loader: { '.svg': 'dataurl', '.png': 'dataurl', '.woff2': 'dataurl' }, jsx: 'automatic' });

@@ -1,12 +1,16 @@
-//! Isolated OS WebView2 capture. The public-only proxy covers redirects,
+//! Isolated system renderer capture. The public-only proxy covers redirects,
 //! subresources and workers; no DIRECT fallback, loopback bypass or UDP WebRTC.
+#[cfg(any(windows, test))]
 use base64::{engine::general_purpose::STANDARD, Engine};
-use serde_json::{json, Value};
+use serde_json::json;
+use serde_json::Value;
+#[cfg(any(windows, test))]
+use std::fs;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::{
-    fs,
     io::{Read, Write},
     net::{Shutdown, TcpListener, TcpStream},
-    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -30,6 +34,9 @@ pub struct Rendered {
 #[cfg(windows)]
 #[path = "preview_admission.rs"]
 mod admission;
+#[cfg(target_os = "macos")]
+#[path = "preview_admission_macos.rs"]
+mod admission;
 #[cfg(windows)]
 #[path = "preview_pool.rs"]
 mod pool;
@@ -50,55 +57,9 @@ pub fn renderer_statistics() -> serde_json::Value {
         json!({"created":0,"reused":0})
     }
 }
-/// Tunnel through the user's system proxy by host name, so the proxy applies
-/// its own routing rules and name resolution (for example for blocked sites).
-fn connect_upstream(
-    proxy: std::net::SocketAddr,
-    target: &str,
-    timeout: Duration,
-) -> Result<TcpStream, String> {
-    let until = Instant::now() + timeout;
-    let mut stream =
-        TcpStream::connect_timeout(&proxy, timeout).map_err(|_| "System proxy unavailable.")?;
-    stream
-        .set_read_timeout(Some(timeout))
-        .map_err(|e| e.to_string())?;
-    stream
-        .set_write_timeout(Some(timeout))
-        .map_err(|e| e.to_string())?;
-    stream
-        .write_all(
-            format!(
-                "CONNECT {target} HTTP/1.1\r\nHost: {target}\r\nConnection: keep-alive\r\n\r\n"
-            )
-            .as_bytes(),
-        )
-        .map_err(|_| "System proxy unavailable.")?;
-    let mut response = Vec::new();
-    while response.len() < 16384 && !response.ends_with(b"\r\n\r\n") {
-        if Instant::now() >= until {
-            return Err("System proxy timed out.".into());
-        }
-        let mut byte = [0];
-        if stream
-            .read(&mut byte)
-            .map_err(|_| "System proxy unavailable.")?
-            == 0
-        {
-            return Err("System proxy closed the connection.".into());
-        }
-        response.push(byte[0]);
-    }
-    if !response.ends_with(b"\r\n\r\n")
-        || !String::from_utf8_lossy(&response)
-            .lines()
-            .next()
-            .is_some_and(|line| matches!(line.split_whitespace().nth(1), Some("200")))
-    {
-        return Err("System proxy declined the connection.".into());
-    }
-    Ok(stream)
-}
+#[path = "proxy_tunnel.rs"]
+mod proxy_tunnel;
+
 fn proxy_target(method: &str, target: &str) -> Result<(String, u16, Option<url::Url>), String> {
     let url = if method == "CONNECT" {
         crate::public_web::web_url(&format!("https://{target}/"))?
@@ -155,11 +116,17 @@ fn proxy_connection(
     byte_limit: usize,
     system_upstream: crate::public_web::SystemProxy,
 ) -> Result<(), String> {
+    // macOS inherits O_NONBLOCK from the nonblocking accept listener. Reset it
+    // explicitly so partial headers honor deadlines and relay does not busy-spin.
+    browser.set_nonblocking(false).map_err(|e| e.to_string())?;
     browser
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| e.to_string())?;
     let mut header = Vec::new();
     while header.len() < 16384 && !header.ends_with(b"\r\n\r\n") {
+        if stop.load(Ordering::Relaxed) || Instant::now() >= deadline {
+            return Err("Capture ended.".into());
+        }
         let mut byte = [0];
         if browser.read(&mut byte).map_err(|e| e.to_string())? == 0 {
             return Err("Closed proxy request.".into());
@@ -174,7 +141,7 @@ fn proxy_connection(
     let method = first.next().ok_or("Missing method.")?;
     let target = first.next().ok_or("Missing target.")?;
     let (host, port, url) = proxy_target(method, target)?;
-    let mut upstream = if let Some(proxy) = system_upstream.for_host(&host) {
+    let mut upstream = if let Some(proxy) = system_upstream.route(&host, port)? {
         crate::public_web::check_proxied(&host, port)?;
         if stop.load(Ordering::Relaxed) || Instant::now() >= deadline {
             return Err("Capture ended.".into());
@@ -187,7 +154,8 @@ fn proxy_connection(
         } else {
             format!("{host}:{port}")
         };
-        connect_upstream(proxy, &target, timeout).map_err(|_| "Website unavailable.")?
+        proxy_tunnel::connect(proxy, &target, Instant::now() + timeout, &stop)
+            .map_err(|_| "Website unavailable.")?
     } else {
         // Connect to these exact addresses, never resolve again in connect().
         let addresses = crate::public_web::resolve_public(&host, port)?;
@@ -383,12 +351,18 @@ pub fn runtime_version() -> Option<String> {
     {
         Some("system-webview2:capture-v5".into())
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        Some("system-wkwebview-static-dns:capture-v1".into())
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         None
     }
 }
+#[cfg(windows)]
 struct TempProfile(PathBuf);
+#[cfg(windows)]
 impl Drop for TempProfile {
     fn drop(&mut self) {
         // Job termination is asynchronous; allow child file handles to close first.
@@ -484,9 +458,14 @@ impl Drop for BrowserJob {
     }
 }
 
+#[cfg(target_os = "macos")]
+#[path = "preview_macos.rs"]
+mod macos;
+
 #[cfg(windows)]
 #[path = "preview_webview.rs"]
 mod system_webview;
+#[cfg(windows)]
 struct Cdp {
     #[cfg(windows)]
     session: system_webview::Session,
@@ -496,26 +475,18 @@ fn needed_for_thumbnail(url: &str, resource_type: Option<&str>) -> bool {
     crate::public_web::web_url(url).is_ok()
         && !matches!(resource_type, Some("Media" | "WebSocket" | "EventSource"))
 }
+#[cfg(windows)]
 impl Cdp {
     fn send(&mut self, method: &str, params: Value) -> Result<u64, String> {
         self.id += 1;
         #[cfg(windows)]
         self.session.send(self.id, method, params)?;
-        #[cfg(not(windows))]
-        {
-            let _ = (method, params);
-            return Err("The system renderer is not supported on this platform yet.".into());
-        }
         Ok(self.id)
     }
     fn read(&mut self) -> Result<Option<Value>, String> {
         #[cfg(windows)]
         {
             self.session.read()
-        }
-        #[cfg(not(windows))]
-        {
-            Err("The system renderer is not supported on this platform yet.".into())
         }
     }
     fn paused(&mut self, event: &Value) -> Result<(), String> {
@@ -542,6 +513,7 @@ impl Cdp {
 fn viewport_can_capture(scene: &Value, stable: bool, age: Duration) -> bool {
     scene["drawable"] == true && (stable || age >= Duration::from_secs(5))
 }
+#[cfg(windows)]
 fn capture_page(
     cdp: &mut Cdp,
     url: &str,
@@ -770,16 +742,35 @@ fn rendered(image: Option<String>, page: Option<(String, String)>, url: &str) ->
 
 pub fn capture(url: &str, stop: &AtomicBool) -> Result<Rendered, String> {
     let url = crate::public_web::web_url(url)?;
-    crate::public_web::resolve_public(
-        url.host_str().unwrap(),
-        url.port_or_known_default().unwrap(),
-    )?;
+    let host = url.host_str().unwrap();
+    let port = url.port_or_known_default().unwrap();
+    if crate::public_web::system_proxy()
+        .route(host, port)?
+        .is_some()
+    {
+        crate::public_web::check_proxied(host, port)?;
+    } else {
+        crate::public_web::resolve_public(host, port)?;
+    }
     let deadline = Instant::now() + Duration::from_secs(22);
-    with_browser(stop, deadline, |cdp| {
-        capture_page(cdp, url.as_str(), deadline, stop)
-    })
+    #[cfg(target_os = "macos")]
+    {
+        macos::capture(url.as_str(), stop, deadline)
+    }
+    #[cfg(windows)]
+    {
+        with_browser(stop, deadline, |cdp| {
+            capture_page(cdp, url.as_str(), deadline, stop)
+        })
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = (stop, deadline);
+        Err("The system renderer is not supported on this platform yet.".into())
+    }
 }
 // One private system-renderer session, bounded Job Object and public-only proxy.
+#[cfg(windows)]
 fn with_browser<T>(
     stop: &AtomicBool,
     deadline: Instant,
@@ -789,11 +780,6 @@ fn with_browser<T>(
     {
         pool::run(stop, deadline, task)
     }
-    #[cfg(not(windows))]
-    {
-        let _ = (stop, deadline, task);
-        Err("The system renderer is not supported on this platform yet.".into())
-    }
 }
 
 pub fn render_pdf_cover(bytes: &[u8], stop: &AtomicBool) -> Result<String, String> {
@@ -801,6 +787,25 @@ pub fn render_pdf_cover(bytes: &[u8], stop: &AtomicBool) -> Result<String, Strin
         return Err("This is not a supported PDF document.".into());
     }
     let deadline = Instant::now() + Duration::from_secs(22);
+    #[cfg(target_os = "macos")]
+    {
+        macos::read_pdf(bytes, stop, deadline)?["preview"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or("The PDF renderer returned no cover.".into())
+    }
+    #[cfg(windows)]
+    {
+        read_pdf_webview(bytes, stop, deadline)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = (stop, deadline);
+        Err("The system renderer is not supported on this platform yet.".into())
+    }
+}
+#[cfg(windows)]
+fn read_pdf_webview(bytes: &[u8], stop: &AtomicBool, deadline: Instant) -> Result<String, String> {
     with_browser(stop, deadline, |cdp| {
         // Only our bundled modules and bytes run in this fresh about:blank page.
         // No remote module, PDF action, XFA script or original document URL runs.
@@ -1010,7 +1015,13 @@ mod tests {
                 .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
                 .unwrap();
         });
-        connect_upstream(address, "www.example.org:443", Duration::from_secs(2)).unwrap();
+        proxy_tunnel::connect(
+            crate::public_web::ProxyEndpoint::Http(address),
+            "www.example.org:443",
+            Instant::now() + Duration::from_secs(2),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
         task.join().unwrap();
         assert!(crate::public_web::resolve_public("127.0.0.1", 443).is_err());
         for host in ["127.0.0.1", "localhost", "intranet", "10.0.0.8", "[::1]"] {

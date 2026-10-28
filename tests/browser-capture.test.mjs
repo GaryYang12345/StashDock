@@ -15,6 +15,27 @@ import { EventEmitter } from 'node:events';
 import { createBrowserLibrary } from '../extension/library-client.js';
 import { startCaptureBridge } from '../plugins/stashdock/server/capture-bridge.mjs';
 import { once } from 'node:events';
+import { checkSetup } from '../extension/setup-client.js';
+
+test('a rejected real bridge setup reaches Save as its actual error and never writes a reference', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'stashdock-rejected-setup-'));
+  const library = createLocalLibrary({ dataDir: root, browserEnabled: () => false });
+  const bridge = startCaptureBridge(library, 0); await once(bridge, 'listening');
+  t.after(async () => { await new Promise(resolve => bridge.close(resolve)); library.close(); rmSync(root, { recursive: true, force: true }); });
+  const calls = [];
+  const fetcher = async (url, options) => {
+    const target = new URL(url); calls.push(target.pathname);
+    target.port = String(bridge.address().port);
+    return fetch(target, { ...options, headers: { ...options.headers, Origin: 'chrome-extension://' + 'a'.repeat(32) } });
+  };
+  const setup = () => checkSetup({ fetcher, browser: 'edge', extensionId: 'a'.repeat(32), version: '0.4.15' });
+  assert.equal((await setup()).connected, false);
+  assert.ok(!calls.includes('/v1/health'));
+  const client = createBrowserLibrary({ storage: { get: async () => ({}), set: async () => {} }, fetcher, setup });
+  await assert.rejects(client.save({ title: 'Rejected QA', kind: 'web', url: 'https://example.org/qa', content: 'Synthetic QA' }, { operationId: 'rejected-setup-qa-1234' }), /Invalid StashDock extension/);
+  assert.ok(!calls.includes('/v1/capture'), 'authorization failure cannot reach the mutation route');
+  assert.equal((await library.read()).length, 0);
+});
 
 test('browser bridge applies metadata and favorites only, retaining context and rejecting path/body edits', async t => {
   const root=mkdtempSync(join(tmpdir(),'stashdock-mcp-test-card-'));
@@ -79,7 +100,7 @@ test('extension is a save-only native sidebar with shared fields and minimal per
   assert.equal(manifest.action.default_popup,undefined);
   assert.equal(manifest.side_panel.default_path,'sidepanel.html');
   assert.equal(manifest.web_accessible_resources,undefined);
-  assert.deepEqual(manifest.permissions,['activeTab','scripting','storage','sidePanel']);
+  assert.deepEqual(manifest.permissions,['activeTab','scripting','storage','sidePanel','nativeMessaging']);
   assert.ok(!manifest.host_permissions.includes('<all_urls>'));
   assert.deepEqual(manifest.optional_host_permissions,['<all_urls>']);
   const popup=readFileSync('src/features/browser-extension/Popup.tsx','utf8');

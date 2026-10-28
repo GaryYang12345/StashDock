@@ -1,0 +1,2 @@
+// Generated from window_morph.rs and Arc motion. Do not edit.
+let handoffTokenJSON = #"{"expand":0.34,"collapse":0.23,"seed":1.5,"grow":0.14,"expandPanelFade":0.32,"expandFolderFade":0.28,"collapsePanelFadeStart":0.35,"collapsePanelFadeEnd":0.75,"collapseFolderScale":0.86,"collapseFolderMoveStart":0.3,"collapseFolderFadeStart":0.35,"collapseFolderFadeEnd":0.85,"enter":[0.16,1,0.3,1],"inOut":[0.65,0,0.35,1]}"#

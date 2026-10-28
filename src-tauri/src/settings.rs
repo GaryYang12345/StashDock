@@ -1,6 +1,9 @@
 //! Desktop preferences. UI choices stay small; OS effects are applied and
 //! validated before a preference is committed.
-use crate::library::LibraryState;
+use crate::{
+    desktop_updates::{self, UpdateInfo},
+    library::LibraryState,
+};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path, sync::Mutex, time::Duration};
@@ -33,7 +36,16 @@ pub fn follow_library_move(app: &AppHandle) {
         }
     });
 }
+#[cfg(not(target_os = "macos"))]
 pub const SHORTCUTS: [&str; 4] = ["Ctrl+Shift+Space", "Ctrl+Alt+Space", "Alt+Shift+Space", ""];
+
+#[cfg(target_os = "macos")]
+pub const SHORTCUTS: [&str; 4] = [
+    "Super+Shift+Space",
+    "Super+Alt+Space",
+    "Alt+Shift+Space",
+    "",
+];
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -79,9 +91,12 @@ pub struct SettingsState(pub Mutex<()>);
 pub struct SettingsInfo {
     preferences: Preferences,
     launch_at_login: bool,
+    launch_at_login_requires_approval: bool,
     version: &'static str,
     github_url: Option<String>,
     system_language: &'static str,
+    platform: &'static str,
+    shortcuts: [&'static str; 4],
 }
 
 pub fn read(state: &LibraryState) -> Result<Preferences, String> {
@@ -100,11 +115,27 @@ pub fn read(state: &LibraryState) -> Result<Preferences, String> {
     let prefs: Preferences = raw
         .and_then(|v| serde_json::from_str(&v).ok())
         .unwrap_or_default();
+    let prefs = platform_preferences(prefs);
     Ok(if validate(&prefs).is_ok() {
         prefs
     } else {
         Preferences::default()
     })
+}
+/// Platform migration must not reset unrelated saved preferences.
+fn platform_preferences(prefs: Preferences) -> Preferences {
+    #[cfg(target_os = "macos")]
+    {
+        let mut prefs = prefs;
+        prefs.shortcut = match prefs.shortcut.as_str() {
+            "Ctrl+Shift+Space" => "Super+Shift+Space".into(),
+            "Ctrl+Alt+Space" => "Super+Alt+Space".into(),
+            _ => prefs.shortcut,
+        };
+        prefs
+    }
+    #[cfg(not(target_os = "macos"))]
+    prefs
 }
 fn validate(prefs: &Preferences) -> Result<(), String> {
     if !SHORTCUTS.contains(&prefs.shortcut.as_str()) {
@@ -134,9 +165,12 @@ pub async fn get_desktop_settings(app: AppHandle) -> Result<SettingsInfo, String
         Ok(SettingsInfo {
             preferences: read(&state)?,
             launch_at_login: startup::enabled()?,
+            launch_at_login_requires_approval: startup_requires_approval(),
             version: env!("CARGO_PKG_VERSION"),
             github_url: github_repository().map(|r| format!("https://github.com/{r}")),
             system_language: system_language(),
+            platform: std::env::consts::OS,
+            shortcuts: SHORTCUTS,
         })
     })
     .await
@@ -209,20 +243,49 @@ pub fn update_tray(app: &AppHandle, preferences: &Preferences) {
     let chinese = preferences.language == Language::Zh
         || (preferences.language == Language::System && system_language() == "zh");
     let _ = crate::lifecycle::set_tray_language(app, chinese);
+    #[cfg(target_os = "macos")]
+    crate::folder_window::update_labels(
+        app,
+        chinese,
+        match preferences.theme {
+            Theme::Light => Some(tauri::Theme::Light),
+            Theme::Dark => Some(tauri::Theme::Dark),
+            Theme::System => None,
+        },
+    );
+    #[cfg(target_os = "macos")]
+    if let Err(error) = crate::macos_window::update_menu(app, chinese) {
+        eprintln!("StashDock menu: {error}");
+    }
     if let Some(tray) = app.tray_by_id("stashdock") {
         let label = if preferences.shortcut.is_empty() {
             "StashDock".into()
         } else {
-            format!("StashDock · {}", preferences.shortcut)
+            format!("StashDock · {}", shortcut_label(&preferences.shortcut))
         };
         let _ = tray.set_tooltip(Some(label));
     }
 }
-fn system_language() -> &'static str {
+fn shortcut_label(value: &str) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        return value
+            .replace("Super+", "⌘")
+            .replace("Shift+", "⇧")
+            .replace("Alt+", "⌥");
+    }
+    #[cfg(not(target_os = "macos"))]
+    value.to_owned()
+}
+pub(crate) fn system_language() -> &'static str {
     #[cfg(windows)]
     let system_chinese =
         unsafe { windows_sys::Win32::Globalization::GetUserDefaultUILanguage() & 0x03ff == 0x0004 };
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    let system_chinese = objc2_foundation::NSLocale::preferredLanguages()
+        .firstObject()
+        .is_some_and(|language| language.to_string().to_ascii_lowercase().starts_with("zh"));
+    #[cfg(not(any(windows, target_os = "macos")))]
     let system_chinese = false;
     if system_chinese {
         "zh"
@@ -230,8 +293,24 @@ fn system_language() -> &'static str {
         "en"
     }
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginItemStatus {
+    enabled: bool,
+    requires_approval: bool,
+}
+fn startup_requires_approval() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos_services::login_requires_approval()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
 #[tauri::command]
-pub async fn set_launch_at_login(enabled: bool, app: AppHandle) -> Result<bool, String> {
+pub async fn set_launch_at_login(enabled: bool, app: AppHandle) -> Result<LoginItemStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let settings = app.state::<SettingsState>();
         let _serial = settings
@@ -239,7 +318,10 @@ pub async fn set_launch_at_login(enabled: bool, app: AppHandle) -> Result<bool, 
             .lock()
             .map_err(|_| "Settings are busy. Try again.".to_string())?;
         startup::set(enabled)?;
-        startup::enabled()
+        Ok(LoginItemStatus {
+            enabled: startup::enabled()?,
+            requires_approval: startup_requires_approval(),
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -343,21 +425,10 @@ pub fn restart_desktop(app: AppHandle) {
     app.restart();
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateInfo {
-    status: &'static str,
-    version: Option<String>,
-    url: Option<String>,
-}
 #[tauri::command]
 pub async fn check_desktop_updates() -> Result<UpdateInfo, String> {
     let Some(repo) = github_repository() else {
-        return Ok(UpdateInfo {
-            status: "unconfigured",
-            version: None,
-            url: None,
-        });
+        return Ok(UpdateInfo::unconfigured());
     };
     tauri::async_runtime::spawn_blocking(move || {
         let client = reqwest::blocking::Client::builder()
@@ -368,7 +439,7 @@ pub async fn check_desktop_updates() -> Result<UpdateInfo, String> {
             .map_err(|e| e.to_string())?;
         let mut response = client
             .get(format!(
-                "https://api.github.com/repos/{repo}/releases/latest"
+                "https://api.github.com/repos/{repo}/releases?per_page=30"
             ))
             .send()
             .map_err(|_| "Updates could not be checked. Check your connection and try again.")?
@@ -387,36 +458,17 @@ pub async fn check_desktop_updates() -> Result<UpdateInfo, String> {
         }
         let value: serde_json::Value =
             serde_json::from_str(&raw).map_err(|_| "The update response could not be read.")?;
-        let tag = value["tag_name"]
-            .as_str()
-            .ok_or("The release version is missing.")?;
-        let newer = newer_version(tag, env!("CARGO_PKG_VERSION"))?;
-        Ok(UpdateInfo {
-            status: if newer { "available" } else { "current" },
-            version: Some(tag.into()),
-            url: Some(format!("https://github.com/{repo}/releases/latest")),
-        })
+        desktop_updates::select(
+            &value,
+            &repo,
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        )
     })
     .await
     .map_err(|_| "Updates could not be checked. Try again.".to_string())?
 }
-fn newer_version(candidate: &str, current: &str) -> Result<bool, String> {
-    fn parse(value: &str) -> Option<[u64; 3]> {
-        let values: Vec<_> = value
-            .strip_prefix('v')
-            .unwrap_or(value)
-            .split('.')
-            .map(str::parse::<u64>)
-            .collect::<Result<_, _>>()
-            .ok()?;
-        values.try_into().ok()
-    }
-    Ok(
-        parse(candidate).ok_or("The release version is not supported.")?
-            > parse(current).ok_or("The installed version is invalid.")?,
-    )
-}
-
 #[cfg(windows)]
 mod startup {
     use std::{os::windows::process::CommandExt, process::Command};
@@ -465,7 +517,16 @@ mod startup {
         Ok(())
     }
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod startup {
+    pub fn enabled() -> Result<bool, String> {
+        Ok(crate::macos_services::login_enabled())
+    }
+    pub fn set(enabled: bool) -> Result<(), String> {
+        crate::macos_services::set_login(enabled)
+    }
+}
+#[cfg(not(any(windows, target_os = "macos")))]
 mod startup {
     pub fn enabled() -> Result<bool, String> {
         Ok(false)
@@ -513,11 +574,35 @@ mod tests {
         )
         .is_err());
     }
+    #[cfg(target_os = "macos")]
     #[test]
-    fn updates_compare_numbers_not_strings_and_reject_unexpected_versions() {
-        assert!(newer_version("v0.10.0", "0.2.2").unwrap());
-        assert!(!newer_version("0.2.2", "0.2.2").unwrap());
-        assert!(newer_version("0.3.0-beta", "0.2.2").is_err());
+    fn mac_shortcut_migration_preserves_appearance_and_floating_policy() {
+        for (old, expected) in [
+            ("Ctrl+Shift+Space", "Super+Shift+Space"),
+            ("Ctrl+Alt+Space", "Super+Alt+Space"),
+            ("Super+Alt+Space", "Super+Alt+Space"),
+            ("", ""),
+        ] {
+            let prefs = platform_preferences(Preferences {
+                language: Language::Zh,
+                theme: Theme::Dark,
+                shortcut: old.into(),
+                floating_window: false,
+            });
+            assert_eq!(prefs.shortcut, expected);
+            assert_eq!(prefs.language, Language::Zh);
+            assert_eq!(prefs.theme, Theme::Dark);
+            assert!(!prefs.floating_window);
+            assert!(validate(&prefs).is_ok());
+            if !expected.is_empty() {
+                assert!(expected
+                    .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                    .is_ok());
+            }
+        }
+    }
+    #[test]
+    fn update_repository_is_the_product_repository() {
         assert_eq!(
             github_repository().as_deref(),
             Some("GaryYang12345/StashDock")

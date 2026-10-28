@@ -2,8 +2,8 @@
 //! of native bounds, Z-order or application lifetime.
 use crate::desktop_window_policy::{self as policy, Intent, Mode};
 use crate::window_frame;
-use crate::window_morph;
 use crate::window_geometry::{self, Geometry, SavedWindows, WorkArea};
+use crate::window_morph;
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
@@ -12,7 +12,7 @@ use std::{
         Mutex,
     },
 };
-use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Window};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Surface {
@@ -136,7 +136,12 @@ pub fn set_floating_enabled(app: &AppHandle, enabled: bool) -> Result<(), String
                 .unwrap_or_else(|e| e.into_inner())
                 .mode;
             let next = policy::preference_mode(previous, enabled);
-            if next != previous {
+            #[cfg(target_os = "macos")]
+            let presentation_pending =
+                crate::macos_handoff::preparing() || crate::macos_handoff::active();
+            #[cfg(not(target_os = "macos"))]
+            let presentation_pending = false;
+            if next != previous || presentation_pending {
                 apply(&copy, next)?;
             }
             let state = copy.state::<DesktopWindows>();
@@ -153,7 +158,7 @@ pub fn set_floating_enabled(app: &AppHandle, enabled: bool) -> Result<(), String
     .map_err(|e| e.to_string())?;
     receive.recv().map_err(|e| e.to_string())?
 }
-fn surface(window: &WebviewWindow) -> Result<Surface, String> {
+fn surface(window: &Window) -> Result<Surface, String> {
     match window.label() {
         "main" => Ok(Surface::Panel),
         "folder" => Ok(Surface::Folder),
@@ -162,7 +167,7 @@ fn surface(window: &WebviewWindow) -> Result<Surface, String> {
 }
 
 fn configure(
-    window: &WebviewWindow,
+    window: &Window,
     saved: Option<Geometry>,
     folder: bool,
     resize: bool,
@@ -213,9 +218,7 @@ fn configure(
         }
         let desired_position = tauri::PhysicalPosition::new(g.x, g.y);
         if window.outer_position().map_err(|e| e.to_string())? != desired_position {
-            window
-                .set_position(desired_position)
-                .map_err(|e| e.to_string())?;
+            window_frame::set_outer_position(window, desired_position)?;
         }
     } else {
         window.center().map_err(|e| e.to_string())?;
@@ -245,7 +248,7 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
             reconcile_queued: false,
             panel_frame: None,
             panel_ready: false,
-            folder_ready: false,
+            folder_ready: cfg!(target_os = "macos"),
             saved: saved.clone(),
             expansion: None,
             floating_enabled: crate::settings::read(&app.state::<crate::library::LibraryState>())?
@@ -256,10 +259,10 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
         persistence: Persistence::default(),
     });
     let main = app
-        .get_webview_window("main")
+        .get_window("main")
         .ok_or("The panel window is missing")?;
     let folder = app
-        .get_webview_window("folder")
+        .get_window("folder")
         .ok_or("The folder window is missing")?;
     // A hidden Win32 window has not settled its non-client frame metrics yet.
     // Position now; restore the panel's client size once its real frame is live.
@@ -273,7 +276,7 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
     remember_panel_frame(app, &main);
     Ok(())
 }
-fn remember_panel_frame(app: &AppHandle, window: &WebviewWindow) {
+fn remember_panel_frame(app: &AppHandle, window: &Window) {
     if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
         return;
     }
@@ -297,7 +300,7 @@ fn remember_panel_frame(app: &AppHandle, window: &WebviewWindow) {
         }
     }
 }
-pub fn remember(app: &AppHandle, window: &WebviewWindow) {
+pub fn remember(app: &AppHandle, window: &Window) {
     let Some(state) = app.try_state::<DesktopWindows>() else {
         return;
     };
@@ -321,7 +324,7 @@ pub fn remember(app: &AppHandle, window: &WebviewWindow) {
     if window.is_minimized().unwrap_or(false) {
         return;
     }
-    if window.is_maximized().unwrap_or(false) {
+    if window.is_maximized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false) {
         return;
     }
     let (Ok(p), Ok(size), Ok(scale)) = (
@@ -396,15 +399,15 @@ pub fn persist_later(app: &AppHandle) {
 }
 pub fn persist_now(app: &AppHandle) {
     for label in ["main", "folder"] {
-        if let Some(w) = app.get_webview_window(label) {
+        if let Some(w) = app.get_window(label) {
             remember(app, &w);
         }
     }
     write_settings(app);
 }
 
-/// Direct native show/hide. The two WebViews stay mounted, with no animation
-/// state, temporary visual window or renderer completion handshake.
+/// One native intent owner. WebViews stay mounted; platform presentation may
+/// prepare an own-content image, but only this executor commits the next mode.
 fn dispatch(app: &AppHandle, intent: Intent) -> Result<Status, String> {
     let state = app.state::<DesktopWindows>();
     let (mode, last, floating) = {
@@ -415,12 +418,97 @@ fn dispatch(app: &AppHandle, intent: Intent) -> Result<Status, String> {
     // mode when a shortcut arrives before a queued system notification.
     let effective = native_action(app, mode)?
         .map_or(mode, |event| policy::resolve(mode, last, floating, event));
+    #[cfg(target_os = "macos")]
+    let effective = if crate::macos_handoff::preparing() {
+        state
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pending
+            .unwrap_or(effective)
+    } else {
+        effective
+    };
     let target = policy::resolve(effective, last, floating, intent);
+    #[cfg(target_os = "macos")]
+    {
+        if (crate::macos_handoff::preparing() || crate::macos_handoff::active())
+            && target == effective
+        {
+            return Ok(status(app));
+        }
+        if matches!(
+            (mode, target),
+            (Mode::Panel, Mode::Folder) | (Mode::Folder, Mode::Panel)
+        ) && crate::macos_handoff::prepare(app, target)
+        {
+            state
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .pending = Some(target);
+            crate::macos_handoff::suspend_search(app);
+            emit(app);
+            return Ok(status(app));
+        }
+    }
     apply(app, target)
 }
 
+#[cfg(target_os = "macos")]
+pub(crate) fn focus_folder_search(app: &AppHandle) -> bool {
+    let state = app.state::<DesktopWindows>();
+    let requested = {
+        let inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.pending.unwrap_or(inner.mode)
+    };
+    if requested != Mode::Folder {
+        return false;
+    }
+    if crate::macos_handoff::preparing() || crate::macos_handoff::active() {
+        crate::macos_handoff::focus_search_when_ready();
+    } else {
+        crate::folder_search::focus();
+    }
+    true
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn complete_macos_handoff(app: &AppHandle, target: Mode) {
+    if let Err(error) = apply(app, target) {
+        crate::macos_handoff::cancel();
+        app.state::<DesktopWindows>()
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pending = None;
+        macos_handoff_finished(app);
+        emit(app);
+        eprintln!("Could not switch StashDock windows: {error}");
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn macos_handoff_finished(app: &AppHandle) {
+    let mode = app
+        .state::<DesktopWindows>()
+        .inner
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .mode;
+    if mode == Mode::Folder && !crate::macos_handoff::preparing() {
+        if let Err(error) = crate::folder_search::attach(app) {
+            eprintln!("Could not prepare the StashDock search: {error}");
+        }
+    }
+}
+
 /// One inactive-window policy, reused by normal transitions and rollback.
-fn conceal(window: &WebviewWindow, which: Surface, mode: Mode) -> Result<(), String> {
+fn conceal(window: &Window, which: Surface, mode: Mode) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    if which == Surface::Panel && mode == Mode::Folder {
+        return window_frame::hide_immediately(window);
+    }
     if which == Surface::Panel && matches!(mode, Mode::Folder | Mode::Minimized) {
         if !window.is_visible().map_err(|e| e.to_string())? {
             window_frame::show_immediately(window)?;
@@ -432,6 +520,20 @@ fn conceal(window: &WebviewWindow, which: Surface, mode: Mode) -> Result<(), Str
 }
 
 fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
+    #[cfg(target_os = "macos")]
+    let mut macos_handoff = crate::macos_handoff::take_prepared(mode);
+    #[cfg(target_os = "macos")]
+    if macos_handoff.is_none() {
+        crate::macos_handoff::cancel();
+    }
+    #[cfg(target_os = "macos")]
+    if mode == Mode::Folder
+        && app
+            .get_window("main")
+            .is_some_and(|w| w.is_fullscreen().unwrap_or(false))
+    {
+        return Err("Leave full screen before showing the floating folder.".into());
+    }
     let state = app.state::<DesktopWindows>();
     let old_mode = {
         let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -441,7 +543,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
     let old = mode_surface(old_mode);
     let target = mode_surface(mode);
     if let Some(previous) = old {
-        if let Some(window) = app.get_webview_window(previous.label()) {
+        if let Some(window) = app.get_window(previous.label()) {
             remember(app, &window);
         }
     }
@@ -452,7 +554,9 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
         // step fails, the handoff stays direct.
         let handoff = match (old, target) {
             (Some(Surface::Folder), Some(Surface::Panel)) => Some(window_morph::Direction::Expand),
-            (Some(Surface::Panel), Some(Surface::Folder)) => Some(window_morph::Direction::Collapse),
+            (Some(Surface::Panel), Some(Surface::Folder)) => {
+                Some(window_morph::Direction::Collapse)
+            }
             _ => None,
         }
         .filter(|direction| {
@@ -461,7 +565,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             window_morph::enabled()
                 && (*direction == window_morph::Direction::Expand
                     || !app
-                        .get_webview_window("main")
+                        .get_window("main")
                         .is_some_and(|panel| panel.is_minimized().unwrap_or(false)))
         });
         let mut folder_cloak = None;
@@ -470,7 +574,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
         let mut morph = None;
         if let Some(next) = target {
             let window = app
-                .get_webview_window(next.label())
+                .get_window(next.label())
                 .ok_or("The requested window is unavailable")?;
             restore = Some(window_frame::PreparedRestore::new(&window)?);
             if handoff == Some(window_morph::Direction::Expand) {
@@ -505,6 +609,12 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             window
                 .set_always_on_top(next == Surface::Folder)
                 .map_err(|e| e.to_string())?;
+            #[cfg(target_os = "macos")]
+            if let Some(token) = macos_handoff {
+                if !crate::macos_handoff::stage(token, app) {
+                    macos_handoff = None;
+                }
+            }
             // On collapse, reveal the already-mounted folder before
             // minimizing the panel. Both operations are synchronous on this UI thread,
             // with native fades disabled, so no deliberate empty interval or
@@ -513,7 +623,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             let reveal_first = old == Some(Surface::Panel) && next == Surface::Folder;
             if old != target && !reveal_first && handoff.is_none() {
                 if let Some(previous) = old {
-                    if let Some(outgoing) = app.get_webview_window(previous.label()) {
+                    if let Some(outgoing) = app.get_window(previous.label()) {
                         window_frame::hide_immediately(&outgoing)?;
                     }
                 }
@@ -525,7 +635,12 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
                 // one it had when the user collapsed it.
                 #[cfg(windows)]
                 {
-                    morph = start_morph(app, window_morph::Direction::Collapse, &mut folder_cloak, &mut panel_cloak);
+                    morph = start_morph(
+                        app,
+                        window_morph::Direction::Collapse,
+                        &mut folder_cloak,
+                        &mut panel_cloak,
+                    );
                 }
             }
             // Rollback below restores the source if reveal/focus fails.
@@ -544,7 +659,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
                 }
                 if morph.is_none() && direction == window_morph::Direction::Expand {
                     // Direct fallback: the folder is hidden before the panel shows.
-                    if let Some(outgoing) = app.get_webview_window(Surface::Folder.label()) {
+                    if let Some(outgoing) = app.get_window(Surface::Folder.label()) {
                         window_frame::hide_immediately(&outgoing)?;
                     }
                 }
@@ -565,8 +680,14 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             // The folder search is present (with nothing visible) only
             // while the folder is; it is shown before the folder takes focus.
             if next == Surface::Folder {
-                if let Err(error) = crate::folder_search::attach(app) {
-                    eprintln!("Could not prepare the StashDock search: {error}");
+                #[cfg(target_os = "macos")]
+                let defer_search = macos_handoff.is_some();
+                #[cfg(not(target_os = "macos"))]
+                let defer_search = false;
+                if !defer_search {
+                    if let Err(error) = crate::folder_search::attach(app) {
+                        eprintln!("Could not prepare the StashDock search: {error}");
+                    }
                 }
             }
         }
@@ -575,7 +696,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
         }
         for surface in [Surface::Panel, Surface::Folder] {
             if Some(surface) != target {
-                if let Some(window) = app.get_webview_window(surface.label()) {
+                if let Some(window) = app.get_window(surface.label()) {
                     conceal(&window, surface, mode)?;
                 }
             }
@@ -598,7 +719,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             restore.reveal()?;
         }
         if let Some(next) = target {
-            app.get_webview_window(next.label())
+            app.get_window(next.label())
                 .ok_or("The requested window is unavailable")?
                 .set_focus()
                 .map_err(|e| e.to_string())?;
@@ -612,8 +733,10 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
         Ok(())
     })();
     if let Err(error) = result {
+        #[cfg(target_os = "macos")]
+        crate::macos_handoff::cancel();
         for surface in [Surface::Panel, Surface::Folder] {
-            if let Some(window) = app.get_webview_window(surface.label()) {
+            if let Some(window) = app.get_window(surface.label()) {
                 let _ = window.set_always_on_top(surface == Surface::Folder);
                 if Some(surface) == old {
                     let mut restore = window_frame::PreparedRestore::new(&window).ok();
@@ -641,7 +764,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
             // Read the actual settled native position, not the requested one.
             // Moving the panel later is the only reason to abandon this anchor.
             inner.expansion = inner.saved.folder.and_then(|folder| {
-                app.get_webview_window("main")?
+                app.get_window("main")?
                     .outer_position()
                     .ok()
                     .map(|p| Expansion {
@@ -655,7 +778,7 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
         inner.mode = mode;
         inner.pending = None;
         inner.maximized = app
-            .get_webview_window("main")
+            .get_window("main")
             .is_some_and(|window| window.is_maximized().unwrap_or(false));
         if matches!(mode, Mode::Panel | Mode::Folder) {
             inner.last = mode;
@@ -663,6 +786,10 @@ fn apply(app: &AppHandle, mode: Mode) -> Result<Status, String> {
     }
     persist_later(app);
     emit(app);
+    #[cfg(target_os = "macos")]
+    if let Some(token) = macos_handoff {
+        crate::macos_handoff::play(token);
+    }
     Ok(status(app))
 }
 /// Prepare the travel between the folder and the panel with live DWM
@@ -676,18 +803,29 @@ fn start_morph(
     folder_cloak: &mut Option<window_frame::Cloak>,
     panel_cloak: &mut Option<window_frame::Cloak>,
 ) -> Option<window_morph::Morph> {
-    let panel = app.get_webview_window("main")?;
-    let folder = app.get_webview_window("folder")?;
-    let rect = |window: &WebviewWindow| -> Option<window_morph::Rect> {
+    let panel = app.get_window("main")?;
+    let folder = app.get_window("folder")?;
+    let rect = |window: &Window| -> Option<window_morph::Rect> {
         let p = window.outer_position().ok()?;
         let s = window.outer_size().ok()?;
-        Some(window_morph::Rect { left: p.x, top: p.y, right: p.x + s.width as i32, bottom: p.y + s.height as i32 })
+        Some(window_morph::Rect {
+            left: p.x,
+            top: p.y,
+            right: p.x + s.width as i32,
+            bottom: p.y + s.height as i32,
+        })
     };
     let (panel_rect, folder_rect) = (rect(&panel)?, rect(&folder)?);
-    let handle = |window: &WebviewWindow| window.hwnd().ok().map(|h| h.0 as isize);
+    let handle = |window: &Window| window.hwnd().ok().map(|h| h.0 as isize);
     // Let a just-shown (cloaked) panel compose its first frame at its size.
     window_morph::settle();
-    let morph = match window_morph::Morph::begin(handle(&panel)?, handle(&folder)?, panel_rect, folder_rect, direction) {
+    let morph = match window_morph::Morph::begin(
+        handle(&panel)?,
+        handle(&folder)?,
+        panel_rect,
+        folder_rect,
+        direction,
+    ) {
         Ok(morph) => morph,
         Err(error) => {
             eprintln!("StashDock transition skipped: {error}");
@@ -695,7 +833,11 @@ fn start_morph(
         }
     };
     // The overlay starts drawing the source as the real one is hidden.
-    let source = if direction == window_morph::Direction::Expand { &folder } else { &panel };
+    let source = if direction == window_morph::Direction::Expand {
+        &folder
+    } else {
+        &panel
+    };
     match morph.take_over(|| window_frame::Cloak::new(source)) {
         Ok(cloak) => {
             if direction == window_morph::Direction::Expand {
@@ -713,12 +855,8 @@ fn start_morph(
 }
 
 fn prepare_placement(app: &AppHandle) -> Result<(), String> {
-    let folder = app
-        .get_webview_window("folder")
-        .ok_or("Folder is unavailable")?;
-    let panel = app
-        .get_webview_window("main")
-        .ok_or("Panel is unavailable")?;
+    let folder = app.get_window("folder").ok_or("Folder is unavailable")?;
+    let panel = app.get_window("main").ok_or("Panel is unavailable")?;
     let position = folder.outer_position().map_err(|e| e.to_string())?;
     let scale = folder.scale_factor().map_err(|e| e.to_string())?;
     // Anchor to the actual native artwork square.
@@ -777,12 +915,8 @@ fn prepare_placement(app: &AppHandle) -> Result<(), String> {
 }
 
 fn prepare_folder_placement(app: &AppHandle) -> Result<(), String> {
-    let panel = app
-        .get_webview_window("main")
-        .ok_or("Panel is unavailable")?;
-    let folder = app
-        .get_webview_window("folder")
-        .ok_or("Folder is unavailable")?;
+    let panel = app.get_window("main").ok_or("Panel is unavailable")?;
+    let folder = app.get_window("folder").ok_or("Folder is unavailable")?;
     let frame = if panel.is_minimized().map_err(|e| e.to_string())? {
         app.state::<DesktopWindows>()
             .inner
@@ -852,6 +986,25 @@ fn prepare_folder_placement(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+pub fn show_panel(app: &AppHandle) {
+    let copy = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Err(e) = dispatch(&copy, Intent::Open) {
+            eprintln!("Could not reopen StashDock: {e}");
+        }
+    });
+}
+#[cfg(target_os = "macos")]
+pub fn minimize(app: &AppHandle) {
+    let copy = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Err(e) = dispatch(&copy, Intent::Minimize) {
+            eprintln!("Could not minimize StashDock: {e}");
+        }
+    });
+}
+
 pub fn show_last(app: &AppHandle) {
     let copy = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -880,7 +1033,7 @@ pub fn window_event(app: &AppHandle, window: &tauri::Window, event: &tauri::Wind
     let Some(state) = app.try_state::<DesktopWindows>() else {
         return;
     };
-    if let Some(webview) = app.get_webview_window(window.label()) {
+    if let Some(webview) = app.get_window(window.label()) {
         if matches!(event, tauri::WindowEvent::Focused(false)) {
             remember(app, &webview);
             persist_later(app);
@@ -929,9 +1082,7 @@ fn reconcile_native(app: &AppHandle) -> Result<Status, String> {
 }
 
 fn native_action(app: &AppHandle, mode: Mode) -> Result<Option<Intent>, String> {
-    let panel = app
-        .get_webview_window("main")
-        .ok_or("Panel is unavailable")?;
+    let panel = app.get_window("main").ok_or("Panel is unavailable")?;
     Ok(policy::native_intent(
         mode,
         panel.is_visible().map_err(|e| e.to_string())?,
@@ -996,12 +1147,12 @@ pub async fn open_panel(app: &AppHandle) -> Result<(), String> {
         .map(|_| ())
 }
 #[tauri::command]
-pub fn desktop_window_status(window: WebviewWindow) -> Result<Status, String> {
+pub fn desktop_window_status(window: Window) -> Result<Status, String> {
     surface(&window)?;
     Ok(status(window.app_handle()))
 }
 #[tauri::command]
-pub async fn set_desktop_surface(window: WebviewWindow, target: Surface) -> Result<Status, String> {
+pub async fn set_desktop_surface(window: Window, target: Surface) -> Result<Status, String> {
     surface(&window)?;
     on_ui(window.app_handle().clone(), move |app| {
         dispatch(
@@ -1015,7 +1166,7 @@ pub async fn set_desktop_surface(window: WebviewWindow, target: Surface) -> Resu
     .await
 }
 #[tauri::command]
-pub async fn hide_stashdock(window: WebviewWindow) -> Result<Status, String> {
+pub async fn hide_stashdock(window: Window) -> Result<Status, String> {
     surface(&window)?;
     on_ui(window.app_handle().clone(), |app| {
         if !floating_enabled(app) {
@@ -1027,7 +1178,7 @@ pub async fn hide_stashdock(window: WebviewWindow) -> Result<Status, String> {
     .await
 }
 #[tauri::command]
-pub async fn desktop_window_ready(window: WebviewWindow) -> Result<Status, String> {
+pub async fn desktop_window_ready(window: Window) -> Result<Status, String> {
     let which = surface(&window)?;
     on_ui(window.app_handle().clone(), move |app| {
         let state = app.state::<DesktopWindows>();
@@ -1048,8 +1199,7 @@ pub async fn desktop_window_ready(window: WebviewWindow) -> Result<Status, Strin
                 .saved
                 .panel;
             configure(
-                &app.get_webview_window("main")
-                    .ok_or("Panel is unavailable")?,
+                &app.get_window("main").ok_or("Panel is unavailable")?,
                 saved,
                 false,
                 true,

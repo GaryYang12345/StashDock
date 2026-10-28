@@ -38,18 +38,69 @@ pub struct BrowserBookmark {
     favicon_url: Option<String>,
 }
 
-fn browser_sources(local: &Path, roaming: &Path) -> Vec<SourceFile> {
+#[cfg(test)]
+fn browser_sources(platform: &str, env: impl Fn(&str) -> Option<PathBuf>) -> Vec<SourceFile> {
+    browser_sources_with_errors(platform, env, None, |_, _| {})
+}
+
+fn browser_sources_with_errors(
+    platform: &str,
+    env: impl Fn(&str) -> Option<PathBuf>,
+    only_browser: Option<&str>,
+    mut on_error: impl FnMut(&str, std::io::Error),
+) -> Vec<SourceFile> {
+    let layouts: Value =
+        serde_json::from_str(include_str!("../../shared/browser-profile-layouts.json"))
+            .expect("valid browser profile layouts");
     let mut sources = Vec::new();
-    for (browser, root, firefox) in [
-        ("Chrome", local.join("Google/Chrome/User Data"), false),
-        ("Edge", local.join("Microsoft/Edge/User Data"), false),
-        ("Firefox", roaming.join("Mozilla/Firefox/Profiles"), true),
-    ] {
-        let Ok(root_absolute) = root.canonicalize() else {
+    let Some(entries) = layouts[platform].as_array() else {
+        return sources;
+    };
+    for entry in entries {
+        let Some(base) = env(entry["base"].as_str().unwrap()) else {
             continue;
         };
-        let Ok(entries) = fs::read_dir(&root) else {
+        let browser = entry["browser"].as_str().unwrap();
+        if only_browser.is_some_and(|name| name != browser) {
             continue;
+        }
+        let root = base.join(entry["path"].as_str().unwrap());
+        let firefox = entry["id"] == "firefox";
+        let files = entry["files"]
+            .as_array()
+            .expect("known browser bookmark files");
+        let root_absolute = match root.canonicalize() {
+            Ok(path) => path,
+            Err(error) => {
+                on_error(browser, error);
+                continue;
+            }
+        };
+        if browser == "Safari" {
+            let path = root.join("Bookmarks.plist");
+            match path.canonicalize() {
+                Ok(path) if path.starts_with(&root_absolute) && path.is_file() => {
+                    sources.push(SourceFile {
+                        source: BrowserSource {
+                            id: "safari:Default".into(),
+                            browser: "Safari".into(),
+                            profile: "Default".into(),
+                        },
+                        paths: vec![path],
+                        firefox: false,
+                    })
+                }
+                Ok(_) => {}
+                Err(error) => on_error(browser, error),
+            }
+            continue;
+        }
+        let entries = match fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(error) => {
+                on_error(browser, error);
+                continue;
+            }
         };
         let names: Value = fs::read(root.join("Local State"))
             .ok()
@@ -64,18 +115,19 @@ fn browser_sources(local: &Path, roaming: &Path) -> Vec<SourceFile> {
             {
                 continue;
             }
-            // Local and account bookmarks are separate live stores in Chromium.
-            // Discover a profile even when only its account store exists.
-            let files: &[&str] = if firefox {
-                &["places.sqlite"]
-            } else {
-                &["Bookmarks", "AccountBookmarks"]
-            };
-            let paths: Vec<_> = files
-                .iter()
-                .filter_map(|file| entry.path().join(file).canonicalize().ok())
-                .filter(|absolute| absolute.starts_with(&root_absolute) && absolute.is_file())
-                .collect();
+            let mut paths = Vec::new();
+            for file in files.iter().filter_map(Value::as_str) {
+                match entry.path().join(file).canonicalize() {
+                    Ok(path) if path.starts_with(&root_absolute) && path.is_file() => {
+                        paths.push(path)
+                    }
+                    Ok(_) => {} // A redirected bookmark file is outside the selected browser root.
+                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                        on_error(browser, error)
+                    }
+                    Err(_) => {} // Either local or account storage may legitimately be absent.
+                }
+            }
             if paths.is_empty() {
                 continue;
             }
@@ -107,10 +159,27 @@ fn browser_sources(local: &Path, roaming: &Path) -> Vec<SourceFile> {
 }
 
 fn discovered_sources() -> Result<Vec<SourceFile>, String> {
-    let local = std::env::var_os("LOCALAPPDATA")
-        .ok_or("Browser import is currently supported on Windows.")?;
-    let roaming = std::env::var_os("APPDATA").ok_or("Browser profiles could not be located.")?;
-    Ok(browser_sources(Path::new(&local), Path::new(&roaming)))
+    let platform = if cfg!(windows) {
+        "win32"
+    } else if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        return Err("Browser import is not available on this platform.".into());
+    };
+    let mut denied = false;
+    let sources = browser_sources_with_errors(
+        platform,
+        |name| std::env::var_os(name).map(PathBuf::from),
+        None,
+        |_, error| {
+            denied |= error.kind() == std::io::ErrorKind::PermissionDenied
+                || (cfg!(unix) && error.raw_os_error() == Some(1));
+        },
+    );
+    if sources.is_empty() && denied {
+        return Err("Browser data access was denied. Choose a bookmark file to continue.".into());
+    }
+    Ok(sources)
 }
 
 fn date_from_micros(value: i128) -> Option<String> {
@@ -207,23 +276,31 @@ fn chromium_bookmarks(path: &Path) -> Result<Vec<BrowserBookmark>, String> {
     }
     Ok(items)
 }
+fn firefox_read_error(error: rusqlite::Error) -> String {
+    match error.sqlite_error_code() {
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) =>
+            "Firefox is using its bookmarks. Quit Firefox, then click Refresh bookmarks.".into(),
+        _ => "Firefox bookmarks could not be read. Try again after quitting Firefox, or import an exported bookmark HTML file.".into(),
+    }
+}
+
 fn firefox_bookmarks(path: &Path) -> Result<Vec<BrowserBookmark>, String> {
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .map_err(|_| "Firefox bookmarks are unavailable. Close Firefox and retry.")?;
+    .map_err(firefox_read_error)?;
     connection
         .busy_timeout(Duration::from_millis(1000))
-        .map_err(|e| e.to_string())?;
+        .map_err(firefox_read_error)?;
     // One read transaction keeps folder names and bookmarks in the same snapshot.
     connection
         .execute_batch("BEGIN")
-        .map_err(|_| "Firefox bookmarks are busy. Retry in a moment.")?;
+        .map_err(firefox_read_error)?;
     let mut folders = HashMap::new();
     let mut statement = connection
-        .prepare("SELECT id, parent, COALESCE(title, ''), guid FROM moz_bookmarks WHERE type = 2")
-        .map_err(|_| "This Firefox bookmark format is not supported.")?;
+        .prepare("SELECT id, parent, COALESCE(title, ''), guid FROM moz_bookmarks WHERE type = 2 LIMIT 50001")
+        .map_err(firefox_read_error)?;
     let rows = statement
         .query_map([], |row| {
             Ok((
@@ -233,12 +310,15 @@ fn firefox_bookmarks(path: &Path) -> Result<Vec<BrowserBookmark>, String> {
                 row.get::<_, String>(3)?,
             ))
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(firefox_read_error)?;
     for row in rows {
-        let (id, parent, title, guid) = row.map_err(|e| e.to_string())?;
+        let (id, parent, title, guid) = row.map_err(firefox_read_error)?;
         folders.insert(id, (parent, title, guid));
+        if folders.len() > MAX_BOOKMARKS {
+            return Err("This bookmark collection is too large to import.".into());
+        }
     }
-    let mut statement = connection.prepare("SELECT COALESCE(b.title, p.title, ''), p.url, b.parent, b.dateAdded FROM moz_bookmarks b JOIN moz_places p ON p.id = b.fk WHERE b.type = 1 ORDER BY b.id LIMIT 50001").map_err(|_| "Firefox bookmarks could not be read. Close Firefox and retry.")?;
+    let mut statement = connection.prepare("SELECT COALESCE(b.title, p.title, ''), p.url, b.parent, b.dateAdded FROM moz_bookmarks b JOIN moz_places p ON p.id = b.fk WHERE b.type = 1 ORDER BY b.id LIMIT 50001").map_err(firefox_read_error)?;
     let rows = statement
         .query_map([], |row| {
             Ok((
@@ -248,11 +328,10 @@ fn firefox_bookmarks(path: &Path) -> Result<Vec<BrowserBookmark>, String> {
                 row.get::<_, i64>(3)?,
             ))
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(firefox_read_error)?;
     let mut items = Vec::new();
     for row in rows {
-        let (title, url, mut parent, date) =
-            row.map_err(|_| "Firefox bookmarks are busy. Retry the import.")?;
+        let (title, url, mut parent, date) = row.map_err(firefox_read_error)?;
         let mut path = Vec::new();
         let mut seen = HashSet::new();
         let mut is_tag = false;
@@ -333,10 +412,161 @@ fn cached_bookmark_icons(bookmarks_path: &Path, items: &mut [BrowserBookmark]) {
 
 #[tauri::command]
 pub async fn list_browser_sources() -> Result<Vec<BrowserSource>, String> {
+    // On Mac, obtain user-selected access before touching another app's data.
+    // The independent helper retains its snapshot API for explicit callers.
+    if cfg!(target_os = "macos") {
+        return Ok(Vec::new());
+    }
     tauri::async_runtime::spawn_blocking(browser_sources_snapshot)
         .await
         .map_err(|_| "Browser profiles could not be located.")?
 }
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum BrowserImportState {
+    Ready {
+        bookmarks: Vec<BrowserBookmark>,
+    },
+    NeedsAccess {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        folder: Option<String>,
+    },
+    Unavailable,
+}
+
+fn browser_access_prompt(platform: &str, browser: &str) -> BrowserImportState {
+    let layouts: Value =
+        serde_json::from_str(include_str!("../../shared/browser-profile-layouts.json"))
+            .expect("valid browser layouts");
+    let folder = if platform == "darwin" {
+        layouts[platform]
+            .as_array()
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|entry| entry["browser"].as_str() == Some(browser))
+            })
+            .and_then(|entry| entry["path"].as_str())
+            .map(|path| format!("~/{path}"))
+    } else {
+        None
+    };
+    BrowserImportState::NeedsAccess { folder }
+}
+
+fn access_denied(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::PermissionDenied
+        || (cfg!(unix) && error.raw_os_error() == Some(1))
+}
+
+fn probe_browser_import(
+    platform: &str,
+    browser: &str,
+    env: impl Fn(&str) -> Option<PathBuf>,
+) -> Result<BrowserImportState, String> {
+    let mut denied = false;
+    let sources = browser_sources_with_errors(platform, env, Some(browser), |_, error| {
+        denied |= access_denied(&error)
+    });
+    // Never present a partial collection as a complete import.
+    if denied {
+        return Ok(browser_access_prompt(platform, browser));
+    }
+    if sources.is_empty() {
+        return Ok(BrowserImportState::Unavailable);
+    }
+    let mut bookmarks = Vec::new();
+    for source in sources {
+        for path in &source.paths {
+            if let Err(error) = fs::File::open(path) {
+                if access_denied(&error) {
+                    return Ok(browser_access_prompt(platform, browser));
+                }
+                return Err("Bookmarks could not be read. Retry the import.".into());
+            }
+        }
+        let next = source_bookmarks(&source)?;
+        if bookmarks.len() + next.len() > MAX_BOOKMARKS {
+            return Err("This bookmark collection is too large to read in one import.".into());
+        }
+        bookmarks.extend(next);
+    }
+    Ok(BrowserImportState::Ready { bookmarks })
+}
+
+/// Reading is user-initiated. Only the OS picker can grant missing access.
+#[tauri::command]
+pub async fn read_browser_import(
+    browser: String,
+    request_access: bool,
+) -> Result<BrowserImportState, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_browser_import_snapshot(&browser, request_access)
+    })
+    .await
+    .map_err(|_| "Bookmarks could not be read. Retry the import.".to_string())?
+}
+
+// One platform reader and consent flow for Desktop and the packaged MCP helper.
+// Desktop calls from a blocking worker; the standalone helper owns its main thread.
+pub fn read_browser_import_snapshot(
+    browser: &str,
+    request_access: bool,
+) -> Result<BrowserImportState, String> {
+    if !["Chrome", "Edge", "Firefox", "Safari"].contains(&browser) {
+        return Err("Choose a supported browser.".into());
+    }
+    let state = probe_browser_import(
+        if cfg!(target_os = "macos") {
+            "darwin"
+        } else {
+            "win32"
+        },
+        browser,
+        |name| std::env::var_os(name).map(PathBuf::from),
+    )?;
+    if !request_access || !matches!(state, BrowserImportState::NeedsAccess { .. }) {
+        return Ok(state);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let layouts: Value =
+            serde_json::from_str(include_str!("../../shared/browser-profile-layouts.json"))
+                .expect("valid browser layouts");
+        let layout = layouts["darwin"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|layout| layout["browser"].as_str() == Some(browser))
+            .ok_or("Choose a supported browser.")?;
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or("Home folder is unavailable.")?;
+        let root = home.join(layout["path"].as_str().unwrap());
+        let Some(selected) = rfd::FileDialog::new()
+            .set_title(format!("StashDock: {browser}"))
+            .set_directory(&root)
+            .pick_folder()
+        else {
+            return Ok(state);
+        };
+        let expected = root
+            .canonicalize()
+            .map_err(|_| "The selected browser folder could not be read.")?;
+        let chosen = selected
+            .canonicalize()
+            .map_err(|_| "The selected browser folder could not be read.")?;
+        if chosen != expected {
+            return Err("Select the browser data folder shown when the picker opens.".into());
+        }
+        probe_browser_import("darwin", browser, |_| Some(home.clone()))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(state)
+    }
+}
+
 #[tauri::command]
 pub async fn read_browser_bookmarks(source_id: String) -> Result<Vec<BrowserBookmark>, String> {
     tauri::async_runtime::spawn_blocking(move || browser_bookmarks_snapshot(&source_id))
@@ -346,6 +576,9 @@ pub async fn read_browser_bookmarks(source_id: String) -> Result<Vec<BrowserBook
 
 // Both the Tauri command and independent MCP helper use this exact reader.
 pub fn browser_sources_snapshot() -> Result<Vec<BrowserSource>, String> {
+    if cfg!(target_os = "macos") {
+        return Ok(Vec::new());
+    }
     discovered_sources().map(|sources| sources.into_iter().map(|file| file.source).collect())
 }
 pub fn browser_bookmarks_snapshot(source_id: &str) -> Result<Vec<BrowserBookmark>, String> {
@@ -354,25 +587,91 @@ pub fn browser_bookmarks_snapshot(source_id: &str) -> Result<Vec<BrowserBookmark
         .into_iter()
         .find(|file| file.source.id == source_id)
         .ok_or("This browser profile is no longer available. Reopen Import references.")?;
-    read_source(&source)
+    let mut items = source_bookmarks(&source)?;
+    if !source.firefox && source.source.browser != "Safari" {
+        cached_bookmark_icons(&source.paths[0], &mut items);
+    }
+    Ok(items)
 }
 
-fn read_source(source: &SourceFile) -> Result<Vec<BrowserBookmark>, String> {
-    if source.firefox {
-        firefox_bookmarks(&source.paths[0])
-    } else {
-        let mut items = Vec::new();
-        for path in &source.paths {
-            items.extend(chromium_bookmarks(path)?);
-            if items.len() > MAX_BOOKMARKS {
-                return Err(
-                    "This browser profile has too many bookmarks to import at once.".into(),
-                );
+fn safari_bookmarks(path: &Path) -> Result<Vec<BrowserBookmark>, String> {
+    let file =
+        fs::File::open(path).map_err(|_| "Bookmarks could not be opened. Retry the import.")?;
+    let mut bytes = Vec::new();
+    file.take(MAX_BOOKMARK_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "Bookmarks could not be read.")?;
+    if bytes.len() as u64 > MAX_BOOKMARK_BYTES {
+        return Err("This bookmark collection is too large to read in one import.".into());
+    }
+    let root = plist::Value::from_reader(std::io::Cursor::new(bytes))
+        .map_err(|_| "Bookmarks are being updated. Retry in a moment.")?;
+    fn walk(
+        node: &plist::Value,
+        folders: &[String],
+        rows: &mut Vec<BrowserBookmark>,
+        depth: usize,
+    ) -> Result<(), String> {
+        if depth > 64 {
+            return Err("This bookmark collection is too large to read in one import.".into());
+        }
+        let Some(node) = node.as_dictionary() else {
+            return Ok(());
+        };
+        let text = |key: &str| {
+            node.get(key)
+                .and_then(plist::Value::as_string)
+                .unwrap_or("")
+        };
+        // Reading List and dynamic proxies are separate Safari features.
+        if text("Title") == "com.apple.ReadingList" {
+            return Ok(());
+        }
+        if text("WebBookmarkType") == "WebBookmarkTypeLeaf" {
+            let title = node
+                .get("URIDictionary")
+                .and_then(plist::Value::as_dictionary)
+                .and_then(|dict| dict.get("title"))
+                .and_then(plist::Value::as_string)
+                .unwrap_or("");
+            if let Some(row) = bookmark(title, text("URLString"), folders, None) {
+                rows.push(row);
+            }
+            if rows.len() > MAX_BOOKMARKS {
+                return Err("This bookmark collection is too large to read in one import.".into());
+            }
+        } else if let Some(children) = node.get("Children").and_then(plist::Value::as_array) {
+            let mut path = folders.to_vec();
+            if !text("Title").is_empty() {
+                path.push(text("Title").to_owned());
+            }
+            for child in children {
+                walk(child, &path, rows, depth + 1)?;
             }
         }
-        cached_bookmark_icons(&source.paths[0], &mut items);
-        Ok(items)
+        Ok(())
     }
+    let mut rows = Vec::new();
+    walk(&root, &[], &mut rows, 0)?;
+    Ok(rows)
+}
+
+fn source_bookmarks(source: &SourceFile) -> Result<Vec<BrowserBookmark>, String> {
+    if source.source.browser == "Safari" {
+        return safari_bookmarks(&source.paths[0]);
+    }
+    if source.firefox {
+        return firefox_bookmarks(&source.paths[0]);
+    }
+    let mut rows = Vec::new();
+    for path in &source.paths {
+        let next = chromium_bookmarks(path)?;
+        if rows.len() + next.len() > MAX_BOOKMARKS {
+            return Err("This bookmark collection is too large to read in one import.".into());
+        }
+        rows.extend(next);
+    }
+    Ok(rows)
 }
 
 #[tauri::command]
@@ -514,7 +813,7 @@ mod tests {
             sources.len()
         );
         for source in sources {
-            let rows = read_source(&source).expect("read-only local bookmark adapter");
+            let rows = source_bookmarks(&source).expect("read-only local bookmark adapter");
             eprintln!(
                 "{} adapter read {} web bookmarks; titles and URLs omitted.",
                 source.source.browser,
@@ -564,7 +863,7 @@ mod tests {
             .unwrap();
             // Retired backups are not additional live bookmark stores.
             fs::write(browser_root.join("Default/Bookmarks.bak"), account).unwrap();
-            let sources = browser_sources(&root, &root);
+            let sources = browser_sources("win32", |_| Some(root.clone()));
             let prefix = if browser.contains("Chrome") {
                 "chrome"
             } else {
@@ -575,7 +874,7 @@ mod tests {
                 .find(|s| s.source.id == format!("{prefix}:Default"))
                 .unwrap();
             assert_eq!(source.paths.len(), 2);
-            let items = read_source(source).unwrap();
+            let items = source_bookmarks(source).unwrap();
             assert_eq!(items.len(), 3);
             assert_eq!(items[0].title, "Local");
             assert!(items.iter().any(|item| item.folder_path == ["Mobile"]));
@@ -584,7 +883,7 @@ mod tests {
                 .find(|s| s.source.id == format!("{prefix}:Registered work"))
                 .unwrap();
             assert_eq!(account_only.source.profile, "Work");
-            assert_eq!(read_source(account_only).unwrap().len(), 2);
+            assert_eq!(source_bookmarks(account_only).unwrap().len(), 2);
             assert_eq!(
                 fs::read_to_string(browser_root.join("Default/AccountBookmarks")).unwrap(),
                 account
@@ -598,43 +897,194 @@ mod tests {
         let profile = root.join("Google/Chrome/User Data/Default");
         fs::create_dir_all(&profile).unwrap();
         fs::write(profile.join("Bookmarks"), "{}").unwrap();
-        let sources = browser_sources(&root, &root);
+        let sources = browser_sources("win32", |_| Some(root.clone()));
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].source.id, "chrome:Default");
         assert!(!sources[0].firefox);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn firefox_includes_toolbar_menu_unfiled_mobile_and_live_wal_but_not_tag_copies() {
-        let root = temp_root();
-        let path = root.join("places.sqlite");
-        let db = Connection::open(&path).unwrap();
-        db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE moz_places(id INTEGER PRIMARY KEY, url TEXT, title TEXT); CREATE TABLE moz_bookmarks(id INTEGER PRIMARY KEY, type INTEGER, fk INTEGER, parent INTEGER, title TEXT, guid TEXT, dateAdded INTEGER); INSERT INTO moz_bookmarks VALUES(1,2,NULL,0,'','root________',0),(2,2,NULL,1,'Toolbar','toolbar_____',0),(3,2,NULL,1,'Menu','menu________',0),(4,2,NULL,1,'Other','unfiled_____',0),(5,2,NULL,1,'Mobile','mobile______',0),(6,2,NULL,1,'Tags','tags________',0),(7,2,NULL,6,'Research','tag-folder__',0);").unwrap();
-        for (id, parent) in [(10, 2), (11, 3), (12, 4), (13, 5), (14, 7)] {
-            db.execute(
-                "INSERT INTO moz_places VALUES(?1,?2,'Page')",
-                rusqlite::params![id, format!("https://example.org/{id}")],
-            )
-            .unwrap();
-            db.execute(
-                "INSERT INTO moz_bookmarks VALUES(?1,1,?1,?2,'Page',?3,1700000000000000)",
-                rusqlite::params![id, parent, format!("link-{id}")],
-            )
-            .unwrap();
+    fn mac_profiles_use_application_support_and_keep_bookmarks_read_only() {
+        let home = temp_root();
+        let paths = [
+            "Library/Application Support/Google/Chrome/Default/Bookmarks",
+            "Library/Application Support/Microsoft Edge/Profile 1/Bookmarks",
+            "Library/Application Support/Firefox/Profiles/fixture.default/places.sqlite",
+        ];
+        let body = r#"{"roots":{"bar":{"type":"folder","name":"Research","children":[{"type":"url","name":"Mac fixture","url":"https://example.org/mac"}]}}}"#;
+        for path in paths {
+            let path = home.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
         }
-        // Keep the writer open: the reader must see committed rows in its WAL.
-        let before = fs::read(&path).unwrap();
-        let rows = firefox_bookmarks(&path).unwrap();
-        assert_eq!(rows.len(), 4);
+        let sources = browser_sources("darwin", |name| (name == "HOME").then(|| home.clone()));
         assert_eq!(
-            rows.iter()
-                .map(|row| row.folder_path[0].as_str())
+            sources
+                .iter()
+                .map(|source| source.source.id.as_str())
                 .collect::<Vec<_>>(),
-            ["Toolbar", "Menu", "Other", "Mobile"]
+            [
+                "chrome:Default",
+                "edge:Profile 1",
+                "firefox:fixture.default"
+            ]
         );
-        assert_eq!(before, fs::read(&path).unwrap());
-        drop(db);
-        fs::remove_dir_all(root).unwrap();
+        for source in sources.iter().filter(|source| !source.firefox) {
+            let before = fs::read(&source.paths[0]).unwrap();
+            let rows = chromium_bookmarks(&source.paths[0]).unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].folder_path, ["Research"]);
+            assert_eq!(before, fs::read(&source.paths[0]).unwrap());
+        }
+        assert!(browser_sources("win32", |name| (name == "HOME").then(|| home.clone())).is_empty());
+        fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn unified_import_distinguishes_missing_empty_and_ready_without_writes() {
+        let home = temp_root();
+        assert!(matches!(
+            probe_browser_import("darwin", "Firefox", |_| Some(home.clone())).unwrap(),
+            BrowserImportState::Unavailable
+        ));
+        let profile = home.join("Library/Application Support/Google/Chrome/Default");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("Bookmarks"), r#"{"roots":{}}"#).unwrap();
+        assert!(
+            matches!(probe_browser_import("darwin", "Chrome", |_| Some(home.clone())).unwrap(), BrowserImportState::Ready { bookmarks } if bookmarks.is_empty())
+        );
+        fs::remove_dir_all(home).unwrap();
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unified_import_requests_access_for_a_real_unreadable_browser_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = temp_root();
+        let root = home.join("Library/Application Support/Google/Chrome");
+        fs::create_dir_all(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o000)).unwrap();
+        let result = probe_browser_import("darwin", "Chrome", |_| Some(home.clone()));
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::remove_dir_all(home).unwrap();
+        assert!(
+            matches!(result.unwrap(), BrowserImportState::NeedsAccess { folder: Some(folder) } if folder == "~/Library/Application Support/Google/Chrome")
+        );
+    }
+    #[test]
+    fn safari_xml_and_binary_bookmarks_are_read_only_and_exclude_non_web_entries() {
+        let home = temp_root();
+        let root = home.join("Library/Safari");
+        fs::create_dir_all(&root).unwrap();
+        let xml = br#"<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Children</key><array><dict><key>Title</key><string>Research</string><key>Children</key><array><dict><key>WebBookmarkType</key><string>WebBookmarkTypeLeaf</string><key>URLString</key><string>https://example.org/safari</string><key>URIDictionary</key><dict><key>title</key><string>Safari fixture</string></dict></dict><dict><key>WebBookmarkType</key><string>WebBookmarkTypeLeaf</string><key>URLString</key><string>javascript:alert(1)</string></dict></array></dict></array></dict></plist>"#;
+        let value = plist::Value::from_reader_xml(xml.as_slice()).unwrap();
+        let mut binary = Vec::new();
+        value.to_writer_binary(&mut binary).unwrap();
+        for bytes in [xml.to_vec(), binary] {
+            let path = root.join("Bookmarks.plist");
+            fs::write(&path, &bytes).unwrap();
+            let BrowserImportState::Ready { bookmarks } =
+                probe_browser_import("darwin", "Safari", |_| Some(home.clone())).unwrap()
+            else {
+                panic!("Safari must be ready");
+            };
+            assert_eq!(bookmarks.len(), 1);
+            assert_eq!(bookmarks[0].title, "Safari fixture");
+            assert_eq!(bookmarks[0].folder_path, ["Research"]);
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+        fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn account_only_and_dual_bookmark_stores_are_read_without_writes() {
+        let home = temp_root();
+        let root = home.join("Library/Application Support/Google/Chrome");
+        let account_only = root.join("Default");
+        let dual = root.join("Profile 1");
+        let body = |name: &str| {
+            format!(
+                r#"{{"roots":{{"bar":{{"type":"folder","name":"Research","children":[{{"type":"url","name":"{name}","url":"https://example.org/{name}"}}]}}}}}}"#
+            )
+        };
+        let stores = [
+            (account_only.join("AccountBookmarks"), body("account-only")),
+            (dual.join("Bookmarks"), body("local")),
+            (dual.join("AccountBookmarks"), body("account")),
+        ];
+        for (path, data) in &stores {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, data).unwrap();
+        }
+        let sources = browser_sources_with_errors(
+            "darwin",
+            |_| Some(home.clone()),
+            Some("Chrome"),
+            |_, error| panic!("{error}"),
+        );
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].source.id, "chrome:Default");
+        assert_eq!(
+            source_bookmarks(&sources[0]).unwrap()[0].title,
+            "account-only"
+        );
+        assert_eq!(
+            source_bookmarks(&sources[1])
+                .unwrap()
+                .iter()
+                .map(|row| row.title.as_str())
+                .collect::<Vec<_>>(),
+            ["local", "account"]
+        );
+        for (path, data) in &stores {
+            assert_eq!(&fs::read_to_string(path).unwrap(), data);
+        }
+        fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn selected_browser_discovery_never_probes_other_browser_roots() {
+        let home = temp_root();
+        let profile = home.join("Library/Application Support/Google/Chrome/Default");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("Bookmarks"), "{}").unwrap();
+        let mut failures = Vec::new();
+        let sources = browser_sources_with_errors(
+            "darwin",
+            |_| Some(home.clone()),
+            Some("Chrome"),
+            |browser, error| {
+                failures.push((browser.to_owned(), error.kind()));
+            },
+        );
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].source.browser, "Chrome");
+        assert!(
+            failures.is_empty(),
+            "unselected missing roots must never be probed"
+        );
+        fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn discovery_reports_io_failures_without_inventing_profiles() {
+        let home = temp_root();
+        let root = home.join("Library/Application Support/Google/Chrome");
+        fs::create_dir_all(root.parent().unwrap()).unwrap();
+        // A file where a profile root directory is expected is a real I/O failure.
+        fs::write(&root, "not a directory").unwrap();
+        let mut failures = Vec::new();
+        let sources = browser_sources_with_errors(
+            "darwin",
+            |_| Some(home.clone()),
+            None,
+            |browser, error| {
+                failures.push((browser.to_owned(), error.kind()));
+            },
+        );
+        assert!(sources.is_empty());
+        assert!(failures
+            .iter()
+            .any(|(browser, kind)| browser == "Chrome" && *kind != std::io::ErrorKind::NotFound));
+        assert!(failures
+            .iter()
+            .any(|(browser, kind)| browser == "Edge" && *kind == std::io::ErrorKind::NotFound));
+        fs::remove_dir_all(home).unwrap();
     }
     #[test]
     fn firefox_queries_bookmarks_not_history_and_does_not_write() {
@@ -649,6 +1099,34 @@ mod tests {
         assert_eq!(items[0].title, "My title");
         assert_eq!(items[0].folder_path, ["Root", "Research"]);
         assert_eq!(before, fs::read(&path).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn firefox_exclusive_lock_recovers_after_browser_releases_database() {
+        let root = temp_root();
+        let path = root.join("places.sqlite");
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE moz_places(id INTEGER PRIMARY KEY, url TEXT, title TEXT); CREATE TABLE moz_bookmarks(id INTEGER PRIMARY KEY, type INTEGER, fk INTEGER, parent INTEGER, title TEXT, guid TEXT, dateAdded INTEGER); INSERT INTO moz_places VALUES(1,'https://example.org','Page'); INSERT INTO moz_bookmarks VALUES(1,1,1,0,'Saved','link________',0); PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE;").unwrap();
+        let error = firefox_bookmarks(&path).unwrap_err();
+        assert!(error.contains("Quit Firefox"), "{error}");
+        assert!(!error.contains("format"));
+        db.execute_batch("ROLLBACK").unwrap();
+        drop(db);
+        let before = fs::read(&path).unwrap();
+        let items = firefox_bookmarks(&path).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Saved");
+        assert_eq!(before, fs::read(&path).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn firefox_invalid_database_is_not_reported_as_busy() {
+        let root = temp_root();
+        let path = root.join("places.sqlite");
+        fs::write(&path, b"invalid database").unwrap();
+        let error = firefox_bookmarks(&path).unwrap_err();
+        assert!(error.contains("could not be read"));
+        assert!(!error.contains("is using its bookmarks"));
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -727,4 +1205,37 @@ mod tests {
         assert!(web_url("file:///secret").is_err());
         assert!(web_url("https://user:password@example.org").is_err());
     }
+    #[test]
+    fn firefox_includes_toolbar_menu_unfiled_mobile_and_live_wal_but_not_tag_copies() {
+        let root = temp_root();
+        let path = root.join("places.sqlite");
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE moz_places(id INTEGER PRIMARY KEY, url TEXT, title TEXT); CREATE TABLE moz_bookmarks(id INTEGER PRIMARY KEY, type INTEGER, fk INTEGER, parent INTEGER, title TEXT, guid TEXT, dateAdded INTEGER); INSERT INTO moz_bookmarks VALUES(1,2,NULL,0,'','root________',0),(2,2,NULL,1,'Toolbar','toolbar_____',0),(3,2,NULL,1,'Menu','menu________',0),(4,2,NULL,1,'Other','unfiled_____',0),(5,2,NULL,1,'Mobile','mobile______',0),(6,2,NULL,1,'Tags','tags________',0),(7,2,NULL,6,'Research','tag-folder__',0);").unwrap();
+        for (id, parent) in [(10, 2), (11, 3), (12, 4), (13, 5), (14, 7)] {
+            db.execute(
+                "INSERT INTO moz_places VALUES(?1,?2,'Page')",
+                rusqlite::params![id, format!("https://example.org/{id}")],
+            )
+            .unwrap();
+            db.execute(
+                "INSERT INTO moz_bookmarks VALUES(?1,1,?1,?2,'Page',?3,1700000000000000)",
+                rusqlite::params![id, parent, format!("link-{id}")],
+            )
+            .unwrap();
+        }
+        // Keep the writer open: the reader must see committed rows in its WAL.
+        let before = fs::read(&path).unwrap();
+        let rows = firefox_bookmarks(&path).unwrap();
+        assert_eq!(rows.len(), 4);
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.folder_path[0].as_str())
+                .collect::<Vec<_>>(),
+            ["Toolbar", "Menu", "Other", "Mobile"]
+        );
+        assert_eq!(before, fs::read(&path).unwrap());
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+
 }

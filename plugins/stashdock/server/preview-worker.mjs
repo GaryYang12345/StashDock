@@ -146,7 +146,7 @@ export function packagedPreviewService(htmlUrl, dataDir) {
   });
   const browserImport = async job => {
     if (!existsSync(helper)) throw Error('Browser import is unavailable. Repair the StashDock plugin.');
-    const result = await runPreviewHelper(helper, job, cache.signal, { maxOutput: 40_000_000 });
+    const result = await runPreviewHelper(helper, job, cache.signal, { maxOutput: 40_000_000, timeout: job.browserOperation === 'read' && job.requestAccess ? 290_000 : 55_000 });
     if (result?.error) throw Error(result.error);
     return result;
   };
@@ -168,6 +168,7 @@ export function packagedPreviewService(htmlUrl, dataDir) {
       if (typeof result.preview !== 'string' || result.preview.length > 750_000 || !result.preview.startsWith('data:image/jpeg;base64,')) throw Error('The cover could not be prepared. Choose another image.');
       return result.preview;
     },
+    readBrowser: (browser, requestAccess = false) => browserImport({ browserOperation: 'read', browser, requestAccess }),
     sources: () => browserImport({ browserOperation: 'sources' }),
     bookmarks: sourceId => browserImport({ browserOperation: 'bookmarks', sourceId }),
     icons: urls => iconCache.lookup(JSON.stringify([...new Set(urls)])),

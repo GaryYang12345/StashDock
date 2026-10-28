@@ -7,6 +7,8 @@ artifacts/
 preview-runtime/
 connection-runtime/
 src-tauri/pdf-runtime/
+src-tauri/icons/macos/
+src-tauri/gen/schemas/macOS-schema.json
 plugins/stashdock/preview-runtime/
 plugins/stashdock/connection-runtime/
 plugins/stashdock/bin/
@@ -22,11 +24,15 @@ Thumbs.db
 /uninstall.exe
 /stashdock-preview.exe
 /stashdock-storage.exe
+/stashdock-browser.exe
+/browser-hosts/
 /Claude outputs/
 *.log
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
 
 # Local evidence, recovery packages and design experiments are not source releases.
 /output/
@@ -49,6 +55,14 @@ Thumbs.db
 *.key
 *.zip
 
+# Generated from native Swift source by the Mac Cargo build.
+src-tauri/native-binaries/
 # Brand font files are licensed separately; keep them out of the public repository.
 website/*.ttf
+!website/Srotone-Regular.ttf
+!website/Srotone-Medium.ttf
+!website/Srotone-SemiBold.ttf
+!website/Alimama_ShuHeiTi_Bold.ttf
 website/dist/
+.wrangler/
+website/.wrangler/

@@ -87,7 +87,7 @@ pub fn attach(app: &AppHandle) -> Result<(), String> {
     suppress_frame(&window)?;
     set_region(&window, &[])?;
     if !window.is_visible().map_err(|e| e.to_string())? {
-        crate::window_frame::show_immediately(&window)?;
+        crate::window_frame::show_immediately(&window.as_ref().window())?;
     }
     if let Some(state) = search_state(app) {
         state.0.lock().unwrap_or_else(|e| e.into_inner()).attached = true;
@@ -153,7 +153,7 @@ pub fn detach(app: &AppHandle, hide: bool) {
     if hide {
         if let Some(window) = search_window(app) {
             if window.is_visible().unwrap_or(false) {
-                let _ = crate::window_frame::hide_immediately(&window);
+                let _ = crate::window_frame::hide_immediately(&window.as_ref().window());
             }
         }
     }

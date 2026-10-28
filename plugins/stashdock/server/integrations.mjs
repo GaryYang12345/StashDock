@@ -5,7 +5,7 @@ import { parse } from 'smol-toml';
 import { browserExtensionDetected } from './browser-presence.mjs';
 import productLinks from '../../../src-tauri/product-links.json' with { type: 'json' };
 import { githubRepositoryUrl } from './open-integration.mjs';
-import { validBrowserExtensionId } from '../../../src/lib/browser-extension-identity.mjs';
+import { validBrowserExtensionId, pinnedBrowserExtensionId, nativeFirefoxOrigin, nativeSafariOrigin } from '../../../src/lib/browser-extension-identity.mjs';
 const ids = ['chrome', 'edge', 'firefox', 'safari', 'codex', 'claude', 'desktop'];
 function fileExists(path) { try { return isAbsolute(path) && statSync(path).isFile(); } catch { return false; } }
 export function configuredCodexPlugin(text, manifest) {
@@ -23,15 +23,23 @@ export function codexPluginDetected(manifest, { home = process.env.CODEX_HOME ||
     return statSync(path).size <= 2_000_000 && configuredCodexPlugin(readFileSync(path, 'utf8'), manifest);
   } catch { return false; }
 }
-export function readIntegrations(read, { codexEnabled = codexPluginDetected, browserEnabled = browserExtensionDetected } = {}) {
+export function readIntegrations(read, { codexEnabled = codexPluginDetected, browserEnabled = browserExtensionDetected, platform = process.platform } = {}) {
   return { items: ids.map(id => {
     let record;
     try { record = JSON.parse(read(`installation_${id}_v1`) || 'null'); } catch { /* Corrupt optional presence is not an installation. */ }
-    const detected = Boolean(record && typeof record.version === 'string' &&
+    let detected = Boolean(record && typeof record.version === 'string' &&
       (record.path ? typeof record.path === 'string' && fileExists(record.path) && (id !== 'codex' || codexEnabled(record.path)) :
         browserEnabled(id, record.extensionId)));
+    if (id === 'chrome' && !detected) {
+      try {
+        const other = JSON.parse(read('installation_edge_v1') || 'null');
+        if (other?.extensionId === productLinks.browserExtensions.chrome.id && typeof other.version === 'string' && browserEnabled('edge', other.extensionId)) {
+          record = other; detected = true;
+        }
+      } catch { /* Optional installation metadata may be absent. */ }
+    }
     return { id, detected, ...(detected ? { version: record.version } : {}) };
-  }), links: productLinks.installationUrls || {}, githubUrl: githubRepositoryUrl() };
+  }), platform: platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform, links: { ...productLinks.installationUrls, ...(platform === 'darwin' ? productLinks.macInstallationUrls : {}) }, githubUrl: githubRepositoryUrl() };
 }
 export function installationRecord(id, version, path, extensionId) {
   if (!ids.includes(id) || typeof version !== 'string' || !/^[\w.+-]{1,40}$/.test(version) ||
@@ -41,11 +49,13 @@ export function installationRecord(id, version, path, extensionId) {
 }
 
 export function browserInstallationRecord(read, browser, version, extensionId, origin, browserEnabled = browserExtensionDetected) {
-  if (!['chrome', 'edge', 'firefox'].includes(browser) || typeof origin !== 'string') throw Error('Invalid StashDock extension.');
-  const validOrigin = browser === 'firefox'
-    ? /^moz-extension:\/\/[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(origin)
+  if (!['chrome', 'edge', 'firefox', 'safari'].includes(browser) || typeof origin !== 'string') throw Error('Invalid StashDock extension.');
+  const validOrigin = browser === 'safari' ? nativeSafariOrigin(origin) : browser === 'firefox'
+    ? nativeFirefoxOrigin(origin) || /^moz-extension:\/\/[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(origin)
     : origin === `chrome-extension://${extensionId}`;
-  if (!validOrigin || !browserEnabled(browser, extensionId)) throw Error('Invalid StashDock extension.');
+  const nativeCaller = validBrowserExtensionId(browser, extensionId) &&
+    (browser === 'firefox' && nativeFirefoxOrigin(origin) || browser === 'safari' && nativeSafariOrigin(origin));
+  if (!validOrigin || !(nativeCaller || pinnedBrowserExtensionId(browser, extensionId) || browserEnabled(browser, extensionId))) throw Error('Invalid StashDock extension.');
   let previous;
   try { previous = JSON.parse(read(`installation_${browser}_v1`) || 'null'); } catch { /* Corrupt optional registration is replaced. */ }
   const origins = previous?.extensionId === extensionId && Array.isArray(previous.origins)
@@ -57,11 +67,12 @@ export function browserInstallationRecord(read, browser, version, extensionId, o
 
 export function registeredBrowserOrigin(read, origin) {
   if (typeof origin !== 'string') return false;
-  for (const browser of ['chrome', 'edge', 'firefox']) {
+  for (const browser of ['chrome', 'edge', 'firefox', 'safari']) {
     let record;
     try { record = JSON.parse(read(`installation_${browser}_v1`) || 'null'); } catch { continue; }
     if (!record || !validBrowserExtensionId(browser, record.extensionId) || !Array.isArray(record.origins) || !record.origins.includes(origin)) continue;
-    if (browser === 'firefox') return /^moz-extension:\/\/[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(origin);
+    if (browser === 'safari') return nativeSafariOrigin(origin);
+    if (browser === 'firefox') return nativeFirefoxOrigin(origin) || /^moz-extension:\/\/[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(origin);
     return origin === `chrome-extension://${record.extensionId}`;
   }
   return false;

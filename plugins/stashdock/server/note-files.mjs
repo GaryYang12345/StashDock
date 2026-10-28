@@ -34,9 +34,9 @@ const unchanged = (row, path) => {
 export function synchronizeNoteFiles(db, assets, id) {
   const ownsTransaction = !db.isTransaction;
   const created = [];
-  // Never select cover blobs here. Unchanged projections don't need a writer
+  // Never select cover blobs or cached bodies here. Unchanged projections don't need a writer
   // reservation; re-read under the transaction when an actual change is found.
-  const query = db.prepare(`SELECT id,title,asset_path,content,excerpt,origin_json,size_bytes FROM stash_items WHERE kind='note'${id === undefined ? '' : ' AND id=?'}`);
+  const query = db.prepare(`SELECT id,title,asset_path,origin_json,size_bytes FROM stash_items WHERE kind='note'${id === undefined ? '' : ' AND id=?'}`);
   const readRows = () => id === undefined ? query.all() : query.all(id);
   const rows = readRows();
   if (ownsTransaction && !rows.some(row => !row.asset_path || !unchanged({ ...row, assets }, row.asset_path).skip)) return;
@@ -51,7 +51,10 @@ export function synchronizeNoteFiles(db, assets, id) {
         const filename = `Note - ${title}.txt`;
         mkdirSync(assets, { recursive: true });
         path = join(assets, `${randomUUID()}-${filename}`);
-        writeFileSync(path, row.content ?? row.excerpt ?? '', { encoding: 'utf8', flag: 'wx' });
+        // Only a legacy note without its managed original needs cached text.
+        // Read it under the same write transaction as the migration.
+        const legacy = db.prepare('SELECT content,excerpt FROM stash_items WHERE id=?').get(row.id);
+        writeFileSync(path, legacy?.content ?? legacy?.excerpt ?? '', { encoding: 'utf8', flag: 'wx' });
         created.push(path); origin = { ...origin, fileName: filename };
       }
       const state = path === row.asset_path ? unchanged({ ...row, assets }, path) : { skip: false };

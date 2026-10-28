@@ -1,17 +1,19 @@
 // Inspect the exact Git index, not ignored working files. Never print secret values.
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-export const sourceRoots = new Set(['.agents','assets','docs','extension','licenses','plugins','public','scripts','src','src-tauri','tests']);
-const rootFiles = new Set(['.gitattributes','.gitignore','README.md','LICENSE','THIRD_PARTY_NOTICES.md','components.json','index.html','package.json','package-lock.json','tsconfig.app.json','tsconfig.json','tsconfig.node.json','vite.config.ts']);
-export const publicDocuments = new Set(['docs/INSTALL_WINDOWS.md','docs/windows-plugin-install.md','docs/RELEASE_NOTES_v0.2.6.md','docs/RELEASE_NOTES_plugin-v0.4.36.md']);
+export const sourceRoots = new Set(['.agents','assets','docs','extension','licenses','plugins','public','scripts','shared','safari','src','src-tauri','tests']);
+export const rootFiles = new Set(['.gitattributes','.gitignore','README.md','LICENSE','THIRD_PARTY_NOTICES.md','components.json','index.html','package.json','package-lock.json','tsconfig.app.json','tsconfig.json','tsconfig.node.json','vite.config.ts']);
+export const publicDocuments = new Set(['docs/INSTALL_WINDOWS.md','docs/windows-plugin-install.md','docs/RELEASE_NOTES_v0.2.6.md','docs/RELEASE_NOTES_plugin-v0.4.36.md','docs/RELEASE_NOTES_v0.2.7.md','docs/RELEASE_NOTES_plugin-v0.4.37.md','docs/RELEASE_NOTES_v0.2.8.md','docs/RELEASE_NOTES_plugin-v0.4.38.md','docs/RELEASE_NOTES_v1.0.0.md']);
 export function privateSourcePath(path) {
   return /(^|\/)(node_modules|target|output|artifacts|profile|preview-runtime|connection-runtime|build-runtime|pdf-runtime|\.git|\.codex|\.playwright)(\/|$)/i.test(path)
     || /^website\//i.test(path)
+    || /^\.github\//.test(path)
     || /^(?:AGENTS|CLAUDE)\.md$|^design\.md$/.test(path)
     || /^\.agents\/(?!plugins\/)/.test(path)
     || /^docs\//.test(path) && !publicDocuments.has(path)
     || /^tests\/(?:website|stage-review|internal-source)/.test(path)
-    || /^scripts\/(?:package-mac-handoff\.ps1|verify-handoff\.mjs|verify-website-dist\.mjs|README\.md)$/.test(path)
+    || /^scripts\/(?:package-mac-handoff\.ps1|verify-handoff\.mjs|README\.md)$/.test(path)
+    || /^scripts\/[^/]*website[^/]*$/i.test(path)
     || /^plugins\/stashdock\/bin\//.test(path)
     || /(^|\/)\.env($|\.)|\.(exe|dll|pdb|sqlite3?|sqlite3?-\w+|db|db-\w+|log|pem|pfx|p12|key|zip|dmp)$/i.test(path);
 }

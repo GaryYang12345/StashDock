@@ -73,7 +73,11 @@ fn original_name(item: &StashItem, path: &Path) -> String {
     }
 }
 
-fn unique_name(name: &str, used: &mut HashSet<String>) -> String {
+fn create_output(
+    folder: &Path,
+    name: &str,
+    used: &mut HashSet<String>,
+) -> Result<(PathBuf, fs::File), String> {
     let path = Path::new(name);
     let stem = path.file_stem().and_then(|v| v.to_str()).unwrap_or("File");
     let extension = path
@@ -81,13 +85,30 @@ fn unique_name(name: &str, used: &mut HashSet<String>) -> String {
         .and_then(|v| v.to_str())
         .map(|v| format!(".{v}"))
         .unwrap_or_default();
-    let mut candidate = name.to_string();
-    let mut index = 1;
-    while !used.insert(candidate.to_lowercase()) {
-        index += 1;
-        candidate = format!("{stem} ({index}){extension}");
+    // Keep portable case-insensitive names, then let the receiving filesystem
+    // decide whether two Unicode spellings alias. Never normalize the user's
+    // saved name or open an existing file with truncation.
+    for index in 1..=MAX_FILES + 1 {
+        let candidate = if index == 1 {
+            name.to_string()
+        } else {
+            format!("{stem} ({index}){extension}")
+        };
+        if !used.insert(candidate.to_lowercase()) {
+            continue;
+        }
+        let path = folder.join(candidate);
+        match fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+        {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
     }
-    candidate
+    Err("The outgoing filenames could not be made unique.".into())
 }
 
 pub(crate) fn export(database: &Path, ids: &[String], root: &Path) -> Result<Transfer, String> {
@@ -131,28 +152,28 @@ pub(crate) fn export(database: &Path, ids: &[String], root: &Path) -> Result<Tra
                     .unwrap_or_else(|| format!("## {}", item.title))
             })
             .unwrap_or_default();
-        let context_name = unique_name(
+        let (context_file, mut context_output) = create_output(
+            &folder,
             &crate::reference_drag::export_filename(&naming_context, ids.len()),
             &mut used,
-        );
-        let context_file = folder.join(context_name);
+        )?;
         let mut files = Vec::new();
         let mut total = 0;
         let mut actual_names = HashMap::new();
         for (index, path) in originals {
-            let name = unique_name(&original_name(&items[index], &path), &mut used);
-            let destination = folder.join(&name);
             let source = fs::File::open(&path)
                 .map_err(|_| "An original file could not be read. Import it again.")?;
             let length = source.metadata().map_err(|e| e.to_string())?.len();
             if length > MAX_BYTES - total {
                 return Err("Select original files under 100 MB in total.".into());
             }
-            let mut output = fs::OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&destination)
-                .map_err(|e| e.to_string())?;
+            let (destination, mut output) =
+                create_output(&folder, &original_name(&items[index], &path), &mut used)?;
+            let name = destination
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("The outgoing filename is not supported.")?
+                .to_string();
             let copied = std::io::copy(&mut source.take(length + 1), &mut output)
                 .map_err(|e| e.to_string())?;
             if copied != length {
@@ -180,17 +201,12 @@ pub(crate) fn export(database: &Path, ids: &[String], root: &Path) -> Result<Tra
             ));
         }
         let context = library::reference_transfer_context(&items)?;
-        let mut output = fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&context_file)
-            .map_err(|e| e.to_string())?;
-        output
+        context_output
             .write_all(context.as_bytes())
             .map_err(|e| e.to_string())?;
         if !manifest.is_empty() {
             write!(
-                output,
+                context_output,
                 "\n\n---\n\n## Attached original files\nRead these files for their contents; file descriptions are supplemental.\n{}\n",
                 manifest.join("\n")
             )
@@ -337,6 +353,70 @@ mod tests {
         discard(&transfer);
         assert!(!transfer.context_file.exists());
         assert!(original.exists());
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn canonically_equivalent_names_export_as_distinct_files_on_macos() {
+        let fixture = Fixture::new();
+        for (id, name, bytes) in [
+            ("a", "Caf\u{e9}.pdf", b"first original".as_slice()),
+            ("b", "Cafe\u{301}.pdf", b"second original".as_slice()),
+        ] {
+            let path = fixture.root.join("assets").join(format!("{id}.pdf"));
+            fs::write(&path, bytes).unwrap();
+            fixture.add(id, "pdf", Some(&path), name, None);
+        }
+        let transfer = export(
+            &fixture.database,
+            &["a".into(), "b".into()],
+            &fixture.output(),
+        )
+        .expect("macOS treats the two spellings as one filename; preserve both originals");
+        assert_eq!(transfer.files.len(), 3);
+        assert_eq!(fs::read(&transfer.files[0]).unwrap(), b"first original");
+        assert_eq!(fs::read(&transfer.files[1]).unwrap(), b"second original");
+        assert!(transfer.files[1]
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .contains(" (2).pdf"));
+        let context = fs::read_to_string(&transfer.context_file).unwrap();
+        for path in &transfer.files[..2] {
+            assert!(context.contains(path.file_name().unwrap().to_str().unwrap()));
+        }
+        let db = rusqlite::Connection::open(&fixture.database).unwrap();
+        let names: Vec<String> = db
+            .prepare("SELECT json_extract(origin_json,'$.fileName') FROM stash_items ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(names, ["Caf\u{e9}.pdf", "Cafe\u{301}.pdf"]);
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_original_cannot_alias_the_context_file_on_macos() {
+        let fixture = Fixture::new();
+        let path = fixture.root.join("assets/original.md");
+        fs::write(&path, b"original bytes").unwrap();
+        fixture.add(
+            "a",
+            "file",
+            Some(&path),
+            "StashDock - Cafe\u{301}.md",
+            Some("## Caf\u{e9}\n\nEdited context"),
+        );
+        let transfer = export(&fixture.database, &["a".into()], &fixture.output()).unwrap();
+        assert_eq!(fs::read(&transfer.files[0]).unwrap(), b"original bytes");
+        assert!(fs::read_to_string(&transfer.context_file)
+            .unwrap()
+            .contains("Edited context"));
+        assert!(transfer.files[0]
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .contains(" (2).md"));
     }
     #[test]
     fn mixed_selection_preserves_order_renames_collisions_and_deduplicates_shared_originals() {

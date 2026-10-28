@@ -1,27 +1,35 @@
 //! User-initiated copying of the same Markdown file used by native drag.
 //! No automatic paste, host IPC, focus changes, or library mutations.
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 pub async fn copy_reference_file(
     app: AppHandle,
     window: tauri::WebviewWindow,
-    library: tauri::State<'_, crate::library::LibraryState>,
+    _library: tauri::State<'_, crate::library::LibraryState>,
     item_ids: Vec<String>,
 ) -> Result<(), String> {
     // The library panel and the folder search are local desktop windows.
     if !matches!(window.label(), "main" | "search") {
         return Err("Use the StashDock desktop window to copy a file.".into());
     }
+    copy_ids(app, item_ids).await
+}
+
+/// Shared native clipboard action for the WebView shelf and AppKit accessory.
+pub(crate) async fn copy_ids(app: AppHandle, item_ids: Vec<String>) -> Result<(), String> {
     crate::reference_drag::validate_selection(&item_ids, 10_000)?;
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
-        let _ = (app, library);
+        let _ = app;
         Err("File clipboard copying is only available on Windows.".into())
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
-        let database = library.database_path().to_path_buf();
+        let database = app
+            .state::<crate::library::LibraryState>()
+            .database_path()
+            .to_path_buf();
         let file = tauri::async_runtime::spawn_blocking(move || {
             crate::reference_drag::export_reference_file(
                 &database,
@@ -34,7 +42,12 @@ pub async fn copy_reference_file(
         let keep = file.clone();
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         app.run_on_main_thread(move || {
+            #[cfg(windows)]
             let _ = tx.send(crate::reference_drag_windows::copy_to_clipboard(
+                &file.files,
+            ));
+            #[cfg(target_os = "macos")]
+            let _ = tx.send(crate::reference_transfer_macos::copy_to_clipboard(
                 &file.files,
             ));
         })

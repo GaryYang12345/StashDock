@@ -58,11 +58,9 @@ export function browserCaptureStore(db, { insert }) {
       let id;
       if (existing) {
         id = existing.id;
-        // Keep ID, creation time, favorite and separately edited AI context.
-        const previous = JSON.parse(db.prepare('SELECT origin_json FROM stash_items WHERE id=?').get(id).origin_json || '{}');
-        delete previous.previewSource;
-        db.prepare('UPDATE stash_items SET title=?,source=?,url=?,excerpt=?,tags_json=?,content=?,preview=?,origin_json=?,updated_at=? WHERE id=?')
-          .run(item.title, String(item.source || new URL(url).hostname).slice(0,300), url, String(item.excerpt || '').slice(0,2000), JSON.stringify(item.tags.map(tag=>tag.trim()).filter((tag,i,all)=>tag&&all.findIndex(value=>value.toLowerCase()===tag.toLowerCase())===i)), item.content, item.preview || null, JSON.stringify({ ...previous, ...origin }), origin.importedAt, id);
+        // An explicit replacement uses this capture, including its final context.
+        db.prepare('UPDATE stash_items SET title=?,kind=?,source=?,url=?,excerpt=?,tags_json=?,content=?,preview=?,origin_json=?,context_override=NULL,favorite=0,asset_path=NULL,original_path=NULL,mime_type=NULL,size_bytes=NULL,updated_at=? WHERE id=?')
+          .run(item.title, item.kind, String(item.source || new URL(url).hostname).slice(0,300), url, String(item.excerpt || '').slice(0,2000), JSON.stringify(item.tags.map(tag=>tag.trim()).filter((tag,i,all)=>tag&&all.findIndex(value=>value.toLowerCase()===tag.toLowerCase())===i)), item.content, item.preview || null, JSON.stringify(origin), origin.importedAt, id);
       } else id = insert(item, {}, new Map()).item.id;
       const result = { saved: true, id, replaced: Boolean(existing) };
       db.prepare('INSERT INTO app_meta(key,value) VALUES (?,?)').run(key, JSON.stringify({ digest, result }));

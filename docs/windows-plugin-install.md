@@ -1,6 +1,6 @@
 # StashDock — ChatGPT local plugin for Windows x64
 
-Download `stashdock-plugin-0.4.36-win32-x64.zip` from
+Download the Windows package `stashdock-plugin-<version>-win32-x64.zip` from
 [Releases](https://github.com/GaryYang12345/StashDock/releases/latest) and extract
 it to a permanent folder. Keep the hidden `.agents` folder and `plugins` together.
 Do not use GitHub's Source code ZIP: it does not contain the required binaries.

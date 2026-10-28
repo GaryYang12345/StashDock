@@ -30,7 +30,8 @@ if (-not (Test-Path -LiteralPath $taskInstaller -PathType Leaf)) { throw 'Build 
 Copy-Item -LiteralPath $taskInstaller -Destination (Join-Path $taskRelease ([IO.Path]::GetFileName($taskInstaller)))
 Copy-Item -LiteralPath $taskPluginZip -Destination (Join-Path $taskRelease "stashdock-plugin-$taskPluginVersion-win32-x64.zip")
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-foreach ($taskBrowser in @('chrome')) {
+$taskProductLinks = Get-Content -Raw -LiteralPath (Join-Path $taskRoot 'src-tauri/product-links.json') | ConvertFrom-Json
+foreach ($taskBrowser in $taskProductLinks.publicBrowserExtensions) {
   $taskBrowserFolder = Join-Path $taskRoot "output/extensions/$taskBrowser"
   $taskManifest = Get-Content -Raw -LiteralPath (Join-Path $taskBrowserFolder 'manifest.json') | ConvertFrom-Json
   if ($taskManifest.version -ne $taskExtensionVersion) { throw "Rebuild $taskBrowser extension." }

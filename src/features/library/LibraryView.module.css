@@ -29,3 +29,14 @@
   .workspace { padding-inline: var(--space-2); }
   .content { padding-inline: var(--space-4); }
 }
+
+/* AppKit owns the titlebar and traffic lights on macOS. */
+:global(html[data-desktop-platform="macos"]) .native .windowBar { display: none; }
+/* One inset frames the content surface; the sidebar wordmark shares its title
+   axis while remaining clear of the native controls above it. */
+:global(html[data-desktop-platform="macos"]) .native .workspace { padding: var(--space-4) var(--space-4) var(--space-4) 0; }
+@container stashdock-shell (max-width: 880px) {
+  :global(html[data-desktop-platform="macos"]) .native .workspace { padding-left: var(--space-4); }
+}
+
+.compactBrand { width: 135px; height: 19px; }

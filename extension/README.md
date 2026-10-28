@@ -6,8 +6,8 @@ the Chrome toolbar, review the title and content, choose tags, then Save page.
 ## Installation
 
 Install and open a matching StashDock Desktop or AI plugin once. The native save
-component is included with either product. Follow the installation steps for
-the release you downloaded.
+component is installed with either product; both applications may then be closed
+while you save pages.
 
 Use the Chrome Web Store listing when available. For manual installation:
 

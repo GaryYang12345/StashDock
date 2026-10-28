@@ -21,7 +21,7 @@ foreach ($taskFolder in @('.codex-plugin','assets','dist','notices','scripts','s
   Copy-Item -LiteralPath (Join-Path $taskPlugin $taskFolder) -Destination (Join-Path $taskTarget $taskFolder) -Recurse
 }
 [void][IO.Directory]::CreateDirectory((Join-Path $taskTarget 'bin\win32-x64'))
-foreach ($taskBinary in @('node.exe','stashdock-preview.exe','stashdock-storage.exe')) {
+foreach ($taskBinary in @('node.exe','stashdock-preview.exe','stashdock-storage.exe','stashdock-browser.exe')) {
   Copy-Item -LiteralPath (Join-Path $taskPlugin ('bin\win32-x64\'+$taskBinary)) -Destination (Join-Path $taskTarget ('bin\win32-x64\'+$taskBinary))
 }
 Copy-Item -LiteralPath (Join-Path $taskPlugin '.mcp.json') -Destination (Join-Path $taskTarget '.mcp.json')

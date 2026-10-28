@@ -1,4 +1,4 @@
-//! All enrichment connections are pinned to checked public DNS results. No system proxies.
+//! Public-only enrichment with explicit OS proxy routing and checked direct endpoints.
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},
@@ -90,8 +90,8 @@ fn build_client(host: &str, address: SocketAddr) -> Result<reqwest::blocking::Cl
 }
 /// One client per system proxy address. The proxy sees host names, never a
 /// destination chosen by the page beyond the checked URL.
-fn proxied_client(proxy: SocketAddr) -> Result<reqwest::blocking::Client, String> {
-    static CLIENT: OnceLock<Mutex<Option<(SocketAddr, reqwest::blocking::Client)>>> =
+fn proxied_client(proxy: ProxyEndpoint) -> Result<reqwest::blocking::Client, String> {
+    static CLIENT: OnceLock<Mutex<Option<(ProxyEndpoint, reqwest::blocking::Client)>>> =
         OnceLock::new();
     let mut cached = CLIENT
         .get_or_init(|| Mutex::new(None))
@@ -105,10 +105,7 @@ fn proxied_client(proxy: SocketAddr) -> Result<reqwest::blocking::Client, String
     #[cfg(windows)]
     let client = client.tls_backend_native();
     let client = client
-        .proxy(
-            reqwest::Proxy::all(format!("http://{proxy}"))
-                .map_err(|_| "Web preview is unavailable.")?,
-        )
+        .proxy(reqwest::Proxy::all(proxy.url()).map_err(|_| "Web preview is unavailable.")?)
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(3))
         .pool_idle_timeout(CLIENT_IDLE)
@@ -128,7 +125,8 @@ fn proxied_client(proxy: SocketAddr) -> Result<reqwest::blocking::Client, String
     Ok(client)
 }
 fn client_for(host: &str, address: SocketAddr) -> Result<reqwest::blocking::Client, String> {
-    if !public_ip(address.ip()) || !matches!(address.port(), 80 | 443) {
+    // Addresses come from resolve_public: public, or a name's fake-IP answer.
+    if !(public_ip(address.ip()) || fake_ip(address.ip())) || !matches!(address.port(), 80 | 443) {
         return Err("Automatic previews are only available for public websites.".into());
     }
     static CLIENTS: OnceLock<Mutex<ClientPool>> = OnceLock::new();
@@ -231,11 +229,33 @@ pub fn proxy_address(value: &str) -> Option<std::net::SocketAddr> {
     let port = value.rsplit_once(':')?.1.parse::<u16>().ok()?;
     (port > 0).then_some(std::net::SocketAddr::new(ip, port))
 }
-/// The user's enabled WinINET proxy and its bypass list ("ProxyOverride").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProxyEndpoint {
+    Http(SocketAddr),
+    Socks5(SocketAddr),
+}
+impl ProxyEndpoint {
+    pub fn address(self) -> SocketAddr {
+        match self {
+            Self::Http(address) | Self::Socks5(address) => address,
+        }
+    }
+    fn url(self) -> String {
+        let scheme = match self {
+            Self::Http(_) => "http",
+            Self::Socks5(_) => "socks5h",
+        };
+        format!("{scheme}://{}", self.address())
+    }
+}
+/// The user's enabled OS web proxies, optional SOCKS proxy and bypass list.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SystemProxy {
     pub address: Option<SocketAddr>,
     bypass: Vec<String>,
+    http_address: Option<SocketAddr>,
+    socks_address: Option<SocketAddr>,
+    configuration_error: Option<&'static str>,
 }
 
 impl SystemProxy {
@@ -254,11 +274,44 @@ impl SystemProxy {
             .filter(|entry| !entry.is_empty())
             .take(512)
             .collect();
-        Self { address, bypass }
+        Self {
+            address,
+            http_address: address,
+            socks_address: None,
+            bypass,
+            configuration_error: None,
+        }
     }
     /// The proxy for this host, or None when the host is on the bypass list
     /// (proxy clients usually list domestic sites there so they connect directly).
     pub fn for_host(&self, host: &str) -> Option<SocketAddr> {
+        if self.bypassed(host) {
+            None
+        } else {
+            self.address
+        }
+    }
+    pub fn with_socks5(mut self, address: SocketAddr) -> Self {
+        self.socks_address = Some(address);
+        self
+    }
+    pub fn route(&self, host: &str, port: u16) -> Result<Option<ProxyEndpoint>, String> {
+        if self.bypassed(host) {
+            return Ok(None);
+        }
+        if let Some(error) = self.configuration_error {
+            return Err(error.into());
+        }
+        let http = if port == 80 {
+            self.http_address
+        } else {
+            self.address
+        };
+        Ok(http
+            .map(ProxyEndpoint::Http)
+            .or_else(|| self.socks_address.map(ProxyEndpoint::Socks5)))
+    }
+    fn bypassed(&self, host: &str) -> bool {
         let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
         let bypassed = self.bypass.iter().any(|pattern| {
             if pattern == "<local>" {
@@ -267,11 +320,7 @@ impl SystemProxy {
                 wildcard(pattern, &host)
             }
         });
-        if bypassed {
-            None
-        } else {
-            self.address
-        }
+        bypassed
     }
 }
 
@@ -346,11 +395,18 @@ pub fn system_proxy() -> SystemProxy {
         let address = text("ProxyServer").and_then(|value| proxy_address(&value));
         SystemProxy::new(address, &text("ProxyOverride").unwrap_or_default())
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::system_proxy()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         SystemProxy::default()
     }
 }
+#[cfg(target_os = "macos")]
+#[path = "public_web_macos.rs"]
+mod macos;
 static RESOLVING: AtomicUsize = AtomicUsize::new(0);
 fn lookup(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     if let Ok(ip) = host.parse::<IpAddr>() {
@@ -426,6 +482,17 @@ pub fn check_proxied(host: &str, port: u16) -> Result<(), String> {
     }
 }
 
+/// Direct connections go only to public addresses. A name may also resolve to
+/// fake-IP addresses: a proxy client in TUN mode answers every name from
+/// 198.18.0.0/15 and routes the connection itself, as it does for the browser.
+/// A literal fake-IP link, or any private/loopback answer, is still refused.
+fn direct_answers_allowed(literal: bool, addresses: &[SocketAddr]) -> bool {
+    !addresses.is_empty()
+        && addresses
+            .iter()
+            .all(|address| public_ip(address.ip()) || (!literal && fake_ip(address.ip())))
+}
+
 pub fn resolve_public(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     let host = web_host(host, port)?;
     let key = (host.to_ascii_lowercase(), port);
@@ -438,7 +505,7 @@ pub fn resolve_public(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> 
         }
     }
     let addresses = lookup(host, port)?;
-    if addresses.is_empty() || addresses.iter().any(|address| !public_ip(address.ip())) {
+    if !direct_answers_allowed(host.parse::<IpAddr>().is_ok(), &addresses) {
         return Err("Automatic previews are only available for public websites.".into());
     }
     if let Ok(mut cache) = cache.lock() {
@@ -521,7 +588,7 @@ fn fetch_with_policy(
         let port = url.port_or_known_default().unwrap();
         // With a system proxy, the proxy resolves and routes the name; otherwise
         // connect only to the checked public addresses.
-        let proxy = system_proxy().for_host(host);
+        let proxy = system_proxy().route(host, port)?;
         let routes: Vec<Option<SocketAddr>> = match proxy {
             Some(_) => {
                 check_proxied(host, port)?;
@@ -689,6 +756,72 @@ fn is_pdf(content_type: &str, prefix: &[u8]) -> bool {
 mod tests {
     use super::*;
     #[test]
+    #[cfg(not(windows))]
+    fn socks_http_client_sends_the_unresolved_destination_to_the_proxy() {
+        use std::{io::Write, net::TcpListener, thread};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "SOCKS client never connected");
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut greeting = [0; 3];
+            stream.read_exact(&mut greeting).unwrap();
+            assert_eq!(greeting, [5, 1, 0]);
+            stream.write_all(&[5, 0]).unwrap();
+            let mut prefix = [0; 5];
+            stream.read_exact(&mut prefix).unwrap();
+            assert_eq!(&prefix[..4], &[5, 1, 0, 3]);
+            let mut name = vec![0; prefix[4] as usize];
+            stream.read_exact(&mut name).unwrap();
+            assert_eq!(name, b"stashdock-transport-test.invalid");
+            let mut port = [0; 2];
+            stream.read_exact(&mut port).unwrap();
+            assert_eq!(u16::from_be_bytes(port), 80);
+            stream.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0]).unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") && request.len() < 16384 {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            let request = String::from_utf8(request).unwrap();
+            assert!(request.starts_with("GET /document HTTP/1.1\r\n"));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("host: stashdock-transport-test.invalid\r\n"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nproof",
+                )
+                .unwrap();
+        });
+        let result = proxied_client(ProxyEndpoint::Socks5(address))
+            .unwrap()
+            .get("http://stashdock-transport-test.invalid/document")
+            .timeout(Duration::from_secs(2))
+            .send()
+            .and_then(reqwest::blocking::Response::text);
+        server.join().unwrap();
+        assert_eq!(result.unwrap(), "proof");
+    }
+    #[test]
     fn compressed_reads_are_bounded_after_decoding_and_reject_invalid_streams() {
         let gzip = vec![
             31, 139, 8, 0, 0, 0, 0, 0, 0, 10, 75, 206, 207, 45, 40, 74, 45, 46, 78, 77, 81, 72,
@@ -832,6 +965,32 @@ mod tests {
         }
         assert!(resolve_public("localhost", 80).is_err());
         assert!(resolve_public("127.0.0.1", 80).is_err());
+        assert!(resolve_public("198.18.0.1", 80).is_err());
+    }
+    #[test]
+    fn tun_fake_ip_answers_connect_while_private_answers_stay_refused() {
+        let at = |ip: &str| SocketAddr::new(ip.parse().unwrap(), 443);
+        // TUN-mode proxy clients answer names from 198.18.0.0/15 and route them.
+        assert!(direct_answers_allowed(false, &[at("198.18.0.7")]));
+        assert!(direct_answers_allowed(
+            false,
+            &[at("198.19.255.1"), at("8.8.8.8")]
+        ));
+        // A pasted fake-IP literal is not a name the proxy client resolved.
+        assert!(!direct_answers_allowed(true, &[at("198.18.0.7")]));
+        for private in [
+            "10.0.0.1",
+            "127.0.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+        ] {
+            assert!(
+                !direct_answers_allowed(false, &[at("198.18.0.7"), at(private)]),
+                "{private}"
+            );
+        }
+        assert!(!direct_answers_allowed(false, &[]));
     }
     #[test]
     fn system_proxy_bypass_list_sends_listed_hosts_directly() {

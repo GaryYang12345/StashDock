@@ -11,7 +11,7 @@ const config = JSON.parse(await readFile(resolve(folder, '.mcp.json'), 'utf8')).
 assert.equal(config.cwd, '.');
 assert.deepEqual(config.args, ['scripts/mcp-server.mjs']);
 const client = new Client({ name: 'StashDock release verification', version: '1' });
-const transport = new StdioClientTransport({ command: config.command, args: config.args, cwd: resolve(folder, config.cwd), env: { ...process.env, STASHDOCK_DATA_DIR: libraryFolder() }, stderr: 'pipe' });
+const transport = new StdioClientTransport({ command: config.command, args: config.args, cwd: resolve(folder, config.cwd), env: { ...process.env, STASHDOCK_NATIVE_HOST_REGISTRATION: 'off', STASHDOCK_DATA_DIR: libraryFolder() }, stderr: 'pipe' });
 try {
   await client.connect(transport);
   assert.equal(client.getServerVersion().version, pluginVersion);

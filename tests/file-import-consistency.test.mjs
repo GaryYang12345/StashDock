@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
 import { openManagedFile } from '../plugins/stashdock/server/open-file.mjs';
 const source = path => readFileSync(path, 'utf8');
-test('shared forms prevent card context-menu and file-flow forks', () => {
+test('Rule 1 and shared forms prevent card context-menu and file-flow forks', () => {
+  assert.match(source('AGENTS.md'), /Rule 1: Consistency/);
   for (const path of ['src/components/StashCard.tsx','src/features/mcp-app/McpShelf.tsx']) assert.doesNotMatch(source(path), /<DesktopMenu context[^>]*actions=\{(?:editActions|referenceEditActions)/);
   assert.doesNotMatch(source('src/components/StashCard.tsx'), /<DesktopMenu context/);
   const form = source('src/components/ReferenceFileImport.tsx');
@@ -35,7 +36,7 @@ test('managed file opening rejects external paths and executable files, and neve
   const pdf=join(assets,'saved.pdf'), script=join(assets,'script.ps1'), outside=join(root,'outside.pdf');
   for(const path of [pdf,script,outside]) writeFileSync(path,'fixture');
   let called=false;
-  const launch=(command,args,options)=>{ called=true; assert.equal(command,'explorer.exe'); assert.deepEqual(args,[pdf]); assert.equal(options.shell,false); assert.equal(options.windowsHide,true); const child=new EventEmitter(); child.unref=()=>{}; queueMicrotask(()=>child.emit('spawn')); return child; };
+  const launch=(command,args,options)=>{ called=true; assert.equal(command,'explorer.exe'); assert.deepEqual(args,[realpathSync(pdf)]); assert.equal(options.shell,false); assert.equal(options.windowsHide,true); const child=new EventEmitter(); child.unref=()=>{}; queueMicrotask(()=>child.emit('spawn')); return child; };
   assert.deepEqual(await openManagedFile(pdf,assets,{launch,platform:'win32'}),{opened:true}); assert.equal(called,true);
   called=false; await assert.rejects(openManagedFile(script,assets,{launch}),/file type/); await assert.rejects(openManagedFile(outside,assets,{launch}),/managed/); assert.equal(called,false);
 });

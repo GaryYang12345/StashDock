@@ -1,0 +1,15 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run browser:helper && npm run build"
+  },
+  "bundle": {
+    "resources": {
+      "target/release/stashdock-browser.exe": "stashdock-browser.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "browser-host-installer.nsh"
+      }
+    }
+  }
+}

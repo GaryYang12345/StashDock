@@ -10,11 +10,53 @@ import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mj
 import { startCaptureBridge } from '../plugins/stashdock/server/capture-bridge.mjs';
 import { createBrowserLibrary } from '../extension/library-client.js';
 import { canonicalReferenceUrl } from '../src/lib/reference-url.mjs';
+import { buildContext } from '../src/lib/context-format.mjs';
 import { firefoxExtensionId } from '../src/lib/browser-extension-identity.mjs';
+import productLinks from '../src-tauri/product-links.json' with { type: 'json' };
 const page={id:'draft',title:'New title',kind:'web',source:'Example',url:'https://example.org/post?utm_source=a#reply',content:'New body',excerpt:'New body',tags:['New'],createdAt:'2026-10-16T00:00:00Z',preview:'data:image/jpeg;base64,AAAA',origin:{previewKind:'screenshot'}};
+test('pinned Chrome and Edge save and retry through real HTTP without inspecting profile installation metadata', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'stashdock-pinned-save-'));
+  const library = createLocalLibrary({ dataDir: root, browserEnabled: () => assert.fail('No profile access for pinned requests') });
+  const bridge = startCaptureBridge(library, 0); await once(bridge, 'listening');
+  t.after(async () => { await new Promise(resolve => bridge.close(resolve)); library.close(); rmSync(root, { recursive: true, force: true }); });
+  const provider = `http://127.0.0.1:${bridge.address().port}`;
+  for (const browser of ['chrome', 'edge']) {
+    const extensionId = productLinks.browserExtensions[browser].id;
+    const origin = `chrome-extension://${extensionId}`;
+    const headers = { 'Content-Type': 'application/json', 'X-StashDock-Client': 'chrome-extension-v1', Origin: origin };
+    const setup = await fetch(provider + '/v1/setup', { method: 'POST', headers, body: JSON.stringify({ browser, extensionId, version: '0.4.17' }) });
+    assert.equal(setup.status, 200); assert.deepEqual(await setup.json(), { connected: true, owner: 'codex', integrations: { items: [] } });
+    const client = createBrowserLibrary({ storage: { get: async () => ({}), set: async () => {} },
+      fetcher: (url, options) => fetch(provider + new URL(url).pathname, { ...options, headers: { ...options.headers, Origin: origin } }) });
+    const item = { ...page, url: `https://example.org/pinned-${browser}` }, options = { operationId: randomUUID() };
+    const first = await client.save(item, options), retry = await client.save(item, options);
+    assert.equal(first.saved, true); assert.deepEqual(retry, first);
+  }
+  assert.equal((await library.read()).length, 2);
+});
 test('canonical URL keys match native query encoding and remove empty legacy queries',()=>{
   assert.equal(canonicalReferenceUrl('https://example.org/post?'),'https://example.org/post');
   assert.equal(canonicalReferenceUrl('https://example.org/post?q=hello%20world'),'https://example.org/post?q=hello%20world');
+});
+test('an older live provider rejecting the new identity cannot hide the updated provider or receive a write', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'stashdock-mixed-provider-'));
+  const library = createLocalLibrary({ dataDir: root, browserEnabled: () => false });
+  const bridge = startCaptureBridge(library, 0); await once(bridge, 'listening');
+  t.after(async () => { await new Promise(resolve => bridge.close(resolve)); library.close(); rmSync(root, { recursive: true, force: true }); });
+  const { checkSetup } = await import('../extension/setup-client.js');
+  const extensionId = productLinks.browserExtensions.edge.id, origin = `chrome-extension://${extensionId}`;
+  const calls = [];
+  const fetcher = (url, options) => {
+    const target = new URL(url); calls.push([target.port, target.pathname]);
+    if (target.port === '17864') return Promise.resolve(Response.json({ error: 'Old provider has not recognized this identity.' }, { status: target.pathname === '/v1/setup' ? 400 : 403 }));
+    target.port = String(bridge.address().port);
+    return fetch(target, { ...options, headers: { ...options.headers, Origin: origin } });
+  };
+  const setup = () => checkSetup({ fetcher, browser: 'edge', extensionId, version: '0.4.17' });
+  const client = createBrowserLibrary({ storage: { get: async () => ({}), set: async () => {} }, fetcher, setup });
+  const result = await client.save(page, { operationId: randomUUID() });
+  assert.equal(result.saved, true); assert.equal((await library.read()).length, 1);
+  assert.deepEqual(calls.filter(([, path]) => path === '/v1/capture'), [['17863', '/v1/capture']]);
 });
 function fixture(t) {
   const root=mkdtempSync(join(tmpdir(),'stashdock-mcp-test-save-confirm-'));
@@ -40,9 +82,9 @@ test('Chrome, Edge and Firefox commit readable links even with no extracted body
   const saved=await library.read();assert.equal(saved.length,3);
   for(const item of saved){assert.equal(item.content,undefined);assert.equal(item.preview,undefined);assert.ok(item.title);}
 });
-test('duplicate check is bounded; keep existing writes nothing; replace preserves identity and AI context',async t=>{
+test('duplicate check is bounded; keep existing writes nothing; replace uses the new final context',async t=>{
   const {library}=fixture(t);
-  const existing=library.importItems([{...page,title:'Old title',content:'Old body',tags:['Old'],preview:undefined,origin:{previewSource:'custom'}}]).items[0];
+  const existing=library.importItems([{...page,title:'Old title',content:'Old body',tags:['Old'],preview:undefined,origin:{previewSource:'custom',author:'Old author',contentEdited:true}}]).items[0];
   library.setFavorite(existing.id,true);library.editContext(existing.id,'User AI instructions');
   const before=(await library.read())[0];
   const conflict=library.lookupCapture('https://example.org/post/').duplicate;
@@ -55,12 +97,20 @@ test('duplicate check is bounded; keep existing writes nothing; replace preserve
   assert.deepEqual(result,{saved:true,id:existing.id,replaced:true});
   const after=(await library.read())[0];
   assert.equal(after.title,page.title);assert.equal(after.content,page.content);assert.deepEqual(after.tags,page.tags);assert.equal(after.preview,page.preview);
-  assert.equal(after.id,before.id);assert.equal(after.favorite,true);assert.equal(after.createdAt,before.createdAt);assert.equal(after.contextOverride,'User AI instructions');
+  assert.equal(after.id,before.id);assert.equal(after.favorite,false);assert.equal(after.createdAt,before.createdAt);assert.equal(after.contextOverride,undefined);
+  assert.match(buildContext([after]),/New body/);assert.doesNotMatch(buildContext([after]),/User AI instructions|Old body/);
+  assert.equal(library.searchIds('instructions').length,0);assert.equal(library.searchIds('New body').length,1);
   assert.equal(after.origin.previewSource,undefined);
+  assert.equal(after.origin.author,undefined);assert.equal(after.origin.contentEdited,undefined);
   assert.deepEqual(library.saveCapture(body),result);
   const digest=createHash('sha256').update(body).digest('hex');
   assert.deepEqual(library.lookupCapture(page.url,input.operationId,digest),result);
   assert.throws(()=>library.saveCapture(JSON.stringify({...input,replace:conflict,item:{...page,title:'Altered'}})),/changed/);
+  library.editContext(after.id,'');
+  const nextConflict=library.lookupCapture(page.url).duplicate;
+  library.saveCapture(JSON.stringify({item:{...page,content:'Latest body',preview:undefined},operationId:randomUUID(),replace:nextConflict}));
+  const latest=(await library.read())[0];
+  assert.equal(latest.preview,undefined);assert.equal(latest.contextOverride,undefined);assert.match(buildContext([latest]),/Latest body/);
 });
 test('concurrent create/edit/delete cannot bypass confirmation or resurrect a removed card',async t=>{
   const {library}=fixture(t);

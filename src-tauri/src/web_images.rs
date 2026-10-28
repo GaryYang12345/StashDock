@@ -24,12 +24,42 @@ pub fn cover_base64(value: &str) -> Result<String, String> {
     }
     cover(&bytes)
 }
-fn raster_with_background(bytes: &[u8], icon: bool, flatten: bool) -> Result<String, String> {
+/// Small in-process native covers obey the same decoder limits as web covers.
+#[cfg(target_os = "macos")]
+pub(crate) fn native_thumbnail(bytes: &[u8]) -> Result<String, String> {
+    let image = decode_raster(bytes)?;
+    // CSS cover: fill the 214x106 search cover, centred horizontally and
+    // anchored to its top. Crop before shrinking so tall originals stay sharp.
+    let ratio = 214.0 / 106.0;
+    let width = image
+        .width()
+        .min((image.height() as f64 * ratio).round() as u32)
+        .max(1);
+    let height = image
+        .height()
+        .min((image.width() as f64 / ratio).round() as u32)
+        .max(1);
+    let image = image
+        .crop_imm((image.width() - width) / 2, 0, width, height)
+        .resize_exact(428, 212, FilterType::Lanczos3);
+    let mut output = Vec::new();
+    if image.color().has_alpha() {
+        image
+            .write_to(&mut Cursor::new(&mut output), image::ImageFormat::Png)
+            .map_err(|_| "Unsupported image.".to_string())?;
+        return Ok(format!("data:image/png;base64,{}", STANDARD.encode(output)));
+    }
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, 80)
+        .encode_image(&image.to_rgb8())
+        .map_err(|_| "Unsupported image.".to_string())?;
+    Ok(format!(
+        "data:image/jpeg;base64,{}",
+        STANDARD.encode(output)
+    ))
+}
+fn decode_raster(bytes: &[u8]) -> Result<image::DynamicImage, String> {
     if bytes.len() > 5_000_000 {
         return Err("Image is too large.".into());
-    }
-    if icon && std::str::from_utf8(bytes).is_ok_and(|text| text.contains("<svg")) {
-        return svg_icon(bytes);
     }
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
@@ -39,9 +69,18 @@ fn raster_with_background(bytes: &[u8], icon: bool, flatten: bool) -> Result<Str
     limits.max_image_height = Some(4096);
     limits.max_alloc = Some(64 * 1024 * 1024);
     reader.limits(limits);
-    let decoded = reader
+    reader
         .decode()
-        .map_err(|_| "Unsupported or oversized image.")?;
+        .map_err(|_| "Unsupported or oversized image.".into())
+}
+fn raster_with_background(bytes: &[u8], icon: bool, flatten: bool) -> Result<String, String> {
+    if bytes.len() > 5_000_000 {
+        return Err("Image is too large.".into());
+    }
+    if icon && std::str::from_utf8(bytes).is_ok_and(|text| text.contains("<svg")) {
+        return svg_icon(bytes);
+    }
+    let decoded = decode_raster(bytes)?;
     let mut image = if icon {
         decoded.resize(32, 32, FilterType::Triangle)
     } else {
@@ -126,6 +165,37 @@ pub fn download(value: &str, icon: bool, deadline: Instant) -> Result<String, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_cover_matches_top_crop_and_preserves_transparent_pixels() {
+        let mut image = image::RgbaImage::from_pixel(214, 600, image::Rgba([0, 0, 255, 255]));
+        for y in 0..106 {
+            for x in 0..214 {
+                image.put_pixel(x, y, image::Rgba([255, 0, 0, 255]));
+            }
+        }
+        for y in 0..30 {
+            for x in 0..30 {
+                image.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
+            }
+        }
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .unwrap();
+        let thumbnail = native_thumbnail(&bytes).unwrap();
+        let output = image::load_from_memory(
+            &STANDARD
+                .decode(thumbnail.split_once(',').unwrap().1)
+                .unwrap(),
+        )
+        .unwrap()
+        .to_rgba8();
+        assert_eq!(output.dimensions(), (428, 212));
+        assert_eq!(output.get_pixel(10, 10).0[3], 0);
+        assert_eq!(output.get_pixel(214, 106).0, [255, 0, 0, 255]);
+        assert_eq!(output.get_pixel(214, 210).0, [255, 0, 0, 255]);
+    }
     #[test]
     fn rejects_html_and_normalizes_image_bytes_with_bounded_dimensions() {
         assert!(raster(b"<html>not an icon</html>", true).is_err());

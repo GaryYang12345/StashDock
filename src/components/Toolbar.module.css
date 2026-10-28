@@ -31,3 +31,9 @@
   .headingRow { flex-wrap: wrap; }
   .actions { margin-inline-start: auto; }
 }
+
+.compactBrand { display: none; }
+@container stashdock-shell (max-width: 880px) {
+  .compactBrand { display: inline-flex; align-items: center; }
+  .brandedTitle { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}

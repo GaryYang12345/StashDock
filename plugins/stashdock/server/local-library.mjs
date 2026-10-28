@@ -120,7 +120,6 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
       ? browserInstallationRecord(readMeta, id, version, extensionId, origin, browserEnabled)
       : installationRecord(id, version, path, extensionId);
     db.prepare('INSERT INTO app_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(record.key, record.value);
-    return integrations();
   };
   const saveCodexPreferences = patch => transaction(() => {
     const next = patchCodexPreferences(getCodexPreferences(), patch);
@@ -201,20 +200,18 @@ function openLocalLibrary({ dataDir, browserEnabled }) {
     knownUrls?.set(url, { id, url });
     return { item: get(id), duplicate: false };
   }
-  // The user confirmed replacing the saved reference with this link (the same
-  // rule as desktop's replaceLink): keep its identity, creation time, favorite
-  // and edited AI context; replace its title, content, tags and cover.
+  // Explicit Replace uses the new reference, rather than merging prior edits.
   const replaceLink = raw => transaction(() => {
     const url = raw?.url ? canonicalUrl(raw.url) : null;
     const existing = url && db.prepare('SELECT id,url FROM stash_items WHERE url IS NOT NULL').all().find(row => { try { return canonicalUrl(row.url) === url; } catch { return false; } });
-    if (!existing) return insert(raw).item;
+    if (!existing) throw new Error('The reference changed. Save the page again.');
     if (!['web', 'repo'].includes(raw.kind) || !text(raw.title, 500)) throw new Error('Each reference needs a title and a supported kind.');
     const origin = raw.origin && typeof raw.origin === 'object' && !Array.isArray(raw.origin) ? { ...raw.origin } : {};
     delete origin.assetPath; delete origin.originalPath;
     origin.importedAt = new Date().toISOString();
     const preview = raster(raw.preview);
-    db.prepare('UPDATE stash_items SET title=?,kind=?,source=?,excerpt=?,tags_json=?,content=?,preview=COALESCE(?,preview),origin_json=?,updated_at=? WHERE id=?')
-      .run(text(raw.title, 500), raw.kind, text(raw.source, 300) || 'StashDock', text(raw.excerpt, 2000), JSON.stringify(tags(raw.tags || [])),
+    db.prepare('UPDATE stash_items SET title=?,kind=?,source=?,url=?,excerpt=?,tags_json=?,content=?,preview=?,origin_json=?,context_override=NULL,favorite=0,asset_path=NULL,original_path=NULL,mime_type=NULL,size_bytes=NULL,updated_at=? WHERE id=?')
+      .run(text(raw.title, 500), raw.kind, text(raw.source, 300) || 'StashDock', url, text(raw.excerpt, 2000), JSON.stringify(tags(raw.tags || [])),
         text(raw.content || '', 2_000_000) || null, preview, JSON.stringify(origin), new Date().toISOString(), existing.id);
     return get(existing.id);
   });

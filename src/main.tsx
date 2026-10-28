@@ -12,6 +12,8 @@ import { primeDesktopAppearance } from './features/settings/preferences';
 // Set native host styles before the first render, avoiding an opaque folder flash.
 primeDesktopAppearance();
 if (isTauri()) {
+  // Native host hint before paint; authoritative settings arrive from Rust.
+  document.documentElement.dataset.desktopPlatform = /Mac/.test(navigator.platform) ? "macos" : "other";
   const surface = desktopSurface();
   const host = surface === "folder" ? "desktop-folder" : surface === "search" ? "desktop-search" : "desktop-native";
   document.documentElement.classList.add(host);

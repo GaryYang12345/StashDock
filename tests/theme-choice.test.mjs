@@ -40,7 +40,7 @@ test('visual themes are one native, controlled group with inert previews in both
     await act(async () => document.querySelector('input[value="light"]').click());
     assert.deepEqual(changes, ['dark']);
     await render({ host: true, value: 'system' });
-    assert.match(document.body.textContent, /Follow ChatGPT/);
+    assert.match(document.body.textContent, /Automatic/);
     assert.doesNotMatch(document.body.textContent, /Follow system/);
     assert.equal(document.querySelector('input[value="system"]').checked, true);
   } finally {

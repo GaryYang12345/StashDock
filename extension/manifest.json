@@ -1,13 +1,24 @@
 {
   "manifest_version": 3,
   "name": "StashDock Companion",
-  "version": "0.4.16",
+  "version": "1.0.0",
   "description": "Save page text and screenshots from your browser to StashDock for AI context.",
   "minimum_chrome_version": "141",
   "incognito": "not_allowed",
-  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
-  "host_permissions": ["http://127.0.0.1:17863/*", "http://127.0.0.1:17864/*"],
-  "optional_host_permissions": ["<all_urls>"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "sidePanel",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:17863/*",
+    "http://127.0.0.1:17864/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -25,5 +36,8 @@
       "32": "icons/icon-32.png"
     }
   },
-  "side_panel": { "default_path": "sidepanel.html" }
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsYzy4uhC8yR9oEPGdKANFHGpJfUNh18Zm/JojJum9DGeBkBoBnOr0nb2p19VpJhwu+9YQK+4fldBYyfliYLin4/CpnEUJOxCKAfVIor0u7H1J/UfBnGBw3IfX8b+/T/LJ4mvFkS37dNEybJFTtaVtR1b/1wCCSsr6X08pLKs6mutf/fVbHQ3OecbL4CD1IQsBGxZBtl9vDYVWEjMHJ2uNvmASxdYN2VR719UMcFDcaV/LmWINR7eytXtb1diPU6Wj2DycsYo9R0zMwqZMmlV2/hdQLDRX4T4CMZJ1B8vqpRy8f9cslY0BQY0D4U9tAvrAtZfnQgw/XgPQMKXrwP1YQIDAQAB"
 }

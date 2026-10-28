@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FolderArtwork } from "./FolderArtwork";
-import { X } from "lucide-react";
+import { FolderCloseArtwork } from "./FolderCloseArtwork";
 import { beginFloatingDrag, hideStashDock } from "../lib/desktopWindows";
 import styles from "./FloatingFolder.module.css";
 import { useI18n } from '../features/settings/locale';
@@ -43,11 +43,15 @@ export function FloatingFolder({ onOpen, onMoved }: Props) {
       onPointerDown={async event => {
         if (event.button !== 0 || !isTauri() || pending.current) return;
         event.preventDefault();
+        pending.current = true;
+        let moved: boolean | undefined;
         try {
-          if (await beginFloatingDrag({ x: event.screenX, y: event.screenY })) onMoved?.();
-          else await activate();
+          moved = await beginFloatingDrag({ x: event.screenX, y: event.screenY });
         }
         catch { setError("Could not move StashDock. Please try again."); }
+        finally { pending.current = false; }
+        if (moved) onMoved?.();
+        else if (moved === false) await activate();
       }}
       onClick={event => { if (!isTauri() || event.detail === 0) void activate(); }}>
       <FolderArtwork />
@@ -55,7 +59,7 @@ export function FloatingFolder({ onOpen, onMoved }: Props) {
     <button type="button" className={styles.close} data-no-drag aria-label={t('Hide StashDock')}
       onPointerDown={event => event.stopPropagation()}
       onClick={() => { void hideStashDock().catch(() => setError("Could not hide StashDock. Please try again.")); }}>
-      <span className={styles.circle}><X size={10} strokeWidth={1.5} aria-hidden="true" /></span>
+      <FolderCloseArtwork className={styles.artwork} />
     </button>
     </div>
     {error && <span className="sr-only" role="alert">{t(error)}</span>}

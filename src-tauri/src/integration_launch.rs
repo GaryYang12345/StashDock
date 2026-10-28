@@ -1,5 +1,6 @@
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
+#[cfg(not(target_os = "macos"))]
 use std::path::Path;
 
 fn configuration() -> Value {
@@ -17,13 +18,20 @@ pub(crate) fn registered_desktop(db: &Connection) -> Option<String> {
         .ok()?;
     let value: Value = serde_json::from_str(raw.as_deref()?).ok()?;
     let path = value["path"].as_str()?;
-    (Path::new(path).is_absolute()
-        && Path::new(path).is_file()
-        && Path::new(path)
-            .file_name()?
-            .to_str()?
-            .eq_ignore_ascii_case("stashdock.exe"))
-    .then(|| path.to_owned())
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos_services::desktop_bundle(path)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        (Path::new(path).is_absolute()
+            && Path::new(path).is_file()
+            && Path::new(path)
+                .file_name()?
+                .to_str()?
+                .eq_ignore_ascii_case("stashdock.exe"))
+        .then(|| path.to_owned())
+    }
 }
 
 #[cfg(windows)]
@@ -149,17 +157,17 @@ fn shell_open(target: &str) -> Result<(), String> {
         Err("The app could not be opened. Try again.".into())
     }
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 fn shell_open(target: &str) -> Result<(), String> {
-    std::process::Command::new(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    })
-    .arg(target)
-    .spawn()
-    .map(|_| ())
-    .map_err(|_| "The app could not be opened. Try again.".into())
+    crate::macos_services::open(target)
+}
+#[cfg(not(any(windows, target_os = "macos")))]
+fn shell_open(target: &str) -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg(target)
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| "The app could not be opened. Try again.".into())
 }
 pub(crate) fn launch(id: &str, desktop: Option<String>) -> Result<(), String> {
     let config = configuration();
@@ -185,6 +193,25 @@ pub(crate) fn launch(id: &str, desktop: Option<String>) -> Result<(), String> {
                     .and_then(|n| n.to_str())
                     .is_some_and(|n| n.eq_ignore_ascii_case(browser_name))
         });
+    #[cfg(target_os = "macos")]
+    {
+        let application = config["applications"]
+            .get(id)
+            .ok_or("Choose a supported StashDock app.")?;
+        if id == "desktop" {
+            if let Some(ref path) = desktop {
+                return shell_open(path);
+            }
+        }
+        let ids: Vec<_> = application["bundleIdentifiers"]
+            .as_array()
+            .map(|v| v.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        if let Some(path) = crate::macos_services::application_path(&ids) {
+            // Do not mask an installed client's failure by silently opening a website.
+            return shell_open(&path);
+        }
+    }
     #[cfg(not(windows))]
     let browser_executable = None;
     let (target, fallback) = target_with(
@@ -258,7 +285,7 @@ mod tests {
             target_with(&config, "desktop", None, |_| false, None)
                 .unwrap()
                 .0,
-            "https://github.com/GaryYang12345/StashDock/releases/latest"
+            "https://stashdock.app/guide#install-desktop"
         );
     }
 }

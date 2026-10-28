@@ -26,7 +26,7 @@ export default function App() {
     <TooltipLayer />
     {isTauri() && desktopSurface() === "search" ? <DesktopReady><DesktopPreferencesProvider><Suspense fallback={null}><FolderSearch /></Suspense></DesktopPreferencesProvider></DesktopReady>
       : pathname === "/design" && !isTauri() ? <Suspense fallback={loading}><DesignLab /></Suspense> : isTauri()
-      ? <DesktopReady><DesktopPreferencesProvider><DesktopWindows renderLibrary={(collapse, active, maximized, floatingWindow) => <Suspense fallback={loading}><LibraryView onCollapse={collapse} active={active} maximized={maximized} floatingWindow={floatingWindow} /></Suspense>} /></DesktopPreferencesProvider></DesktopReady>
+      ? <DesktopReady><DesktopPreferencesProvider><DesktopWindows renderLibrary={(collapse, active, maximized, floatingWindow, nativeChrome) => <Suspense fallback={loading}><LibraryView onCollapse={collapse} active={active} maximized={maximized} floatingWindow={floatingWindow} nativeChrome={nativeChrome} /></Suspense>} /></DesktopPreferencesProvider></DesktopReady>
       : <DesktopPreferencesProvider><Suspense fallback={loading}><LibraryView /></Suspense></DesktopPreferencesProvider>}
   </MotionConfig>;
 }

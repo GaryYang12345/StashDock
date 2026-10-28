@@ -1,7 +1,7 @@
 export type IntegrationId = 'chrome' | 'edge' | 'firefox' | 'safari' | 'codex' | 'claude' | 'desktop';
 export type IntegrationState = { id: IntegrationId; detected: boolean; version?: string };
-export type IntegrationInfo = { items: IntegrationState[]; links?: Partial<Record<IntegrationId, string | null>>; githubUrl?: string | null };
-export const browsers: IntegrationId[] = ['chrome'];
+export type IntegrationInfo = { items: IntegrationState[]; platform?: string; links?: Partial<Record<IntegrationId, string | null>>; githubUrl?: string | null };
+export const browsers: IntegrationId[] = productLinks.publicBrowserExtensions as IntegrationId[];
 export const agents: IntegrationId[] = ['codex', 'claude'];
 const browserPurpose = 'Save pages while you browse.';
 export const referencePurpose = 'Browse your library and use references as context in conversations.';
@@ -15,6 +15,14 @@ export const integrationCatalog: Record<IntegrationId, { name: string; ready: bo
   claude: { name: 'Claude', ready: false, purpose: agentPurpose },
   desktop: { name: 'StashDock Desktop', ready: true, purpose: 'Browse and manage your references visually in a standalone desktop app. Bring them into any AI app.' },
 };
+export function integrationReady(id: IntegrationId, info: IntegrationInfo | null): boolean {
+  return integrationCatalog[id].ready || (id === 'safari' && info?.platform === 'macos');
+}
+export const safariSetupSteps = [
+  'Open StashDock Desktop on your Mac.',
+  'In Safari, choose Settings → Extensions and enable StashDock Companion.',
+  'Open a page and click StashDock in the Safari toolbar.',
+] as const;
 export function applicationWebsite(id: IntegrationId): string | null {
   return (productLinks.applications as Record<string, { website: string | null }>)[id]?.website || null;
 }
@@ -28,11 +36,11 @@ const browserGuide = (name: string): IntegrationGuide => ({
   steps: ['Open a page you want to save.', 'Click the StashDock extension to review its title and content.', 'Add tags if needed, then click Save page.'],
 });
 export const integrationGuides: Partial<Record<IntegrationId, IntegrationGuide>> = {
-  chrome: browserGuide('Chrome'), edge: browserGuide('Edge'), firefox: browserGuide('Firefox'),
+  chrome: browserGuide('Chrome'), edge: browserGuide('Edge'), firefox: browserGuide('Firefox'), safari: browserGuide('Safari'),
   codex: {
     title: 'Use references in ChatGPT',
     description: referencePurpose,
-    steps: ['Open StashDock beside your conversation.', 'Add a reference directly, or select several.', 'Click Add to chat for your selection, then write your question.'],
+    steps: ['Open StashDock from the side panel.', 'Add a reference directly, or select several.', 'Click Add to chat for your selection, then write your question.'],
   },
   desktop: {
     title: 'Use StashDock Desktop',

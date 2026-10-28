@@ -12,6 +12,10 @@ export const libraryStore = createLibraryStore({
     return isTauri() ? loadItems() : next;
   },
   remove: (id, next) => isTauri() ? deleteItem(id) : saveItems(next),
+  replace: async (item, next) => {
+    if (isTauri()) { await invoke('replace_saved_link', { item }); return loadItems(); }
+    await saveItems(next); return next;
+  },
   removeMany: async (ids, next) => { if (isTauri()) await invoke('delete_items', { ids }); else await saveItems(next); },
   favorite: (id, value, next) => isTauri() ? setItemFavorite(id, value) : saveItems(next),
   edit: async (id, title, tags, next, cover) => {

@@ -38,7 +38,7 @@ test('sidebar capture survives worker restart and rejects changed tabs and stale
   };
   try {
     let source=await readFile(new URL('../extension/background.js',import.meta.url),'utf8');
-    for(const path of ['library-client.js','capture-client.js','screenshot.js','panel-behavior.js','capture-sessions.js','setup-client.js','browser-host.js'])source=source.replace(`'./${path}'`,JSON.stringify(new URL(`../extension/${path}`,import.meta.url).href));
+    for(const path of ['library-client.js','capture-client.js','screenshot.js','panel-behavior.js','capture-sessions.js','setup-client.js','browser-host.js','safari-provider.js','firefox-provider.js','native-client.js','safari-native.js'])source=source.replace(`'./${path}'`,JSON.stringify(new URL(`../extension/${path}`,import.meta.url).href));
     await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
     globalThis.fetch=async()=>{throw Error('offline fixture');};
     installed({reason:'update'}); await new Promise(resolve=>setImmediate(resolve)); assert.equal(opened.length,0);

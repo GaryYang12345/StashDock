@@ -3,10 +3,11 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex, OnceLock,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -101,6 +102,22 @@ impl ExternalChanges {
     }
 }
 
+// Observing the shared library is independent of owning the enrichment lease.
+// In particular, note/favorite edits may create no preview job to notify the UI.
+fn maintain_queue(
+    db: &Connection,
+    owner: &str,
+    observer: Option<&mut ExternalChanges>,
+    notify: impl FnOnce(),
+) -> rusqlite::Result<bool> {
+    if let Some(observer) = observer {
+        if observer.changed(db)? {
+            notify();
+        }
+    }
+    heartbeat(db, owner)
+}
+
 /// What the shelf can show: references (count, last edit) and the progress of
 /// cover and text jobs (published covers finish their job).
 fn content_digest(db: &Connection) -> rusqlite::Result<String> {
@@ -118,7 +135,11 @@ fn content_digest(db: &Connection) -> rusqlite::Result<String> {
         .optional()
         .map(Option::unwrap_or_default)
     };
-    Ok(format!("{items}|{}|{}", jobs("web_preview_jobs")?, jobs("web_content_jobs").unwrap_or_default()))
+    Ok(format!(
+        "{items}|{}|{}",
+        jobs("web_preview_jobs")?,
+        jobs("web_content_jobs").unwrap_or_default()
+    ))
 }
 // Read-time metadata only. Never persist transient UI state into user records.
 pub(crate) fn annotate(
@@ -439,27 +460,82 @@ fn enrich(db: &mut Connection, job: &Job, stop: &AtomicBool, changed: &impl Fn()
                 changed();
             }
         },
-        |candidate, deadline| {
-            let cached = db
-                .query_row(
-                    "SELECT data FROM web_favicon_cache WHERE url=?1",
-                    [candidate],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()
-                .ok()
-                .flatten();
-            if cached.is_some() {
-                return cached;
-            }
-            let data = crate::web_images::download(candidate, true, deadline).ok()?;
-            let _ = db.execute("INSERT INTO web_favicon_cache(url,data,updated_at) VALUES(?1,?2,?3) ON CONFLICT(url) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at", params![candidate,data,timestamp()]);
-            let _ = db.execute("DELETE FROM web_favicon_cache WHERE url IN (SELECT url FROM web_favicon_cache ORDER BY updated_at DESC LIMIT -1 OFFSET 1024)", []);
-            Some(data)
-        },
+        |candidate, deadline| cached_favicon(db, candidate, deadline),
     );
     (!job.needs_preview || images.preview.is_some()) && images.favicon_url.is_some()
 }
+/// Shared icon cache for background enrichment and native search. No library
+/// mutex or SQL transaction spans the bounded image-only network operation.
+type FaviconFailures = Mutex<HashMap<String, i64>>;
+static FAILED_ICONS: OnceLock<FaviconFailures> = OnceLock::new();
+pub(crate) fn cached_favicon(
+    db: &Connection,
+    candidate: &str,
+    deadline: Instant,
+) -> Option<String> {
+    cached_favicon_with(
+        db,
+        FAILED_ICONS.get_or_init(Default::default),
+        candidate,
+        timestamp(),
+        || crate::web_images::download(candidate, true, deadline).ok(),
+    )
+}
+fn cached_favicon_with(
+    db: &Connection,
+    failures: &FaviconFailures,
+    candidate: &str,
+    now: i64,
+    download: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    if let Some(data) = db
+        .query_row(
+            "SELECT data FROM web_favicon_cache WHERE url=?1",
+            [candidate],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .filter(|data| !data.is_empty())
+    {
+        return Some(data);
+    }
+    // Failure state is ephemeral. Older Desktop/plugin versions still see only
+    // valid images in the shared positive-cache table, never an empty sentinel.
+    if failures
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(candidate).copied())
+        .is_some_and(|retry| retry > now)
+    {
+        return None;
+    }
+    let data = download();
+    if let Ok(mut cache) = failures.lock() {
+        cache.retain(|_, retry| *retry > now);
+        if data.is_some() {
+            cache.remove(candidate);
+        } else {
+            if cache.len() >= 128 {
+                if let Some(oldest) = cache
+                    .iter()
+                    .min_by_key(|(_, retry)| *retry)
+                    .map(|(key, _)| key.clone())
+                {
+                    cache.remove(&oldest);
+                }
+            }
+            cache.insert(candidate.into(), now + 60);
+        }
+    }
+    if let Some(data) = data.as_deref() {
+        let _=db.execute("INSERT INTO web_favicon_cache(url,data,updated_at) VALUES(?1,?2,?3) ON CONFLICT(url) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at",params![candidate,data,now]);
+        let _=db.execute("DELETE FROM web_favicon_cache WHERE url IN (SELECT url FROM web_favicon_cache ORDER BY updated_at DESC LIMIT -1 OFFSET 1024)",[]);
+    }
+    data
+}
+
 pub fn start(app: AppHandle, database_path: PathBuf) {
     let stop = Arc::new(AtomicBool::new(false));
     let owner = format!("desktop:{}:{}", std::process::id(), uuid::Uuid::new_v4());
@@ -491,10 +567,16 @@ pub fn start(app: AppHandle, database_path: PathBuf) {
             let mut external = ExternalChanges::default();
             let mut next_scan = Instant::now();
             while !stop.load(Ordering::Relaxed) {
-                if !heartbeat(&db, &owner).unwrap_or(false) {
-                    if lane == 0 && external.changed(&db).unwrap_or(false) {
+                let owns_queue = maintain_queue(
+                    &db,
+                    &owner,
+                    if lane == 0 { Some(&mut external) } else { None },
+                    || {
                         let _ = app.emit("reference-preview-updated", ());
-                    }
+                    },
+                )
+                .unwrap_or(false);
+                if !owns_queue {
                     // Another provider owns enrichment. Check takeover infrequently,
                     // without another idle thread or any database writes.
                     for _ in 0..20 {
@@ -543,6 +625,141 @@ pub fn start(app: AppHandle, database_path: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_queue_owner_still_notifies_external_edits_without_preview_jobs() {
+        let root =
+            std::env::temp_dir().join(format!("stashdock-owner-sync-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let db = Connection::open(root.join("test.sqlite3")).unwrap();
+        db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE web_preview_jobs(status TEXT,retry_at INTEGER); CREATE TABLE stash_items(id TEXT,updated_at TEXT); CREATE TABLE app_meta(key TEXT PRIMARY KEY,value TEXT)").unwrap();
+        let other = Connection::open(root.join("test.sqlite3")).unwrap();
+        let mut observer = ExternalChanges::default();
+        let notifications = std::cell::Cell::new(0);
+        let notify = || notifications.set(notifications.get() + 1);
+        assert!(maintain_queue(&db, "desktop-owner", Some(&mut observer), notify).unwrap());
+        let baseline = notifications.get();
+        other
+            .execute(
+                "INSERT INTO stash_items VALUES('note','2026-10-25T01:00:00Z')",
+                [],
+            )
+            .unwrap();
+        assert!(maintain_queue(&db, "desktop-owner", Some(&mut observer), notify).unwrap());
+        assert_eq!(
+            notifications.get(),
+            baseline + 1,
+            "owning the queue must not suppress a note save"
+        );
+        other
+            .execute(
+                "UPDATE stash_items SET updated_at='2026-10-25T02:00:00Z' WHERE id='note'",
+                [],
+            )
+            .unwrap();
+        assert!(maintain_queue(&db, "desktop-owner", Some(&mut observer), notify).unwrap());
+        assert_eq!(
+            notifications.get(),
+            baseline + 2,
+            "an external edit creates no screenshot job"
+        );
+        assert!(maintain_queue(&db, "desktop-owner", Some(&mut observer), notify).unwrap());
+        assert_eq!(
+            notifications.get(),
+            baseline + 2,
+            "unchanged checks stay quiet"
+        );
+        other
+            .execute(
+                "UPDATE app_meta SET value='other-owner' WHERE key='web_preview_worker_owner'",
+                [],
+            )
+            .unwrap();
+        other
+            .execute(
+                "INSERT INTO stash_items VALUES('second','2026-10-25T03:00:00Z')",
+                [],
+            )
+            .unwrap();
+        assert!(!maintain_queue(&db, "desktop-owner", Some(&mut observer), notify).unwrap());
+        assert_eq!(
+            notifications.get(),
+            baseline + 3,
+            "another owner's lease must also preserve observation"
+        );
+        drop(other);
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn favicon_cache_reuses_success_and_briefly_remembers_failure() {
+        let db = Connection::open_in_memory().unwrap();
+        let failures = FaviconFailures::default();
+        db.execute_batch("CREATE TABLE web_favicon_cache(url TEXT PRIMARY KEY,data TEXT NOT NULL,updated_at INTEGER NOT NULL)").unwrap();
+        assert!(cached_favicon_with(
+            &db,
+            &failures,
+            "https://example.com/favicon.ico",
+            100,
+            || None
+        )
+        .is_none());
+        assert!(cached_favicon_with(
+            &db,
+            &failures,
+            "https://example.com/favicon.ico",
+            159,
+            || panic!("negative cache must avoid another fetch")
+        )
+        .is_none());
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM web_favicon_cache", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            cached_favicon_with(
+                &db,
+                &failures,
+                "https://example.com/favicon.ico",
+                160,
+                || Some("cached PNG".into())
+            )
+            .as_deref(),
+            Some("cached PNG")
+        );
+        assert_eq!(
+            cached_favicon_with(
+                &db,
+                &failures,
+                "https://example.com/favicon.ico",
+                500,
+                || panic!("positive cache must be reused")
+            )
+            .as_deref(),
+            Some("cached PNG")
+        );
+    }
+    #[test]
+    fn favicon_download_does_not_hold_a_database_transaction() {
+        let root =
+            std::env::temp_dir().join(format!("stashdock-icon-cache-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("cache.sqlite3");
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("CREATE TABLE web_favicon_cache(url TEXT PRIMARY KEY,data TEXT NOT NULL,updated_at INTEGER NOT NULL)").unwrap();
+        let failures = FaviconFailures::default();
+        let result = cached_favicon_with(&db, &failures, "https://example.com/icon", 100, || {
+            assert!(failures.try_lock().is_ok());
+            let writer = Connection::open(&path).unwrap();
+            writer.execute_batch("BEGIN IMMEDIATE; INSERT INTO web_favicon_cache VALUES('other','concurrent',99); COMMIT;").unwrap();
+            Some("new PNG".into())
+        });
+        assert_eq!(result.as_deref(), Some("new PNG"));
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn repeated_idle_lease_checks_are_read_only_even_with_a_busy_writer() {
         let root =
@@ -753,7 +970,10 @@ mod tests {
         assert!(!observer.changed(&db).unwrap());
         // Another provider's lease renewal is a commit, but nothing to show.
         other
-            .execute("INSERT OR REPLACE INTO app_meta VALUES('web_preview_worker_until','1')", [])
+            .execute(
+                "INSERT OR REPLACE INTO app_meta VALUES('web_preview_worker_until','1')",
+                [],
+            )
             .unwrap();
         assert!(!observer.changed(&db).unwrap());
         other

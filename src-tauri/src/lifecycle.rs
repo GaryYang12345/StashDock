@@ -43,13 +43,18 @@ pub fn install_tray(app: &AppHandle) -> tauri::Result<()> {
     let exit = MenuItem::with_id(app, "exit", "Quit StashDock", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &separator, &exit])?;
     let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         window.set_icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)?;
         crate::window_frame::set_taskbar_icon(&window).map_err(std::io::Error::other)?;
     }
     TrayIconBuilder::with_id("stashdock")
         .icon(icon)
-        .tooltip("StashDock · Ctrl+Shift+Space")
+        .icon_as_template(cfg!(target_os = "macos"))
+        .tooltip(if cfg!(target_os = "macos") {
+            "StashDock · ⌘⇧Space"
+        } else {
+            "StashDock · Ctrl+Shift+Space"
+        })
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {

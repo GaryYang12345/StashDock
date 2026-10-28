@@ -11,18 +11,19 @@ import { startCaptureBridge } from './capture-bridge.mjs';
 import { startPreviewWorker, packagedPreviewService } from './preview-worker.mjs';
 import { buildContext } from '../../../src/lib/context-format.mjs';
 import { openCaptureSite } from './open-capture-site.mjs';
+import { createIntegrationStatusReader } from './integration-status.mjs';
 import { openIntegration } from './open-integration.mjs';
 import { readStorageInfo } from './settings.mjs';
 import { createStorageService } from './storage-service.mjs';
 import { checkPluginUpdates } from './plugin-updates.mjs';
 import productLinks from '../../../src-tauri/product-links.json' with { type: 'json' };
 // One plugin version: the manifest the host installs and caches by.
-import pluginManifest from '../.codex-plugin/plugin.json' with { type: 'json' };
-const PLUGIN_VERSION = pluginManifest.version;
 import { fileURLToPath } from 'node:url';
 import { contextSaveSchema, readContextBatch, tagCatalog } from './ai-context.mjs';
 
-export const SHELF_URI = 'ui://stashdock/shelf-v61.html';
+import pluginManifest from '../.codex-plugin/plugin.json' with { type: 'json' };
+const PLUGIN_VERSION = pluginManifest.version;
+export const SHELF_URI = `ui://stashdock/shelf-${PLUGIN_VERSION}.html`;
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const searchSchema = { query: z.string().max(1000).optional(), tag: z.string().max(200).optional(),
   favoriteOnly: z.boolean().optional(), limit: z.number().int().min(1).max(50).optional(),
@@ -33,18 +34,19 @@ const guarded = callback => async args => {
   catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }; }
 };
 
-export function createServer({ dataDir, captureBridge = false, previewWorker = captureBridge, htmlUrl, importServices, storageServices }) {
+export function createServer({ dataDir, captureBridge = false, captureBridgePort = 17864, previewWorker = captureBridge, htmlUrl, importServices, storageServices }) {
   const library = createLocalLibrary({ dataDir });
+  const readIntegrationStatus = createIntegrationStatusReader(library);
   const storageService = storageServices || createStorageService(library, htmlUrl);
   if (captureBridge) library.registerInstallation('codex', PLUGIN_VERSION, fileURLToPath(new URL('../.codex-plugin/plugin.json', htmlUrl)));
   const previewService = packagedPreviewService(htmlUrl, library.dataDir || dataDir);
-  importServices ??= { sources: previewService.sources, bookmarks: previewService.bookmarks, icons: previewService.icons, preview: previewService.lookup, openCaptureSite };
+  importServices ??= { readBrowser: previewService.readBrowser, sources: previewService.sources, bookmarks: previewService.bookmarks, icons: previewService.icons, preview: previewService.lookup, openCaptureSite };
   const prepareCover = importServices.prepareCover ?? previewService.prepareCover;
   const normalizeCover = async value => {
     if (typeof value !== 'string' || value.length > 750_000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) throw Error('Use a prepared PNG, JPG or WebP cover image.');
     return prepareCover(value.split(',')[1]);
   };
-  const bridge = captureBridge ? startCaptureBridge(library) : undefined;
+  const bridge = captureBridge ? startCaptureBridge(library, captureBridgePort) : undefined;
   const previews = previewWorker ? startPreviewWorker(library.dataDir, htmlUrl, previewService) : undefined;
   const iconUrl = new URL('../assets/icon.png', htmlUrl);
   const icons = [{ src: `data:image/png;base64,${readFileSync(iconUrl).toString('base64')}`, mimeType: 'image/png' }];
@@ -159,14 +161,14 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
   const appOnly = { ui: { visibility: ['app'] } };
   server.registerTool('open_stashdock_integration', {
     description: 'Open the app chosen in StashDock Settings. Prefer its installed client, otherwise its official website.',
-    inputSchema: { id: z.enum(['chrome', 'edge', 'firefox', 'codex', 'claude', 'desktop']) },
+    inputSchema: { id: z.enum(['chrome', 'edge', 'firefox', 'safari', 'codex', 'claude', 'desktop']) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }, _meta: appOnly,
   }, guarded(async ({ id }) => valueResult(await openIntegration(id, { desktopPath: library.desktopExecutable?.() }))));
   server.registerTool('get_stashdock_integrations', {
     description: 'Read current StashDock installation and enablement metadata. Does not change installations.', inputSchema: {}, annotations: readOnly, _meta: appOnly,
   }, guarded(async () => {
     if (!library.integrations) throw Error('Installation status requires the local library.');
-    return { ...valueResult({}), _meta: { integrations: library.integrations() } };
+    return { ...valueResult({}), _meta: { integrations: await readIntegrationStatus() } };
   }));
   server.registerTool('get_stashdock_settings', {
     description: 'Read interface preferences for the Codex panel. Desktop appearance is independent.', inputSchema: {}, annotations: readOnly, _meta: appOnly,
@@ -234,6 +236,14 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
     const existingUrls = (await (library.readIndex?.() ?? library.read(true))).flatMap(item => item.url ? [item.url] : []);
     return { ...valueResult({ count: sources.length }), _meta: { sources, existingUrls } };
   }));
+  server.registerTool('read_stashdock_browser_import', {
+    description: 'Read the browser chosen in the App, requesting native folder access only after its Read bookmarks button. Returns a preview; never saves references.',
+    inputSchema: { browser: z.enum(['Chrome', 'Edge', 'Firefox', 'Safari']), requestAccess: z.boolean().default(false) },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: appOnly,
+  }, guarded(async ({ browser, requestAccess }) => {
+    if (!importServices.readBrowser) throw Error('Update the StashDock plugin to read browser bookmarks.');
+    return { ...valueResult({}), _meta: { state: await importServices.readBrowser(browser, requestAccess) } };
+  }));
   server.registerTool('read_stashdock_browser_bookmarks', {
     description: 'Read bookmarks from a browser selected in the App. Does not change the browser or library.',
     inputSchema: { sourceId: z.string().min(1).max(300) }, annotations: readOnly, _meta: appOnly,
@@ -272,7 +282,7 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
     for (const item of items) prepared.push(item.origin?.previewSource === 'custom' ? { ...item, preview: await normalizeCover(item.preview) } : item);
     const { items: rows, ...counts } = library.importItems(prepared); return counts;
   }, false, false);
-  registerWrite('replace_stashdock_link', 'Replace the saved reference for this link after the user confirmed it in the App. Keeps its favorite and edited AI context.', {
+  registerWrite('replace_stashdock_link', 'Replace the saved reference with the new link capture after the user confirms in the App.', {
     item: z.object({ title: z.string().min(1).max(500), kind: z.enum(['web', 'repo']), source: z.string().max(300),
       url: z.string().min(1).max(8192), excerpt: z.string().max(2_000_000), content: z.string().max(2_000_000).optional(),
       tags: tagList, createdAt: z.string().max(64), favorite: z.boolean().optional(), preview: z.string().max(750_000).optional(), origin: z.record(z.string(), z.unknown()).optional() }),
@@ -331,6 +341,9 @@ export function createServer({ dataDir, captureBridge = false, previewWorker = c
 }
 
 export async function run(htmlUrl) {
-  const server = createServer({ htmlUrl, captureBridge: true });
+  // An isolated stdio check must not advertise its fixture library on the
+  // normal browser port. Keep preview verification available without a bridge.
+  const server = createServer({ htmlUrl,
+    captureBridge: process.env.STASHDOCK_NATIVE_HOST_REGISTRATION !== 'off', previewWorker: true });
   await server.connect(new StdioServerTransport());
 }

@@ -48,17 +48,23 @@ test('SQLite core works with no desktop, preserves concurrent changes, and updat
     db.close();
   } finally { b.close(); a.close(); }
 });
-test('replacing a saved link keeps its identity, favorite and edited AI context', async t => {
+test('replacing a saved link clears prior final context and cover without adding another card', async t => {
   const dataDir = temporary(t), library = createLocalLibrary({ dataDir });
   try {
-    const [item] = library.importItems([fixture]).items;
+    const [item] = library.importItems([{...fixture,preview:'data:image/png;base64,AAAA'}]).items;
     library.setFavorite(item.id, true); library.editContext(item.id, 'My context');
-    const replaced = library.replaceLink({ ...fixture, url: fixture.url + '#again', title: 'New title', content: 'New body', tags: ['Fresh'] });
+    const replaced = library.replaceLink({ ...fixture, url: fixture.url + '#again', title: 'New title', content: 'New body', tags: ['Fresh'],preview:undefined });
     assert.equal(replaced.id, item.id);
     const [row] = await library.read();
     assert.equal(row.title, 'New title'); assert.deepEqual(row.tags, ['Fresh']); assert.equal(row.content, 'New body');
-    assert.equal(row.favorite, true); assert.equal(row.contextOverride, 'My context'); assert.equal(row.createdAt, item.createdAt);
-    assert.equal((await library.read()).length, 1);
+    assert.equal(row.favorite, false); assert.equal(row.contextOverride, undefined); assert.equal(row.createdAt, item.createdAt);
+    assert.equal(row.preview,undefined);assert.match(buildContext([row]),/New body/);assert.doesNotMatch(buildContext([row]),/My context/);
+    library.editContext(item.id,'');
+    const fresh=library.replaceLink({...fixture,content:'Latest body'});
+    assert.equal(fresh.contextOverride,undefined);assert.match(buildContext([fresh]),/Latest body/);
+    library.remove(item.id);
+    assert.throws(()=>library.replaceLink(fixture),/changed/);
+    assert.equal((await library.read()).length, 0);
   } finally { library.close(); }
 });
 test('bulk deletion is atomic, idempotent and removes the deleted references\' library copies', async t => {

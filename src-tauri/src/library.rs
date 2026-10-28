@@ -1,6 +1,9 @@
 mod asset_paths;
 mod bridge;
 mod browser_capture;
+pub(crate) mod native_host;
+#[cfg(target_os = "macos")]
+mod native_install;
 mod chosen_files;
 pub mod commands;
 mod context;
@@ -268,6 +271,35 @@ fn upsert_item(connection: &Connection, item: &StashItem) -> Result<(), String> 
             ],
         )
         .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// Confirmed Replace writes the new capture, including removing a prior final
+/// context or cover. Ordinary upserts deliberately preserve omitted fields.
+fn replace_link_item(connection: &Connection, item: &StashItem) -> Result<(), String> {
+    let url = item.url.as_deref().and_then(canonicalize_web_url)
+        .ok_or("Use an http or https URL without credentials.")?;
+    if !matches!(item.kind.as_str(), "web" | "repo") || item.title.trim().is_empty()
+        || item.title.encode_utf16().count() > 500 || item.tags.len() > 12
+        || item.tags.iter().any(|tag| tag_too_long(tag)) {
+        return Err("Invalid page capture.".into());
+    }
+    let previous_url: Option<String> = connection.query_row(
+        "SELECT url FROM stash_items WHERE id=?1", [&item.id], |row| row.get(0)
+    ).optional().map_err(|error| error.to_string())?.flatten();
+    if previous_url.as_deref().and_then(canonicalize_web_url).as_deref() != Some(url.as_str()) {
+        return Err("The reference changed. Save the page again.".into());
+    }
+    let tags = serde_json::to_string(&item.tags).map_err(|error| error.to_string())?;
+    let origin = serde_json::to_string(item.origin.as_ref().unwrap_or(&serde_json::json!({})))
+        .map_err(|error| error.to_string())?;
+    connection.execute(
+        "UPDATE stash_items SET title=?1,kind=?2,source=?3,url=?4,excerpt=?5,tags_json=?6,
+         content=?7,preview=?8,origin_json=?9,context_override=NULL,favorite=0,
+         asset_path=NULL,original_path=NULL,mime_type=NULL,size_bytes=NULL,updated_at=?10 WHERE id=?11",
+        params![item.title.trim(), item.kind, item.source, url, item.excerpt, tags,
+            item.content.as_deref().unwrap_or(""), item.preview, origin, now()?, item.id]
+    ).map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -875,6 +907,14 @@ pub fn save_items(items: Vec<StashItem>, state: &LibraryState) -> Result<(), Str
     note_files::synchronize(&transaction)?;
     transaction.commit().map_err(|error| error.to_string())?;
     Ok(())
+}
+
+pub fn replace_saved_link(item: StashItem, state: &LibraryState) -> Result<(), String> {
+    let mut connection = state.connection.lock()
+        .map_err(|_| "The local library is busy.".to_string())?;
+    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    replace_link_item(&transaction, &item)?;
+    transaction.commit().map_err(|error| error.to_string())
 }
 
 pub fn list_items(state: &LibraryState) -> Result<Vec<StashItem>, String> {

@@ -1,12 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync, renameSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync, renameSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
 import { EventEmitter } from 'node:events';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, constants } from 'node:sqlite';
+import { synchronizeNoteFiles } from '../plugins/stashdock/server/note-files.mjs';
 import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
 import { openManagedFile } from '../plugins/stashdock/server/open-file.mjs';
+
+test('unchanged note checks work when SQLite forbids reading cached bodies and covers', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stashdock-note-metadata-'));
+  const library = createLocalLibrary({ dataDir: root });
+  library.saveContextReference({ title: 'Large unchanged note', content: 'Keep this original.\n'.repeat(10000) });
+  const reader = new DatabaseSync(join(root, 'stashdock.sqlite3'));
+  try {
+    reader.setAuthorizer((action, table, column) => action === constants.SQLITE_READ && table === 'stash_items' &&
+      ['content', 'excerpt', 'preview', 'context_override'].includes(column) ? constants.SQLITE_DENY : constants.SQLITE_OK);
+    assert.doesNotThrow(() => synchronizeNoteFiles(reader, join(root, 'assets')));
+    assert.throws(() => reader.prepare('SELECT content FROM stash_items').all(), /prohibited|authorized/);
+  } finally { reader.close(); library.close(); rmSync(root, { recursive: true, force: true }); }
+});
 
 test('unchanged note refresh is read-only even while another provider holds a write transaction', async t => {
   const root = mkdtempSync(join(tmpdir(), 'stashdock-note-idle-'));
@@ -76,7 +90,7 @@ test('legacy note migration preserves final text and identity and runs once, not
   assert.equal(migrated.contextOverride, 'Final user edit');
   const path = migrated.assetPath;
   await library.read(); await library.read();
-  assert.equal(library.resolveFile(item.id).path, path);
+  assert.equal(library.resolveFile(item.id).path, realpathSync(path));
   assert.equal(readdirSync(join(root, 'assets')).length, 1);
   const oldClient = new DatabaseSync(join(root, 'stashdock.sqlite3'));
   oldClient.prepare('UPDATE stash_items SET context_override=? WHERE id=?').run('New additional context', item.id);
@@ -92,7 +106,7 @@ test('all imported formats reopen and transfer the same latest original, with su
     const [item] = library.importFiles([{ name: `Original.${extension}`, base64: Buffer.from('Original bytes').toString('base64'), content: 'Supplemental context' }]);
     writeFileSync(item.assetPath, 'Latest file bytes');
     const file = library.resolveFile(item.id);
-    assert.equal(file.path, item.assetPath); assert.equal(readFileSync(file.path, 'utf8'), 'Latest file bytes');
+    assert.equal(file.path, realpathSync(item.assetPath)); assert.equal(readFileSync(file.path, 'utf8'), 'Latest file bytes');
     library.editContext(item.id, 'New supplemental context');
     assert.equal(readFileSync(file.path, 'utf8'), 'Latest file bytes');
   }

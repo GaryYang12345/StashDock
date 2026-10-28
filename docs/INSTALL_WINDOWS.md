@@ -1,13 +1,13 @@
 # Install StashDock on Windows
 
-Download packages from [Releases](https://github.com/GaryYang12345/StashDock/releases/latest).
+Download packages from [stashdock.app](https://stashdock.app/guide) or [Releases](https://github.com/GaryYang12345/StashDock/releases/latest).
 This release supports Windows x64. Choose Desktop, the ChatGPT local plugin,
 or both; both use the same local library.
 
 ## Desktop
 
-Run `StashDock_0.2.6_x64-setup.exe`. The installer handles the system WebView2
-prerequisite. This first release is unsigned, so Windows may show an unknown
+Run `StashDock_<version>_x64-setup.exe`. The installer handles the system WebView2
+prerequisite. This release is unsigned, so Windows may show an unknown
 publisher warning. Verify the source and checksum; do not disable SmartScreen.
 
 The panel opens on first launch. With Floating window enabled, minimize returns
@@ -25,16 +25,17 @@ Download the Chrome extension ZIP and extract it to a permanent folder:
 
 - Chrome: `chrome://extensions` → Developer mode → Load unpacked → extracted folder.
 
-Open Desktop or the AI plugin, click the extension toolbar icon on a normal
+Install and open Desktop or the AI plugin once, then click the extension toolbar icon on a normal
 webpage and approve website access in the browser prompt. The sidebar refreshes
-with the active page and stays open after Save. See [extension documentation](../extension/README.md).
+with the active page and stays open after Save. Both applications may be closed
+after setup. See [extension documentation](../extension/README.md).
 
 ## Checksums and data
 
 Each Release includes `SHA256SUMS.txt`. For example:
 
 ```powershell
-Get-FileHash .\StashDock_0.2.6_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\StashDock_1.0.0_x64-setup.exe -Algorithm SHA256
 ```
 
 Compare with that file. Plugin packages include a per-file `RELEASE_MANIFEST.json`.

@@ -44,6 +44,8 @@ test('MCP settings tools are app-only, bounded and do not expose paths in model 
   try {
     await server.connect(left); await client.connect(right);
     const { tools } = await client.listTools();
+    assert.ok(tools.find(tool => tool.name === 'open_stashdock_integration').inputSchema.properties.id.enum.includes('safari'));
+
     for (const name of ['get_stashdock_settings', 'save_stashdock_preferences', 'get_stashdock_storage_info']) {
       const tool = tools.find(tool => tool.name === name);
       assert.deepEqual(tool._meta.ui.visibility, ['app']);

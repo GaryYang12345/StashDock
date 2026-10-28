@@ -21,11 +21,12 @@ export type PopupServices = {
   tags: () => Promise<string[]>;
   save: (item: PageDraft, replace?: CaptureConflict) => Promise<CaptureResult | void>;
   close: () => void;
-  providerStatus?: () => Promise<{ connected: boolean }>;
+  providerStatus?: () => Promise<{ connected: boolean; error?: string }>;
   subscribe?: (refresh: (force?: boolean) => void, invalidate: () => void, update: (page: PageDraft) => void) => () => void;
 };
 function Popup({ services }: { services: PopupServices }) {
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [connectionError, setConnectionError] = useState('');
   const [checking, setChecking] = useState(false);
   const mounted = useRef(false);
   const checkingConnection = useRef(false);
@@ -35,9 +36,9 @@ function Popup({ services }: { services: PopupServices }) {
     setChecking(true);
     try {
       const next = await services.providerStatus();
-      if (mounted.current) setConnected(next.connected);
+      if (mounted.current) { setConnected(next.connected); setConnectionError(next.connected ? '' : next.error || ''); }
     } catch {
-      if (mounted.current) setConnected(false);
+      if (mounted.current) { setConnected(false); setConnectionError(''); }
     } finally {
       checkingConnection.current = false;
       if (mounted.current) setChecking(false);
@@ -139,11 +140,11 @@ function Popup({ services }: { services: PopupServices }) {
     <header className={styles.header}><h1>Save current page</h1><Button variant="ghost" size="sm" type="button" aria-label="Refresh page" data-tooltip="Refresh page" loading={loading} onClick={() => void capture(true, false)} disabled={saving}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" /></Button></header>
     <form className={styles.form} onSubmit={save}>
       <div className={styles.body}>
-        {connected === false && <Alert tone="warning" title="Connect StashDock"><span>Install or open StashDock Desktop or its AI plugin to save pages.</span><br /><Button type="button" variant="secondary" size="sm" loading={checking} onClick={() => void checkConnection()}>Check again</Button></Alert>}
+        {connected === false && <Alert tone="warning" title="Connect StashDock"><span>{connectionError || 'Install StashDock Desktop or the ChatGPT plugin to save pages.'}</span><br /><Button type="button" variant="secondary" size="sm" loading={checking} onClick={() => void checkConnection()}>Check again</Button></Alert>}
         {loading && !page ? <div className={styles.loading} role="status" aria-label="Reading current page"><Skeleton lines={2} /><Skeleton lines={2} /><Skeleton lines={5} /><Skeleton lines={2} /></div> : page && <>
           <Input label="Link" value={page.url || ''} readOnly />
           <Input label="Title" value={title} onChange={event => {dirty.current.title=true;setSaved(false);setTitle(event.target.value);}} maxLength={500} disabled={saving} autoFocus />
-          <div className={styles.contentField}><Textarea label="Content" value={content} onChange={event => {dirty.current.content=true;setSaved(false);setContent(event.target.value);}} rows={6} maxLength={20000} disabled={saving} /></div>
+          <div className={styles.contentField}><Textarea label="Content" value={content} onChange={event => {dirty.current.content=true;setSaved(false);setContent(event.target.value);}} rows={3} maxLength={20000} disabled={saving} /></div>
           <ReferenceTagsField value={tags} onValueChange={values=>{setSaved(false);setTags(values);}} availableTags={availableTags} fieldRef={field} busy={saving} />
           {page.origin?.truncated && <p className={styles.note}>Only the visible text was captured. Expand the post and retry for more.</p>}
         </>}
@@ -153,7 +154,7 @@ function Popup({ services }: { services: PopupServices }) {
       <footer className={styles.footer}><Button variant="primary" type="submit" loading={saving} disabled={loading || !page || !title.trim() || saved || Boolean(services.providerStatus && !connected)}>{saved ? <><Check size={16} strokeWidth={1.75} />Saved</> : 'Save page'}</Button></footer>
     </form>
     <FluidDialog open={Boolean(replacement)} onClose={dismissReplacement} title="Replace saved page?" description={replacement ? `“${replacement.duplicate.title}” is already in your library.` : undefined} busy={saving}>
-      <p className={styles.replaceCopy}>Replace its title, content, tags and cover. Your AI context is kept.</p>
+      <p className={styles.replaceCopy}>This will replace the saved reference with the current page.</p>
       <Alert tone="danger" title="Page could not be saved" open={Boolean(error)}>{error}</Alert>
       <div className={styles.replaceActions}>
         <Button type="button" variant="secondary" disabled={saving} onClick={dismissReplacement}>Keep existing</Button>

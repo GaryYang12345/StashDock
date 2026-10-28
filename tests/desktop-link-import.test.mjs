@@ -56,7 +56,7 @@ test('desktop browser import has no search or batch tags and shares card favicon
   assert.doesNotMatch(desktop, /Search bookmarks|batchTagsOpen|Add tags|Original files stay unchanged|source\.profile|item\.profile/);
   assert.match(desktop, /<SiteFavicon candidates=\{faviconCandidates\(item\)\}/);
   assert.match(desktop, /label: item.browser/);
-  assert.match(desktop, /profiles.length \? profiles : \[next\]/);
+  assert.match(desktop, /for \(const profile of profiles\)/);
   assert.equal((desktop.match(/className=\{styles.tabLabel\}/g) || []).length, 3);
 });
 
@@ -78,7 +78,7 @@ test('file tags are validated before import and no page can import a file by pat
   assert.doesNotMatch(storage, /"import_files"/);
   assert.doesNotMatch(commands, /fn import_files\b/);
 });
-test('desktop and MCP share the same three-mode import without bookmark exports', async () => {
+test('desktop and MCP share the same three-mode import with browser export selection', async () => {
   const desktop = await readFile('src/components/DesktopImportDialog.tsx', 'utf8');
   const library = await readFile('src/features/library/LibraryView.tsx', 'utf8');
   const mcp = await readFile('src/features/mcp-app/McpShelf.tsx', 'utf8');

@@ -9,6 +9,7 @@ export type LibraryRepository = {
   /** The listed references that still exist; ones it leaves out were deleted. */
   loadSome?: (ids: string[]) => Promise<StashItem[]>;
   add: (items: StashItem[], next: StashItem[]) => Promise<void | StashItem[]>;
+  replace?: (item: StashItem, next: StashItem[]) => Promise<void | StashItem[]>;
   remove: (id: string, next: StashItem[]) => Promise<void>;
   removeMany?: (ids: string[], next: StashItem[]) => Promise<void>;
   favorite: (id: string, value: boolean, next: StashItem[]) => Promise<void>;
@@ -96,17 +97,15 @@ export function createLibraryStore(repository: LibraryRepository) {
       }
       return { imported: unique.length, skipped: incoming.length - unique.length };
     }),
-    // The user confirmed replacing the saved reference with this link: keep its
-    // identity, creation time, favorite and edited AI context (kept by the
-    // native upsert), and replace its title, content, tags and cover.
+    // Confirmed Replace writes the new reference through an explicit adapter.
     replaceLink: (incoming: StashItem) => enqueue(async () => {
       const url = incoming.url ? canonicalizeUrl(incoming.url) : null;
       const existing = url ? snapshot.items.find(item => item.url && canonicalizeUrl(item.url) === url) : undefined;
-      const item = existing
-        ? { ...incoming, id: existing.id, createdAt: existing.createdAt, favorite: existing.favorite, content: incoming.content ?? '', contextOverride: undefined }
-        : incoming;
-      const next = existing ? snapshot.items.map(current => current.id === existing.id ? item : current) : [item, ...snapshot.items];
-      publish(await repository.add([item], next) ?? next);
+      if (!existing) throw new Error('The reference changed. Save the page again.');
+      if (!repository.replace) throw new Error('Reference replacement is unavailable.');
+      const item = { ...incoming, id: existing.id, createdAt: existing.createdAt, favorite: false, content: incoming.content ?? '', contextOverride: undefined };
+      const next = snapshot.items.map(current => current.id === existing.id ? item : current);
+      publish(await repository.replace(item, next) ?? next);
     }),
     remove: (id: string) => enqueue(async () => {
       const next = snapshot.items.filter(item => item.id !== id);

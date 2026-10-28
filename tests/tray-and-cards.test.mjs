@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { JSDOM } from 'jsdom';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -70,7 +71,14 @@ test('folder keyboard focus is inset and subtle rather than an outer black ring'
   const focusRule=css.match(/\.close:focus-visible[^}]+\}/)?.[0];
   assert.ok(focusRule);
   assert.doesNotMatch(focusRule,/box-shadow/);
-  assert.match(css,/width: calc\(var\(--space-5\) - 2px\)/);
+  const dom = new JSDOM(folder);
+  const close = dom.window.document.querySelector('button[aria-label="Hide StashDock"] svg');
+  assert.equal(Number(close.getAttribute('width')), 32, 'Keep the full pointer target');
+  const face = close.querySelector('circle');
+  assert.equal(Number(face.getAttribute('r')) * 2 + 1, 18, 'Keep the 18px optical face');
+  assert.equal(face.getAttribute('stroke'), '#D7D7D7');
+  assert.equal(close.querySelector('[data-close-glyph]').getAttribute('stroke'), '#9C9C9C');
+  dom.window.close();
 });
 
 test('initial startup shows the completed native canvas; close state is never persisted',async()=>{

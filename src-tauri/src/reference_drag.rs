@@ -145,7 +145,7 @@ pub(crate) fn export_filename(context: &str, count: usize) -> String {
     format!("StashDock - {}.md", if title.is_empty() { "Reference" } else { title })
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn decode_preview(value: &str) -> Result<Vec<u8>, String> {
     use base64::Engine;
     let encoded = value
@@ -214,7 +214,7 @@ fn start(
         return Err("A reference drag is already active.".into());
     }
     let _guard = ActiveGuard(&state.active);
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = database;
         Err("Native reference dragging is only available on Windows.".into())
@@ -250,16 +250,48 @@ fn start(
         }
         result
     }
+    #[cfg(target_os = "macos")]
+    {
+        let image = decode_preview(&request.preview)?;
+        let file = export_reference_file(database, &request.item_ids, ExportKind::Drag)?;
+        let keep = file.clone();
+        let source = app
+            .get_webview_window("main")
+            .ok_or("The drag source window is unavailable.")?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || {
+            let failure = tx.clone();
+            if let Err(error) = crate::reference_transfer_macos::start_drag(
+                &source,
+                &file.files,
+                &image,
+                request.hotspot,
+                tx,
+            ) {
+                let _ = failure.send(Err(error));
+            }
+        })
+        .map_err(|e| e.to_string())?;
+        let result = rx
+            .recv()
+            .map_err(|_| "The reference drag was interrupted.".to_string())?;
+        if result.as_ref().is_ok_and(|outcome| outcome.dropped) {
+            prune_exports(&keep.context_file);
+        } else {
+            crate::reference_transfer::discard(&keep);
+        }
+        result
+    }
 }
 
 /// One snapshot/file writer for both native drag and Copy for AI.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) enum ExportKind {
     Drag,
     Clipboard,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn export_reference_file(
     database: &std::path::Path,
     ids: &[String],
@@ -274,7 +306,7 @@ pub(crate) fn export_reference_file(
 }
 
 /// Only after a new successful transfer. Never prune its active file.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn prune_exports(keep: &std::path::Path) {
     let Some(folder) = keep.parent().and_then(|folder| folder.parent()) else {
         return;
@@ -346,7 +378,7 @@ mod tests {
     }
     #[test]
     fn preview_requires_a_small_png() {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             use base64::Engine;
             assert!(decode_preview("data:image/svg+xml,<svg/>").is_err());

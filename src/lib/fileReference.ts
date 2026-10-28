@@ -1,4 +1,7 @@
 import type { StashItem } from '../types';
+import fileTypeRules from '../../shared/reference-file-types.json';
+type FileVisual = 'image' | 'pdf' | 'document' | 'spreadsheet' | 'presentation' | 'archive' | 'video' | 'audio' | 'data' | 'markdown' | 'code' | 'text' | 'file';
+type FileTypeRule = { visual: FileVisual; label: string; kinds?: string[]; extensions?: string[]; mimeStarts?: string[]; mimeIncludes?: string[]; mimeEquals?: string[] };
 
 export type FileReferencePayload = { name: string; mimeType: string; base64: string; title: string; content: string; preview?: string };
 /** A file chosen in the system dialog: saved as a reference to its original, identified by a short-lived token. */
@@ -9,18 +12,12 @@ export function fileReferenceType(item: Pick<StashItem, 'kind' | 'title' | 'mime
   const name = item.origin?.fileName || item.assetPath || item.title;
   const extension = name.split('.').pop()?.toLowerCase() || '';
   const mime = item.mimeType || '';
-  if (item.kind === 'image' || mime.startsWith('image/') || /^(png|jpe?g|gif|webp|svg|avif|heic)$/.test(extension)) return { label: 'Image', visual: 'image' as const };
-  if (item.kind === 'pdf' || extension === 'pdf') return { label: 'PDF', visual: 'pdf' as const };
-  if (/^(docx?|odt|rtf)$/.test(extension) || mime.includes('word')) return { label: 'Document', visual: 'document' as const };
-  if (/^(xlsx?|csv|ods)$/.test(extension) || mime.includes('spreadsheet')) return { label: 'Spreadsheet', visual: 'spreadsheet' as const };
-  if (/^(pptx?|odp)$/.test(extension) || /presentation|powerpoint/.test(mime)) return { label: 'Presentation', visual: 'presentation' as const };
-  if (/^(zip|rar|7z|gz|tar)$/.test(extension)) return { label: 'Archive', visual: 'archive' as const };
-  if (/^(mp4|mov|webm|avi)$/.test(extension) || mime.startsWith('video/')) return { label: 'Video', visual: 'video' as const };
-  if (/^(mp3|wav|m4a|ogg|flac)$/.test(extension) || mime.startsWith('audio/')) return { label: 'Audio', visual: 'audio' as const };
-  if (/^(json|xml|yaml|yml|toml)$/.test(extension) || /json|xml|yaml|toml/.test(mime)) return { label: 'Structured data', visual: 'data' as const };
-  if (/^(md|mdx)$/.test(extension) || mime === 'text/markdown') return { label: 'Markdown', visual: 'markdown' as const };
-  if (/^(js|jsx|ts|tsx|rs|py|go|java|html|css|sql|c|cpp|h|swift|rb|sh)$/.test(extension)) return { label: 'Code', visual: 'code' as const };
-  if (/^(txt|log)$/.test(extension) || mime.startsWith('text/')) return { label: 'Text file', visual: 'text' as const };
+  for (const rule of fileTypeRules as FileTypeRule[]) {
+    if (rule.kinds?.includes(item.kind) || rule.extensions?.includes(extension) ||
+      rule.mimeStarts?.some(prefix => mime.startsWith(prefix)) || rule.mimeIncludes?.some(part => mime.includes(part)) || rule.mimeEquals?.includes(mime)) {
+      return { label: rule.label, visual: rule.visual };
+    }
+  }
   return { label: 'File', visual: 'file' as const };
 }
 export function isFileReference(item: Pick<StashItem, 'kind'>) { return ['file', 'pdf', 'image'].includes(item.kind); }

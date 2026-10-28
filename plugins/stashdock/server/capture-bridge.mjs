@@ -1,13 +1,13 @@
-// The browser cannot open SQLite. This bridge belongs to the MCP service, not
-// to a desktop window. Offline captures remain in extension-owned storage.
+// Compatibility bridge for older extensions. Current saves use the browser-
+// owned native helper with Desktop and the AI host closed; no offline Save queue.
 import { createServer } from 'node:http';
 import { openIntegration } from './open-integration.mjs';
-import { browserRegistration } from '../../../src/lib/browser-extension-identity.mjs';
+import { browserRegistration, nativeFirefoxOrigin, nativeSafariOrigin } from '../../../src/lib/browser-extension-identity.mjs';
 export function startCaptureBridge(library, port = 17864, { openApp = openIntegration } = {}) {
   let closed = false, retry;
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin;
-    const extension = typeof origin === 'string' && /^(chrome|moz)-extension:\/\/[a-z0-9-]+$/i.test(origin);
+    const extension = typeof origin === 'string' && (nativeFirefoxOrigin(origin) || nativeSafariOrigin(origin) || /^(chrome|moz)-extension:\/\/[a-z0-9-]+$/i.test(origin));
     const registered = extension && library.browserOriginAllowed?.(origin) === true;
     const boundPort = server.address()?.port || port;
     const allowedHost = [`127.0.0.1:${boundPort}`, `localhost:${boundPort}`].includes(request.headers.host);
@@ -35,7 +35,10 @@ export function startCaptureBridge(library, port = 17864, { openApp = openIntegr
         for await (const chunk of request) { size += chunk.length; if (size > 4096) throw Error('Invalid setup request.'); body += chunk; }
         const { browser, version, extensionId: reportedId } = JSON.parse(body);
         const extensionId = browserRegistration(browser, origin, reportedId);
-        result = { connected: true, owner: 'codex', integrations: library.registerInstallation(browser, version, undefined, extensionId, origin) };
+        library.registerInstallation(browser, version, undefined, extensionId, origin);
+        // Setup acknowledges this origin, not every installed application.
+        // Keep the empty legacy field for existing clients; Settings owns scans.
+        result = { connected: true, owner: 'codex', integrations: { items: [] } };
       }
       else if (request.method === 'POST' && request.url === '/v1/open-integration') {
         if (!request.headers['content-type']?.startsWith('application/json')) throw Error('Use a JSON request.');

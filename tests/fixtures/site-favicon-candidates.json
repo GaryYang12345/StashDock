@@ -1,0 +1,58 @@
+[
+  {
+    "page": "https://www.example.com/page?q=1#x",
+    "saved": "https://cdn.example.com/icon.png",
+    "candidates": [
+      "https://cdn.example.com/icon.png",
+      "https://www.example.com/favicon.ico",
+      "https://www.example.com/favicon.svg",
+      "https://www.example.com/favicon.png",
+      "https://www.example.com/apple-touch-icon.png"
+    ]
+  },
+  {
+    "page": "https://example.com",
+    "saved": "/favicon.ico",
+    "candidates": [
+      "https://example.com/favicon.ico",
+      "https://example.com/favicon.svg",
+      "https://example.com/favicon.png",
+      "https://example.com/apple-touch-icon.png"
+    ]
+  },
+  {
+    "page": "https://docs.example.com:8443/guide?q=test#section",
+    "candidates": [
+      "https://docs.example.com:8443/favicon.ico",
+      "https://docs.example.com:8443/favicon.svg",
+      "https://docs.example.com:8443/favicon.png",
+      "https://docs.example.com:8443/apple-touch-icon.png"
+    ]
+  },
+  {
+    "page": "https://example.com/a",
+    "saved": "data:image/png;base64,AAAA",
+    "candidates": [
+      "data:image/png;base64,AAAA",
+      "https://example.com/favicon.ico",
+      "https://example.com/favicon.svg",
+      "https://example.com/favicon.png",
+      "https://example.com/apple-touch-icon.png"
+    ]
+  },
+  {
+    "page": "file:///private",
+    "candidates": []
+  },
+  {
+    "page": "chrome://bookmarks/",
+    "saved": "javascript:alert(1)",
+    "candidates": []
+  },
+  {
+    "saved": "https://example.com/icon.png",
+    "candidates": [
+      "https://example.com/icon.png"
+    ]
+  }
+]

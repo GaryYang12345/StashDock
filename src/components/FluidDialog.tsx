@@ -82,7 +82,10 @@ function DialogLayer({ title, description, busy, progress, size, children, origi
         // A newly mounted dialog must not dismiss on the press that opened it.
         if (busy || !present || event.detail.originalEvent.timeStamp < mountedAt.current) event.preventDefault();
       }}>
-      <motion.section layoutRoot ref={surface} data-arc-ui data-size={size} data-progress={pending || undefined} data-scrollable={scrollable} inert={!present} aria-hidden={!present} aria-busy={pending ? undefined : busy || undefined} className={`${styles.content} ${native ? styles.native : ""}`}
+      {/* Inert owns the exiting surface's input and accessibility exclusion.
+          A simultaneous aria-hidden can hide the still-focused close/action
+          button before the browser processes inert and releases its focus. */}
+      <motion.section layoutRoot ref={surface} data-arc-ui data-size={size} data-progress={pending || undefined} data-scrollable={scrollable} inert={!present} aria-busy={pending ? undefined : busy || undefined} className={`${styles.content} ${native ? styles.native : ""}`}
         style={size === 'import' ? { height } : undefined} initial={{ opacity: 0, y: reduced ? 0 : 16 }} animate={{ opacity: 1, y: 0 }} exit={{ ...exit, y: reduced ? 0 : 8 }} transition={transition}>
         <div ref={header} className={pending ? undefined : styles.header}>
           {pending ? <DialogPrimitive.Title className={styles.visuallyHidden}>{title}</DialogPrimitive.Title> : <>

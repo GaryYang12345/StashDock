@@ -1,7 +1,9 @@
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { statSync } from 'node:fs';
-import { win32 } from 'node:path';
+import { win32, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { runPreviewHelper } from './preview-helper.mjs';
 import productLinks from '../../../src-tauri/product-links.json' with { type: 'json' };
 
 const exec = promisify(execFile);
@@ -15,9 +17,23 @@ async function registry(key, value) {
 function executable(path, name, file = value => statSync(value).isFile()) {
   try { return typeof path === 'string' && win32.isAbsolute(path) && win32.basename(path).toLowerCase() === name && file(path) ? path : null; } catch { return null; }
 }
-export async function integrationDestination(id, { platform = process.platform, readRegistry = registry, desktopPath, file } = {}) {
+export async function resolveMacIntegration(id, desktopPath) {
+  const helper = resolve(fileURLToPath(new URL('..', import.meta.url)), 'bin', `${process.platform}-${process.arch}`, 'stashdock-preview');
+  const result = await runPreviewHelper(helper, { integrationOperation: 'resolve', id, ...(desktopPath ? { desktopPath } : {}) }, undefined, { timeout: 20_000, maxOutput: 65536 });
+  if (result.error) throw Error(result.error);
+  if (result.application !== null && (typeof result.application !== 'string' || !result.application.startsWith('/') || !result.application.endsWith('.app'))) throw Error('The application could not be located.');
+  return { application: result.application, safariStatusProbe: result.safariStatusProbe === true };
+}
+export async function resolveMacApplication(id, desktopPath) {
+  return (await resolveMacIntegration(id, desktopPath)).application;
+}
+export async function integrationDestination(id, { platform = process.platform, readRegistry = registry, desktopPath, file, macApplication = resolveMacApplication } = {}) {
   if (!Object.hasOwn(productLinks.applications, id)) throw Error('Choose a supported StashDock app.');
   const target = productLinks.applications[id];
+  if (platform === 'darwin') {
+    const application = await macApplication(id, desktopPath);
+    if (application) return { target: application, fallback: null };
+  }
   if (platform === 'win32') {
     if (id === 'desktop') {
       const path = executable(desktopPath, 'stashdock.exe', file);
@@ -39,6 +55,11 @@ export async function integrationDestination(id, { platform = process.platform, 
 }
 export async function openIntegration(id, { desktopPath, platform = process.platform, launch = spawn, ...options } = {}) {
   const destination = await integrationDestination(id, { desktopPath, platform, ...options });
+  if (platform === 'darwin') {
+    try { await exec('/usr/bin/open', [destination.target], { timeout: 15_000, maxBuffer: 65536 }); }
+    catch { throw Error('The app could not be opened. Try again.'); }
+    return { opened: true };
+  }
   const open = target => new Promise((resolve, reject) => {
     const [command, args] = platform === 'win32' ? ['rundll32.exe', ['url.dll,FileProtocolHandler', target]] : platform === 'darwin' ? ['open', [target]] : ['xdg-open', [target]];
     const child = launch(command, args, { shell: false, windowsHide: true, detached: true, stdio: 'ignore' });

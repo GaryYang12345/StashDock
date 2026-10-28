@@ -1,5 +1,6 @@
+import { createNativeClient } from './native-client.js';
 // Save-only client. Keep tag names and unfinished legacy operations, never a shelf.
-export function createBrowserLibrary({ storage, fetcher = fetch, locks = globalThis.navigator?.locks, setup }) {
+export function createBrowserLibrary({ storage, fetcher = fetch, locks = globalThis.navigator?.locks, setup, native = createNativeClient() }) {
   const key = 'stashdock-library-v1';
   let chain = Promise.resolve();
   const serial = callback => {
@@ -14,11 +15,15 @@ export function createBrowserLibrary({ storage, fetcher = fetch, locks = globalT
   }
   const write = data => storage.set({ [key]: data });
   async function at(base, path, options = {}, retrySetup = true) {
+    if (base.startsWith('native:')) return native.at(base, path, options.body);
     const response = await fetcher(`${base}/v1${path}`, { ...options, signal: AbortSignal.timeout(1800), headers: { 'Content-Type': 'application/json', 'X-StashDock-Client': 'chrome-extension-v1' } });
     let payload; try { payload = await response.json(); } catch { payload = {}; }
     if (response.status === 403 && retrySetup && setup) {
       const status = await setup();
       if (status?.connected) return at(base, path, options, false);
+      if (typeof status?.error === 'string') {
+        const error = Error(status.error); error.status = response.status; throw error;
+      }
     }
     if (!response.ok) {
       const error=Error(response.status===404 ? 'Update StashDock Desktop or its AI plugin, then retry.' : payload.error || 'The page could not be saved. Retry.');
@@ -26,17 +31,19 @@ export function createBrowserLibrary({ storage, fetcher = fetch, locks = globalT
     }
     return payload;
   }
-  async function query(path, options) {
+  async function query(path, options, useNative = true) {
+    const local = useNative && await native.query(path, options?.body);
+    if (local) return local;
     let failure;
     for (const port of [17864,17863]) {
       const base = `http://127.0.0.1:${port}`;
       try { return { base, value: await at(base,path,options) }; } catch(error) { if(error.status && (!failure || error.status!==404)) failure=error; }
     }
-    throw failure || Error('Open StashDock Desktop or its AI plugin, then retry.');
+    throw failure || Error('Install the latest StashDock Desktop or AI plugin, then retry.');
   }
   // Extension GET/HEAD requests may omit Origin despite host permissions.
   // JSON POST preserves browser-supplied origin authentication for read RPCs.
-  const lookup = (url, options={}) => query('/capture/lookup',{method:'POST',body:JSON.stringify({url,...options})});
+  const lookup = (url, options={}, useNative=true) => query('/capture/lookup',{method:'POST',body:JSON.stringify({url,...options})},useNative);
   return {
     tags: () => serial(async () => {
       const data = await read();
@@ -65,7 +72,7 @@ export function createBrowserLibrary({ storage, fetcher = fetch, locks = globalT
         for (const type of ['deletes','imports','edits']) while(data[type].length) {
           const entry = data[type][0];
           const url = type === 'imports' ? entry.url : typeof entry === 'object' && entry.url;
-          const {base,value} = url ? await lookup(url) : await query('/health');
+          const {base,value} = url ? await lookup(url,{},false) : await query('/health',undefined,false);
           const id = url ? value.duplicate?.id : typeof entry === 'string' ? entry : entry.id;
           if (type === 'imports') {
             const result = await at(base,'/import',{method:'POST',body:JSON.stringify({items:[entry]})});

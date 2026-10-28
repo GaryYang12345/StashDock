@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { locateLibrary, markLibraryReady } from '../plugins/stashdock/server/canonical-library.mjs';
 import { createLocalLibrary } from '../plugins/stashdock/server/local-library.mjs';
 import { checkSetup, createSetupConnection } from '../extension/setup-client.js';
@@ -12,6 +13,29 @@ import { readIntegrations, configuredCodexPlugin, codexPluginDetected, browserIn
 import { build } from 'esbuild';
 import { zh } from '../src/features/settings/messages.mjs';
 import { browserExtensionDetected, extensionEnabled } from '../plugins/stashdock/server/browser-presence.mjs';
+import productLinks from '../src-tauri/product-links.json' with { type: 'json' };
+import { pinnedBrowserExtensionId } from '../src/lib/browser-extension-identity.mjs';
+
+test('pinned Chromium origins register without profile access but do not imply current installation presence', () => {
+  for (const browser of ['chrome', 'edge']) {
+    const id = productLinks.browserExtensions[browser].id;
+    const origin = `chrome-extension://${id}`;
+    const record = browserInstallationRecord(() => null, browser, '0.4.17', id, origin,
+      () => assert.fail('Connection authorization must not open a private browser profile'));
+    assert.deepEqual(JSON.parse(record.value).origins, [origin]);
+    const status = readIntegrations(key => key === record.key ? record.value : null, { browserEnabled: () => false });
+    assert.equal(status.items.find(item => item.id === browser).detected, false);
+    assert.throws(() => browserInstallationRecord(() => null, browser, '0.4.17', id, 'https://example.org', () => true));
+    assert.throws(() => browserInstallationRecord(() => null, browser, '0.4.17', id, 'chrome-extension://' + 'a'.repeat(32), () => true));
+    const other = browser === 'chrome' ? 'edge' : 'chrome';
+    if (!pinnedBrowserExtensionId(other, id)) assert.throws(() => browserInstallationRecord(() => null, other, '0.4.17', id, origin, () => false));
+    for (const legacy of productLinks.browserExtensions[browser].legacyIds) {
+      const legacyOrigin = `chrome-extension://${legacy}`;
+      assert.equal(JSON.parse(browserInstallationRecord(() => null,browser,'0.4.19',legacy,legacyOrigin,()=>assert.fail('No profile access')).value).extensionId,legacy);
+      if (!productLinks.browserExtensions[other].legacyIds.includes(legacy)) assert.throws(()=>browserInstallationRecord(()=>null,other,'0.4.19',legacy,legacyOrigin,()=>false));
+    }
+  }
+});
 
 test('browser registration requires the exact enabled StashDock extension', () => {
   const id = 'a'.repeat(32), origin = `chrome-extension://${id}`;
@@ -81,7 +105,7 @@ test('extension discovers either local provider, accepts legacy health, and repo
   assert.equal((await checkSetup({ fetcher: request })).owner, 'desktop');
   assert.ok(calls.every(url => /^http:\/\/127\.0\.0\.1:(17863|17864)\/v1\/(setup|health)$/.test(url)));
   assert.equal((await checkSetup({ fetcher: async () => { throw Error('offline'); } })).connected, false);
-  const legacy = await checkSetup({ fetcher: async url => ({ ok: url.endsWith('health'), json: async () => ({ status: 'ready', app: 'StashDock library' }) }) });
+  const legacy = await checkSetup({ fetcher: async url => ({ ok: url.endsWith('health'), status: url.endsWith('health') ? 200 : 404, json: async () => ({ status: 'ready', app: 'StashDock library' }) }) });
   assert.equal(legacy.connected, true);
 });
 
@@ -90,13 +114,35 @@ test('a legacy provider cannot hide a setup-capable provider, and parallel check
   const fetcher = async url => {
     calls.push(url);
     if (url.includes('17863')) return { ok: true, json: async () => ({ connected: true, owner: 'desktop', integrations: { items: [{ id: 'chrome', detected: true }] } }) };
-    return { ok: url.endsWith('health'), json: async () => ({ status: 'ready', app: 'StashDock library' }) };
+    return { ok: url.endsWith('health'), status: url.endsWith('health') ? 200 : 404, json: async () => ({ status: 'ready', app: 'StashDock library' }) };
   };
   const setup = createSetupConnection({ fetcher });
   const first = setup(), second = setup(); assert.equal(first, second);
   assert.equal((await first).owner, 'desktop');
   assert.equal(calls.filter(url => url.includes('17863')).length, 1);
   await setup(); assert.equal(calls.filter(url => url.includes('17863')).length, 2);
+});
+
+test('a healthy provider cannot hide rejected registration or a broken setup response', async () => {
+  for (const status of [400, 403, 429, 500, 200]) {
+    const calls = [];
+    const result = await checkSetup({ fetcher: async url => {
+      calls.push(url);
+      if (url.endsWith('/health')) return Response.json({ status: 'ready', app: 'StashDock library' });
+      return Response.json({ error: 'Extension verification failed.' }, { status });
+    } });
+    assert.equal(result.connected, false);
+    assert.equal(result.error, 'Extension verification failed.');
+    assert.equal(calls.length, 2, 'one bounded setup request per provider, without health fallback');
+  }
+});
+
+test('registration failure in one provider does not hide successful registration in the other', async () => {
+  const result = await checkSetup({ fetcher: async url => url.includes('17864')
+    ? Response.json({ error: 'Extension verification failed.' }, { status: 400 })
+    : Response.json({ connected: true, owner: 'desktop', integrations: { items: [] } }) });
+  assert.equal(result.connected, true);
+  assert.equal(result.owner, 'desktop');
 });
 
 test('an old browser handshake alone never proves an extension is still enabled', () => {
@@ -126,12 +172,12 @@ test('host-specific sections keep browsers separate from AI plugins and do not a
   const source = readFileSync('src/features/settings/IntegrationSections.tsx', 'utf8');
   assert.match(source, /: \[\{ title: 'Browser extensions', ids: browsers \}, \{ title: 'Desktop app'/);
   assert.doesNotMatch(source, /'browser'/);
-  assert.match(source, /!entry.ready && <span[^>]*>\{t\('Coming soon'\)\}/);
+  assert.match(source, /!entry.ready && info && <span[^>]*>\{t\('Coming soon'\)\}/);
   assert.doesNotMatch(readFileSync('src/features/mcp-app/McpSettingsView.tsx', 'utf8'), /Shared with the desktop app/);
   const worker = readFileSync('extension/background.js', 'utf8');
   assert.doesNotMatch(worker, /setup\.html|open-integration/);
   assert.match(worker, /return library.save\(item/);
-  assert.match(readFileSync('extension/library-client.js','utf8'), /Open StashDock Desktop or its AI plugin, then retry/);
+  assert.match(readFileSync('extension/library-client.js','utf8'), /Install the latest StashDock Desktop or AI plugin, then retry/);
 });
 test('settings explanations reuse shared tooltips with a normal pointer and detected integrations open usage guides', () => {
   const help = readFileSync('src/features/settings/SettingHelp.tsx', 'utf8');
@@ -186,4 +232,92 @@ test('an actual extension setup handshake registers against the provider library
     assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify({ browser:'chrome',version:'1',extensionId:'b'.repeat(32) }) })).status,400);
     assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify({ browser: 'desktop', version: '1' }) })).status, 400);
   } finally { await new Promise(resolve => server.close(resolve)); library.close(); }
+});
+
+
+test('Safari is actionable only on Mac, with a localized usage guide and bundled setup', async () => {
+  const result = await build({ entryPoints: ['src/features/settings/integrations.ts'], bundle: true, write: false, format: 'esm', platform: 'node' });
+  const { integrationReady, integrationGuides, safariSetupSteps } = await import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'));
+  assert.equal(integrationReady('safari', null), false);
+  for (const platform of ['windows', 'linux', undefined]) assert.equal(integrationReady('safari', { items: [], platform }), false);
+  assert.equal(integrationReady('safari', { items: [], platform: 'macos' }), true);
+  assert.equal(integrationReady('chrome', { items: [], platform: 'windows' }), true);
+  assert.equal(integrationReady('claude', { items: [], platform: 'macos' }), false);
+  for (const text of [integrationGuides.safari.title, ...safariSetupSteps]) assert.ok(zh[text], text);
+});
+
+test('Safari setup describes the bundled extension without a redundant install or Copy action', async () => {
+  const result = await build({ stdin: { contents: `
+    import React from 'react';
+    import { renderToStaticMarkup } from 'react-dom/server';
+    import { IntegrationGuide } from './src/features/settings/IntegrationGuide';
+    export const html = renderToStaticMarkup(React.createElement(IntegrationGuide, {
+      id: 'safari', kind: 'setup', info: {items:[], platform:'macos', githubUrl:'https://github.com/example/repo'}, openLink: async()=>{}
+    }));
+  `, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, format: 'esm', platform: 'node', packages: 'external', jsx: 'automatic', loader: { '.module.css': 'empty', '.css': 'empty', '.svg': 'text', '.png': 'dataurl' } });
+  const path = join(process.cwd(), 'node_modules', `.stashdock-guide-test-${process.pid}.mjs`);
+  try {
+    writeFileSync(path, result.outputFiles[0].text);
+    const { html } = await import(pathToFileURL(path).href + '?safari');
+    assert.match(html, /included with StashDock Desktop/);
+    assert.match(html, /Settings → Extensions/);
+    assert.match(html, /Open Safari/);
+    assert.doesNotMatch(html, /Copy GitHub|Open installation page|Get the browser extension/);
+    assert.equal((html.match(/<li>/g) || []).length, 3);
+  } finally { rmSync(path, {force:true}); }
+});
+
+
+test('both platforms send setup to the website guide, never to Windows-only instructions', () => {
+  const mac = readIntegrations(() => null, { platform: 'darwin' });
+  const win = readIntegrations(() => null, { platform: 'win32' });
+  assert.equal(mac.platform, 'macos');
+  assert.equal(win.platform, 'windows');
+  for (const links of [mac.links, win.links]) {
+    assert.equal(links.codex, 'https://stashdock.app/guide#install-plugin');
+    assert.equal(links.desktop, 'https://stashdock.app/guide#install-desktop');
+    assert.doesNotMatch(JSON.stringify(links), /windows-plugin-install|releases\/latest/);
+  }
+});
+
+
+test('a Safari registration cannot be detected from an unrelated Chromium profile', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stashdock-safari-presence-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, 'Default'));
+  const id = 'app.stashdock.desktop.SafariExtension';
+  writeFileSync(join(root, 'Default', 'Secure Preferences'), JSON.stringify({extensions:{settings:{[id]:{manifest:{name:'StashDock Companion'},state:1}}}}));
+  assert.equal(browserExtensionDetected('safari', id, {root}), false);
+});
+
+
+test('both settings hosts present only the published Chrome extension', async () => {
+  const result = await build({ stdin: { contents: `
+    import React from 'react';
+    import { renderToStaticMarkup } from 'react-dom/server';
+    import { IntegrationSections } from './src/features/settings/IntegrationSections';
+    export const html = ['desktop','codex'].map(host => renderToStaticMarkup(React.createElement(IntegrationSections, {
+      host, load:async()=>({items:[], platform:'macos'}), openLink:async()=>{}
+    })));
+  `, resolveDir: process.cwd(), loader:'tsx' }, bundle:true, write:false, format:'esm', platform:'node', packages:'external', jsx:'automatic', loader:{'.module.css':'empty','.css':'empty','.svg':'text','.png':'dataurl'} });
+  const path = join(process.cwd(),'node_modules',`.stashdock-loading-test-${process.pid}.mjs`);
+  try {
+    writeFileSync(path,result.outputFiles[0].text);
+    const {html} = await import(pathToFileURL(path).href+'?initial');
+    for (const host of html) {
+      assert.match(host,/data-integration-row="chrome"/);
+      assert.doesNotMatch(host,/data-integration-row="(?:edge|firefox|safari)"/);
+      assert.doesNotMatch(host,/Coming soon/);
+      assert.match(host,/Check installation status/);
+    }
+  } finally {rmSync(path,{force:true});}
+});
+
+test('the Chrome extension can register and be detected in Edge without profile access for authorization', () => {
+  const id = productLinks.browserExtensions.chrome.id;
+  const record = browserInstallationRecord(() => null, 'edge', '0.4.26', id, `chrome-extension://${id}`, () => assert.fail('Pinned Chrome extension must not scan profiles for authorization'));
+  const read = key => key === record.key ? record.value : null;
+  const enabled = browser => browser === 'edge';
+  assert.equal(readIntegrations(read, {browserEnabled: enabled}).items.find(item => item.id === 'chrome').detected, true);
+  assert.equal(readIntegrations(read, {browserEnabled: () => false}).items.find(item => item.id === 'chrome').detected, false);
 });

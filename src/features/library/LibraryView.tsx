@@ -35,13 +35,21 @@ import { ReferenceImportDialog } from '../../components/ReferenceImportDialog';
 
 const SettingsView = lazy(() => import('../settings/SettingsView'));
 
-export default function LibraryView({ onCollapse, active = true, maximized = false, floatingWindow = true }: { onCollapse?: () => void; active?: boolean; maximized?: boolean; floatingWindow?: boolean }) {
+export default function LibraryView({ onCollapse, active = true, maximized = false, floatingWindow = true, nativeChrome = false }: { onCollapse?: () => void; active?: boolean; maximized?: boolean; floatingWindow?: boolean; nativeChrome?: boolean }) {
   const { t } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsBusy, setSettingsBusy] = useState(false);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const settingsTrigger = useRef<HTMLElement | null>(null);
   const openSettings = useCallback(() => { settingsTrigger.current = document.activeElement as HTMLElement; setSettingsOpen(true); }, []);
   const closeSettings = useCallback(() => { setSettingsOpen(false); requestAnimationFrame(() => settingsTrigger.current?.focus()); }, []);
+  useEffect(() => {
+    if (!nativeChrome) return;
+    let disposed = false; let stop: (() => void) | undefined;
+    void listen('desktop-open-settings', () => openSettings()).then(cleanup => {
+      if (disposed) cleanup(); else stop = cleanup;
+    }).catch(error => console.warn("Could not listen for native Settings", error));
+    return () => { disposed = true; stop?.(); };
+  }, [nativeChrome, openSettings]);
   const [editing, setEditing] = useState<StashItem | null>(null);
   const [contentEditing, setContentEditing] = useState<StashItem | null>(null);
   const [tagOperation, setTagOperation] = useState<TagOperation | null>(null);
@@ -67,6 +75,13 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
     }).then(stop => { if (stopped) stop(); else cleanup = stop; });
     return () => { stopped = true; cleanup?.(); };
   }, [setFilter, setActiveTag, setQuery]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let stopped = false, cleanup: (() => void) | undefined;
+    void listen('desktop-focus-search', () => { if (!stopped) { setSettingsOpen(false); searchRef.current?.focus(); } })
+      .then(stop => { if (stopped) stop(); else cleanup = stop; });
+    return () => { stopped = true; cleanup?.(); };
+  }, [searchRef]);
   const editContent = useCallback((item: StashItem) => {
     returnFocus.current = document.querySelector<HTMLElement>(`article[data-reference-id="${CSS.escape(item.id)}"] button[aria-haspopup="menu"]`);
     // Desktop shelf rows carry no bodies: read this reference in full first.
@@ -91,16 +106,17 @@ export default function LibraryView({ onCollapse, active = true, maximized = fal
       <main
         className={`app-shell ${styles.shell}`}
       >
-        <header className={`${styles.windowBar} ${onCollapse ? 'window-titlebar' : ''}`} onPointerDown={event => handleTitlebarDrag(event, Boolean(onCollapse))} onDoubleClick={event => handleTitlebarDoubleClick(event, Boolean(onCollapse))}>
+        {!nativeChrome && <header className={`${styles.windowBar} ${onCollapse ? 'window-titlebar' : ''}`} onPointerDown={event => handleTitlebarDrag(event, Boolean(onCollapse) && !nativeChrome)} onDoubleClick={event => handleTitlebarDoubleClick(event, Boolean(onCollapse) && !nativeChrome)}>
           <BrandIcon className={styles.brand} />
           <div className={styles.windowActions}>{onCollapse && <WindowControls maximized={maximized} floatingWindow={floatingWindow} nativeResize disabled={!active || settingsBusy} onCollapse={onCollapse} onClose={() => void hideStashDock()} />}</div>
-        </header>
+        </header>}
         <div className={styles.workspace} data-window-content data-shell-workspace>
-        <div className={styles.desktopNavigation} data-shell-navigation onPointerDown={event => handleTitlebarDrag(event, Boolean(onCollapse))} onDoubleClick={event => handleTitlebarDoubleClick(event, Boolean(onCollapse))}>
-        <Sidebar active={filter} counts={counts} tags={tags} activeTag={activeTag} onSelect={selectFilter} onSelectTag={selectTag} showBrand={false} onRenameTag={renameTag} onRemoveTag={removeTag} pinnedTags={pinnedTags} onPinTag={togglePin} onSettings={openSettings} settingsOpen={settingsOpen} settingsDisabled={settingsBusy} />
+        <div className={styles.desktopNavigation} data-shell-navigation onPointerDown={event => handleTitlebarDrag(event, Boolean(onCollapse) && !nativeChrome)} onDoubleClick={event => handleTitlebarDoubleClick(event, Boolean(onCollapse) && !nativeChrome)}>
+        <Sidebar active={filter} counts={counts} tags={tags} activeTag={activeTag} onSelect={selectFilter} onSelectTag={selectTag} showBrand={nativeChrome} onRenameTag={renameTag} onRemoveTag={removeTag} pinnedTags={pinnedTags} onPinTag={togglePin} onSettings={openSettings} settingsOpen={settingsOpen} settingsDisabled={settingsBusy} />
         </div>
         <section className={styles.main} hidden={settingsOpen}>
           <Toolbar
+            compactBrand={nativeChrome ? <BrandIcon className={styles.compactBrand} /> : undefined}
             query={query}
             searching={searching}
             refreshing={refreshing}

@@ -11,6 +11,10 @@ compile_error!(
 #[allow(dead_code)]
 mod independent_startup;
 fn main() {
+    #[cfg(target_os = "macos")]
+    if stashdock_lib::safari_services::run_status_command() {
+        return;
+    }
     match independent_startup::relaunch_if_needed() {
         Ok(true) => return,
         Ok(false) => {}

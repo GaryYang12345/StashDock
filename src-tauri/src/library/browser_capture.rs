@@ -1,11 +1,28 @@
 //! Compact, transactional Save-page protocol shared by all browser targets.
-use super::{canonicalize_web_url, now, row_to_item, truncate_text, upsert_item, StashItem};
+use super::{canonicalize_web_url, now, replace_link_item, truncate_text, upsert_item, StashItem};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 fn hash(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
+}
+pub(super) fn tags(connection: &Connection) -> Result<Value, String> {
+    let mut statement = connection.prepare("SELECT DISTINCT value FROM stash_items,json_each(stash_items.tags_json) WHERE json_each.type='text' ORDER BY value").map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let mut tags = Vec::new();
+    let mut bytes = 0;
+    for tag in rows {
+        let tag = tag.map_err(|e| e.to_string())?;
+        bytes += tag.len() + 4;
+        if bytes > 750_000 {
+            return Err("The tag list is too large.".into());
+        }
+        tags.push(tag);
+    }
+    Ok(json!({"tags":tags}))
 }
 fn find(connection: &Connection, url: &str) -> Result<Option<String>, String> {
     let direct = connection
@@ -198,35 +215,22 @@ pub(super) fn save(connection: &mut Connection, body: &str) -> Result<Value, Str
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty() && tags.insert(v.to_lowercase()))
         .collect();
-    if let Some(existing) = &existing {
-        let id = existing["id"].as_str().ok_or("Invalid reference.")?;
-        let stored=transaction.query_row("SELECT id,title,kind,source,url,excerpt,tags_json,created_at,favorite,preview,asset_path,original_path,mime_type,size_bytes,content,origin_json,context_override FROM stash_items WHERE id=?1",[id],row_to_item).map_err(|e|e.to_string())?;
-        let mut previous = stored.origin.unwrap_or_else(|| json!({}));
-        if !previous.is_object() {
-            previous = json!({});
-        }
-        previous.as_object_mut().unwrap().remove("previewSource");
-        previous
-            .as_object_mut()
-            .unwrap()
-            .extend(origin.as_object().unwrap().clone());
-        item.id = id.into();
-        item.kind = stored.kind;
-        item.created_at = stored.created_at;
-        item.favorite = stored.favorite;
-        item.context_override = stored.context_override;
-        item.origin = Some(previous);
-    } else {
-        item.id = uuid::Uuid::new_v4().to_string();
-        item.created_at = now()?;
-        item.favorite = false;
-        item.origin = Some(origin);
-    }
+    item.origin = Some(origin);
+    item.favorite = false;
+    item.context_override = None;
     item.asset_path = None;
     item.original_path = None;
     item.mime_type = None;
     item.size_bytes = None;
-    upsert_item(&transaction, &item)?;
+    if let Some(existing) = &existing {
+        let id = existing["id"].as_str().ok_or("Invalid reference.")?;
+        item.id = id.into();
+        replace_link_item(&transaction, &item)?;
+    } else {
+        item.id = uuid::Uuid::new_v4().to_string();
+        item.created_at = now()?;
+        upsert_item(&transaction, &item)?;
+    }
     let result = json!({"saved":true,"id":item.id,"replaced":existing.is_some()});
     transaction
         .execute(
@@ -249,7 +253,7 @@ mod tests {
         (connection, item)
     }
     #[test]
-    fn compact_lookup_and_confirmed_replace_preserve_identity_context_and_favorite() {
+    fn compact_lookup_and_confirmed_replace_use_the_new_final_context() {
         let (mut connection, item) = fixture();
         let first = save(
             &mut connection,
@@ -272,6 +276,8 @@ mod tests {
         next["title"] = json!("New title");
         next["content"] = json!("New body");
         next["tags"] = json!(["New"]);
+        next["preview"] = Value::Null;
+        next["kind"] = json!("repo");
         let request = json!({"item":next,"operationId":"replace-operation-1234"});
         assert_eq!(
             save(&mut connection, &request.to_string()).unwrap()["duplicate"],
@@ -288,17 +294,23 @@ mod tests {
         let result = save(&mut connection, &body).unwrap();
         assert_eq!(result["id"], first["id"]);
         assert_eq!(result["replaced"], true);
-        let stored=connection.query_row("SELECT title,content,context_override,favorite,tags_json FROM stash_items WHERE id=?1",[id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,String>(4)?))).unwrap();
+        let stored=connection.query_row("SELECT title,content,context_override,favorite,tags_json FROM stash_items WHERE id=?1",[id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?,r.get::<_,i64>(3)?,r.get::<_,String>(4)?))).unwrap();
         assert_eq!(
             stored,
             (
                 "New title".into(),
                 "New body".into(),
-                "User context".into(),
-                1,
+                None,
+                0,
                 "[\"New\"]".into()
             )
         );
+        let refreshed = connection.query_row(&format!("SELECT {} FROM stash_items WHERE id=?1", super::super::ITEM_COLUMNS), [id], super::super::row_to_item).unwrap();
+        assert!(refreshed.preview.is_none());
+        assert_eq!(refreshed.kind, "repo");
+        let context = super::super::context::build(&[refreshed], false).unwrap();
+        assert!(context.contains("New body"));
+        assert!(!context.contains("User context"));
         connection
             .execute(
                 "UPDATE stash_items SET title='Later edit' WHERE id=?1",
