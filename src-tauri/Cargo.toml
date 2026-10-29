@@ -6,7 +6,7 @@ authors = ["StashDock contributors"]
 edition = "2021"
 default-run = "stashdock"
 license = "MIT"
-repository = "https://github.com/GaryYang12345/StashDock"
+repository = "https://github.com/StashDock/StashDock"
 
 [[bin]]
 name = "stashdock-preview"

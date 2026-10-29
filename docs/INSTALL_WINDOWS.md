@@ -1,6 +1,6 @@
 # Install StashDock on Windows
 
-Download packages from [stashdock.app](https://stashdock.app/guide) or [Releases](https://github.com/GaryYang12345/StashDock/releases/latest).
+Download packages from [stashdock.app](https://stashdock.app/guide) or [Releases](https://github.com/StashDock/StashDock/releases/latest).
 This release supports Windows x64. Choose Desktop, the ChatGPT local plugin,
 or both; both use the same local library.
 

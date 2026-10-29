@@ -1,5 +1,5 @@
 {
-  "githubRepository": "GaryYang12345/StashDock",
+  "githubRepository": "StashDock/StashDock",
   "publicBrowserExtensions": ["chrome"],
   "browserExtensions": {
     "firefox": {

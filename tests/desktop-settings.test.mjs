@@ -45,7 +45,7 @@ test('desktop settings stay small and use the published repository without fabri
   assert.doesNotMatch(source, /backup|restore|telemetry|diagnostic|clear.cache/i);
   assert.match(source, /info\.githubUrl &&/);
   const links = JSON.parse(readFileSync('src-tauri/product-links.json', 'utf8'));
-  assert.equal(links.githubRepository, 'GaryYang12345/StashDock');
+  assert.equal(links.githubRepository, 'StashDock/StashDock');
   // Installation buttons open the matching section of the website guide.
   assert.equal(links.installationUrls.desktop, 'https://stashdock.app/guide#install-desktop');
   assert.equal(links.installationUrls.codex, 'https://stashdock.app/guide#install-plugin');

@@ -13,9 +13,9 @@
 
 <p align="center">
   <a href="https://stashdock.app"><strong>官网</strong></a> ·
-  <a href="https://github.com/GaryYang12345/StashDock/releases/tag/v1.0.0"><strong>下载 1.0.0</strong></a> ·
+  <a href="https://github.com/StashDock/StashDock/releases/tag/v1.0.0"><strong>下载 1.0.0</strong></a> ·
   <a href="https://stashdock.app/guide">使用指南</a> ·
-  <a href="https://github.com/GaryYang12345/StashDock/issues">反馈</a>
+  <a href="https://github.com/StashDock/StashDock/issues">反馈</a>
 </p>
 
 [![StashDock 官网](assets/readme/website.jpg)](https://stashdock.app)
@@ -54,10 +54,10 @@
 
 | | 桌面应用 | ChatGPT 插件 |
 | --- | --- | --- |
-| **Windows** · Windows 10/11，x64 | [下载安装包](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/StashDock_1.0.0_x64-setup.exe) | [下载插件](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-win32-x64.zip) |
-| **Mac** · macOS 14+，Apple 芯片 | [下载 DMG](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/StashDock_1.0.0_aarch64.dmg) | [下载插件](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-darwin-arm64.zip) |
+| **Windows** · Windows 10/11，x64 | [下载安装包](https://github.com/StashDock/StashDock/releases/download/v1.0.0/StashDock_1.0.0_x64-setup.exe) | [下载插件](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-win32-x64.zip) |
+| **Mac** · macOS 14+，Apple 芯片 | [下载 DMG](https://github.com/StashDock/StashDock/releases/download/v1.0.0/StashDock_1.0.0_aarch64.dmg) | [下载插件](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-darwin-arm64.zip) |
 
-[下载 Chrome 扩展](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/stashdock-extension-chrome-1.0.0.zip) · [安装指南](https://stashdock.app/guide)
+[下载 Chrome 扩展](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-extension-chrome-1.0.0.zip) · [安装指南](https://stashdock.app/guide)
 
 桌面应用与 AI 插件可任选其一，也可以同时安装，在同一台电脑上共享收藏库。安装并打开其中一个，即可配置 Chrome 网页保存功能；此后即使两端都已退出，扩展仍能保存网页。
 

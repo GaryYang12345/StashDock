@@ -55,7 +55,7 @@ test('MCP settings tools are app-only, bounded and do not expose paths in model 
     const saved = await client.callTool({ name: 'save_stashdock_preferences', arguments: { preferences: { language: 'zh' } } });
     assert.equal(saved._meta.preferences.language, 'zh');
     const info = await client.callTool({ name: 'get_stashdock_settings', arguments: {} });
-    assert.equal(info._meta.settings.githubUrl, 'https://github.com/GaryYang12345/StashDock');
+    assert.equal(info._meta.settings.githubUrl, 'https://github.com/StashDock/StashDock');
     assert.equal(info._meta.settings.preferences.language, 'zh');
     const storage = await client.callTool({ name: 'get_stashdock_storage_info', arguments: {} });
     assert.equal(storage._meta.storage.path, root);

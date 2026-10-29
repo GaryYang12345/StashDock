@@ -6,7 +6,7 @@ no separate Node.js or StashDock Desktop installation is needed.
 ## Install
 
 1. Download `stashdock-plugin-1.0.0-darwin-arm64.zip` from
-   [Releases](https://github.com/GaryYang12345/StashDock/releases/latest).
+   [Releases](https://github.com/StashDock/StashDock/releases/latest).
 2. Extract it to a permanent folder. Keep the hidden `.agents` folder
    and `plugins` directory together.
 3. Add the extracted folder as a local plugin marketplace in a compatible

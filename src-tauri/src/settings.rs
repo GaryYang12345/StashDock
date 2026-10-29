@@ -605,7 +605,7 @@ mod tests {
     fn update_repository_is_the_product_repository() {
         assert_eq!(
             github_repository().as_deref(),
-            Some("GaryYang12345/StashDock")
+            Some("StashDock/StashDock")
         );
     }
 }

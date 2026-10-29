@@ -15,7 +15,7 @@ const [target, ...flags] = process.argv.slice(2);
 if (!target) throw Error('Usage: node scripts/export-public-source.mjs <public-checkout> [--prune]');
 const publicRoot = resolve(target);
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
-if (git(publicRoot, 'remote', 'get-url', 'origin').trim() !== 'https://github.com/GaryYang12345/StashDock.git') throw Error('The target must be the public StashDock checkout.');
+if (git(publicRoot, 'remote', 'get-url', 'origin').trim() !== 'https://github.com/StashDock/StashDock.git') throw Error('The target must be the public StashDock checkout.');
 if (git(publicRoot, 'status', '--porcelain').trim()) throw Error('Commit or set aside changes in the public checkout first.');
 if (git(root, 'status', '--porcelain').trim()) throw Error('Commit the private source first; only committed files are exported.');
 

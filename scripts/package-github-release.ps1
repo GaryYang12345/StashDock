@@ -10,7 +10,7 @@ $taskPluginVersion = (Get-Content -Raw -LiteralPath (Join-Path $taskRoot 'plugin
 $taskExtensionVersion = (Get-Content -Raw -LiteralPath (Join-Path $taskRoot 'extension/manifest.json') | ConvertFrom-Json).version
 $taskPublicRoot = [IO.Path]::GetFullPath($PublicSource)
 $taskPublicRemote = & git -C $taskPublicRoot remote get-url origin
-if ($LASTEXITCODE -ne 0 -or $taskPublicRemote -ne 'https://github.com/GaryYang12345/StashDock.git') { throw 'PublicSource must be the reviewed public distribution checkout.' }
+if ($LASTEXITCODE -ne 0 -or $taskPublicRemote -ne 'https://github.com/StashDock/StashDock.git') { throw 'PublicSource must be the reviewed public distribution checkout.' }
 $taskCommit = & git -C $taskPublicRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Commit the source baseline first.' }
 $taskStatus = & git -C $taskRoot status --porcelain
@@ -42,7 +42,7 @@ $taskFiles = @(Get-ChildItem -LiteralPath $taskRelease -File | Sort-Object Name 
   [pscustomobject]@{name=$_.Name;bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()}
 })
 $taskMetadata = [ordered]@{
-  formatVersion=1;repository='https://github.com/GaryYang12345/StashDock';tag="v$taskVersion";sourceCommit=$taskCommit;
+  formatVersion=1;repository='https://github.com/StashDock/StashDock';tag="v$taskVersion";sourceCommit=$taskCommit;
   versions=[ordered]@{desktop=$taskVersion;chatgptPlugin=$taskPluginVersion;browserExtensions=$taskExtensionVersion};
   platform='win32-x64';windowsCodeSigned=$false;browserStorePublished=$false;files=$taskFiles
 }
