@@ -2,6 +2,8 @@
   <a href="https://stashdock.app"><img src="assets/readme/brand.png" alt="StashDock" width="600"></a>
 </p>
 
+<p align="center">English · <a href="README.zh-CN.md">简体中文</a></p>
+
 <h1 align="center">Your context, ready for any AI.</h1>
 
 <p align="center">
