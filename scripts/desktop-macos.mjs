@@ -69,5 +69,6 @@ if (action === 'check' || action === 'test') {
     sign(app);
     run('codesign', ['--verify', '--strict', '--deep', app]);
     console.log(`Desktop with native renderer${safari ? ' and Safari extension' : ''}: ${app}`);
+    run(process.execPath, ['scripts/package-macos-desktop.mjs', app]);
   }
 }

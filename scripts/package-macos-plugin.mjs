@@ -9,7 +9,7 @@ const platform = 'darwin-arm64';
 const source = resolve(root, 'output/plugin-build', platform, 'plugins/stashdock');
 const metadata = JSON.parse(await readFile(join(source, '.codex-plugin/plugin.json'), 'utf8'));
 const lock = JSON.parse(await readFile(resolve(root, 'scripts/node-runtime-darwin-arm64-lock.json'), 'utf8'));
-const destination = resolve(process.argv[2] || resolve(root, 'output/releases', `stashdock-plugin-${metadata.version}-${platform}-development`));
+const destination = resolve(process.argv[2] || resolve(root, 'output/releases', `stashdock-plugin-${metadata.version}-${platform}`));
 for (const path of [destination, destination + '.zip']) {
   let exists = true; try { await access(path); } catch (error) { if (error.code !== 'ENOENT') throw error; exists = false; }
   if (exists) throw Error('Package already exists. Choose a new destination.');

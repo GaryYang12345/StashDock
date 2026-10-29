@@ -9,14 +9,16 @@ in conversations.
 ## Download
 
 Download from [stashdock.app](https://stashdock.app) and follow the
-[setup guide](https://stashdock.app/guide). Windows x64 packages are also on
-[GitHub Releases](https://github.com/GaryYang12345/StashDock/releases/latest).
+[setup guide](https://stashdock.app/guide). Packages for Windows x64 and macOS
+(Apple silicon) are also on [GitHub Releases](https://github.com/GaryYang12345/StashDock/releases/latest).
 
 | Package | Use |
 | --- | --- |
-| `StashDock_<version>_x64-setup.exe` | Standalone Windows desktop app |
-| `stashdock-plugin-<version>-win32-x64.zip` | ChatGPT/Codex local plugin, including Node runtime and native helpers |
-| `stashdock-extension-chrome-<version>.zip` | Chrome extension, manual installation |
+| `StashDock_<version>_x64-setup.exe` | Standalone desktop app for Windows 10 and 11 |
+| `StashDock_<version>_aarch64.dmg` | Standalone desktop app for macOS 14 or later, Apple silicon |
+| `stashdock-plugin-<version>-win32-x64.zip` | ChatGPT/Codex local plugin for Windows, including Node runtime and native helpers |
+| `stashdock-plugin-<version>-darwin-arm64.zip` | ChatGPT/Codex local plugin for Mac, including Node runtime and native helpers |
+| `stashdock-extension-chrome-<version>.zip` | Chrome extension for both systems, manual installation |
 
 Desktop and the AI plugin work independently. On the same computer they resolve
 one local library. Once Desktop or the AI plugin is installed and configured,
@@ -30,9 +32,11 @@ Versions come from `package.json` (Desktop), `plugins/stashdock/.codex-plugin/pl
 - [ChatGPT plugin installation](docs/windows-plugin-install.md)
 - [Browser extension installation](extension/README.md)
 
-StashDock 1.0 is released for Windows x64. macOS packages will follow in a later
-release. The Windows installer is not code-signed yet. Do not disable OS or
-browser security protections to install StashDock.
+StashDock 1.0 is released for Windows x64 and macOS on Apple silicon. Neither
+installer is signed by a registered developer yet; the Mac app is not notarized.
+Windows may show a SmartScreen prompt. On Mac, if the first launch is blocked,
+open System Settings → Privacy & Security and click Open Anyway.
+Do not disable OS or browser security protections to install StashDock.
 
 ## What you can do
 
@@ -41,7 +45,7 @@ browser security protections to install StashDock.
 - Import bookmarks from Chrome, Edge, Firefox or Safari without an extension.
 - Browse visual cards, search, filter by tags, edit metadata and choose covers.
 - Keep original files, open them in their normal editor, and transfer their current
-  bytes alongside Markdown context through the Windows clipboard or native drag.
+  bytes alongside Markdown context through the system clipboard or native drag.
 - Use the ChatGPT panel to manage references and add context to a conversation.
 - Ask AI to recommend saved references, use a tag as a context group, save a useful
   note/link, or preview and apply a tag organization plan with your approval.
@@ -54,7 +58,8 @@ browser security protections to install StashDock.
 File understanding belongs to the receiving AI. The plugin's Skill instructs it to
 resolve and read selected originals rather than treat a path as file contents.
 Native composer attachment support depends on the host; MCP context is not itself
-a file upload. Public URL previews use isolated system WebView2, not browser cookies.
+a file upload. Public URL previews use an isolated system renderer (WebView2 on Windows,
+WebKit on Mac), not browser cookies.
 
 ## Develop on Windows
 

@@ -1,4 +1,4 @@
-# StashDock 1.0.0 for Windows
+# StashDock 1.0.0
 
 StashDock is a local library of the context you give to AI: pages, links, files,
 notes, prompts and rules. Save it once, then add it to any chat.
@@ -38,8 +38,11 @@ Desktop and the plugin share one library on your computer. Install either or bot
 | File | Use |
 | --- | --- |
 | `StashDock_1.0.0_x64-setup.exe` | StashDock Desktop for Windows 10 and 11 |
-| `stashdock-plugin-1.0.0-win32-x64.zip` | ChatGPT plugin, with its own Node runtime |
-| `stashdock-extension-chrome-1.0.0.zip` | Chrome extension, load unpacked |
+| `stashdock-plugin-1.0.0-win32-x64.zip` | ChatGPT plugin for Windows, with its own Node runtime |
+| `StashDock_1.0.0_aarch64.dmg` | StashDock Desktop for macOS 14 or later, Apple silicon |
+| `stashdock-plugin-1.0.0-darwin-arm64.zip` | ChatGPT plugin for Mac, with its own Node runtime |
+| `stashdock-extension-chrome-1.0.0.zip` | Chrome extension for both systems, load unpacked |
 
-The Windows installer is not code-signed yet, so Windows may show a SmartScreen
-prompt. macOS packages will follow in a later release.
+Neither installer is signed by a registered developer yet. Windows may show a
+SmartScreen prompt. On Mac, the first time you open StashDock, macOS may block it:
+open System Settings, go to Privacy & Security and click Open Anyway.
