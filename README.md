@@ -1,58 +1,83 @@
-# StashDock
+<p align="center">
+  <a href="https://stashdock.app"><img src="assets/readme/brand.png" alt="StashDock" width="600"></a>
+</p>
 
-**Save once. Use in any agent.**
+<h1 align="center">Your context, ready for any AI.</h1>
 
-Your personal library of reusable AI context. Save pages, links, files, notes,
-prompts and rules, then use them in your AI conversations.
+<p align="center">
+  An AI-native, local personal context library.<br>
+  Bring your links, files, prompts and rules together. Find what matters, and put it to work in your next conversation.
+</p>
+
+<p align="center">
+  <a href="https://stashdock.app"><strong>Website</strong></a> ·
+  <a href="https://github.com/GaryYang12345/StashDock/releases/tag/v1.0.0"><strong>Download 1.0.0</strong></a> ·
+  <a href="https://stashdock.app/guide">Guide</a> ·
+  <a href="https://github.com/GaryYang12345/StashDock/issues">Feedback</a>
+</p>
+
+[![StashDock website](assets/readme/website.jpg)](https://stashdock.app)
+
+## Keep the context. Skip the search.
+
+Good references are scattered across browser tabs, folders and past conversations.
+StashDock brings them into one visual library you can search, organize and reuse.
+
+Save pages with the Chrome extension, import bookmarks, or add local files,
+notes, prompts and rules. Group references with tags, edit the context you want
+AI to receive, and use the same collection across conversations.
+
+## On your desktop, into any AI
+
+Browse your library in a standalone app. Copy or drag references into any AI
+conversation. Keep the floating folder nearby for quick search without opening
+the full library.
+
+![StashDock desktop library with sample references](assets/readme/desktop-library.jpg)
+
+## Beside your AI conversation
+
+Open your library in the AI app's sidebar. Select references and choose
+**Add to chat**. The AI plugin is currently available for **ChatGPT**.
+
+![StashDock AI sidebar with a reference added to the conversation](assets/readme/ai-sidebar.jpg)
+
+*Product previews use sample references. [Try them on the website](https://stashdock.app/#how).*
+
+## Let AI work with your library
+
+Through MCP and its included skill, StashDock gives AI a useful role on both
+sides of the conversation: bringing saved context in, and saving useful context
+for next time.
+
+- **Find the right starting point.** “Find references in my library that could help with this project.”
+- **Keep what you learned.** “Save the writing rules we agreed on as a reusable reference.”
+- **Organize as you go.** “Suggest tags for these references and show me the plan before applying it.”
+
+Reuse a tag as a context set, build a project reference shelf, or carry your
+preferred prompts and rules between AI apps. Start with your own workflow.
 
 ## Get StashDock
 
-Download from [stashdock.app](https://stashdock.app) or
-[GitHub Releases](https://github.com/GaryYang12345/StashDock/releases/latest).
-Follow the [setup guide](https://stashdock.app/guide) to get started.
+| | Desktop | ChatGPT plugin |
+| --- | --- | --- |
+| **Windows** · Windows 10/11, x64 | [Download installer](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/StashDock_1.0.0_x64-setup.exe) | [Download plugin](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-win32-x64.zip) |
+| **Mac** · macOS 14+, Apple Silicon | [Download DMG](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/StashDock_1.0.0_aarch64.dmg) | [Download plugin](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-darwin-arm64.zip) |
 
-- **StashDock Desktop**: browse and organize your library, then copy or drag
-  references into any AI app.
-- **ChatGPT plugin**: open your library beside the conversation and add references
-  to the chat. Ask AI to find, organize and save references.
-- **Chrome extension**: save pages while you browse. Install Desktop or the AI
-  plugin once; saving works even when both applications are closed.
+[Download the Chrome extension](https://github.com/GaryYang12345/StashDock/releases/download/v1.0.0/stashdock-extension-chrome-1.0.0.zip) · [Installation guide](https://stashdock.app/guide)
 
 Install Desktop, the AI plugin, or both. They share one library on your computer.
-
-| Download | System |
-| --- | --- |
-| `StashDock_1.0.0_x64-setup.exe` | Windows 10 or 11, x64 |
-| `StashDock_1.0.0_aarch64.dmg` | macOS 14 or later, Apple Silicon |
-| `stashdock-plugin-1.0.0-win32-x64.zip` | ChatGPT plugin for Windows x64 |
-| `stashdock-plugin-1.0.0-darwin-arm64.zip` | ChatGPT plugin for Apple Silicon Mac |
-| `stashdock-extension-chrome-1.0.0.zip` | Chrome extension for Windows and Mac |
+Install and open either once to enable Chrome page saving, which works even when
+Desktop and the AI app are closed.
 
 The installers are not signed by a registered developer; the Mac app is not
-notarized. Windows may show a SmartScreen prompt. If macOS blocks the first
-launch, open System Settings → Privacy & Security and choose Open Anyway.
+notarized. Windows may show SmartScreen. If macOS blocks the first launch,
+open **System Settings → Privacy & Security → Open Anyway**.
 
-## Your context, ready to use
+## Yours to keep
 
-- Add browser bookmarks, links, local files, notes, prompts and rules.
-- Browse visual cards, search, organize with tags and edit references.
-- Reuse groups of references by tag.
-- Open files in their usual app and keep their original format.
-- Use the floating desktop folder to search, copy and drag references.
-- Choose English or Simplified Chinese, a light or dark theme and your library location.
+Your library is stored on your device. You choose what to save and what to give
+AI. Different computers do not sync automatically.
 
-Your library is stored on your device. Different computers do not sync automatically.
-
-## Help
-
-- [Setup and usage guide](https://stashdock.app/guide)
-- [Windows installation](docs/INSTALL_WINDOWS.md)
-- [Windows plugin installation](docs/windows-plugin-install.md)
-- [Mac plugin installation](docs/macos-plugin-install.md)
-- [Chrome extension installation](extension/README.md)
-- [Report an issue](https://github.com/GaryYang12345/StashDock/issues)
-
-## License
-
-[MIT](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for
-third-party software licenses. Platform marks belong to their respective owners.
+[MIT license](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.md) ·
+[Privacy](https://stashdock.app/privacy)
