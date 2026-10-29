@@ -44,7 +44,7 @@ $taskFiles = @(Get-ChildItem -LiteralPath $taskRelease -File | Sort-Object Name 
 $taskMetadata = [ordered]@{
   formatVersion=1;repository='https://github.com/GaryYang12345/StashDock';tag="v$taskVersion";sourceCommit=$taskCommit;
   versions=[ordered]@{desktop=$taskVersion;chatgptPlugin=$taskPluginVersion;browserExtensions=$taskExtensionVersion};
-  platform='win32-x64';macBuildVerified=$false;windowsCodeSigned=$false;browserStorePublished=$false;files=$taskFiles
+  platform='win32-x64';windowsCodeSigned=$false;browserStorePublished=$false;files=$taskFiles
 }
 $taskMetadataPath = Join-Path $taskRelease 'release.json'
 [IO.File]::WriteAllText($taskMetadataPath,($taskMetadata | ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))

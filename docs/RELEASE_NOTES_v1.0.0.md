@@ -1,48 +1,34 @@
 # StashDock 1.0.0
 
-StashDock is a local library of the context you give to AI: pages, links, files,
-notes, prompts and rules. Save it once, then add it to any chat.
+Your personal library of reusable AI context. Save pages, links, files, notes,
+prompts and rules, then use them in your AI conversations.
 
-This release brings StashDock Desktop, the ChatGPT plugin and the Chrome
-extension to 1.0.0. Setup guides are at [stashdock.app/guide](https://stashdock.app/guide).
+## Choose how you use StashDock
 
-## What's included
+- **StashDock Desktop**: browse and organize your library in a standalone app,
+  then copy or drag references into any AI app.
+- **ChatGPT plugin**: open your library beside the conversation and add references
+  to the chat. Ask AI to find, organize and save references.
+- **Chrome extension**: save pages while you browse. Install Desktop or the AI
+  plugin once; saving works even when both applications are closed.
 
-- **StashDock Desktop**: a standalone app for browsing, organizing and handing
-  references to any AI. Copy or drag a card into a chat; files go as originals
-  with their context. Minimize to the floating folder, hover it to search, and
-  copy or drag a result without opening the library.
-- **ChatGPT plugin**: opens your library in ChatGPT's side panel. Select
-  references and click Add to chat, or ask ChatGPT to find, organize and save
-  references for you.
-- **Chrome extension**: saves the page you are reading, with its title, text and
-  link. Works with Desktop or the plugin installed, even when both are closed.
+Install Desktop, the AI plugin, or both. They share one library on your computer.
+Organize references with tags and reuse a group whenever you need it.
 
-Desktop and the plugin share one library on your computer. Install either or both.
+## Downloads
 
-## Changes since 0.2.6
-
-- The Chrome extension saves pages while Desktop and ChatGPT are closed. Desktop
-  and the plugin each register a small component that Chrome starts on demand;
-  there is no background service.
-- Save the context combinations you use as a tag and add them to any chat in one click.
-- Replacing a saved link now replaces the whole reference with the current page,
-  in the extension and in Desktop or plugin imports.
-- Link previews work behind a proxy client in TUN mode, not only with a system proxy.
-- Setup buttons in Settings open the matching section of the website guide.
-- Chrome is the published browser extension. Bookmark import still reads Chrome,
-  Edge, Firefox and Safari without an extension.
-
-## Packages
-
-| File | Use |
+| File | System |
 | --- | --- |
-| `StashDock_1.0.0_x64-setup.exe` | StashDock Desktop for Windows 10 and 11 |
-| `stashdock-plugin-1.0.0-win32-x64.zip` | ChatGPT plugin for Windows, with its own Node runtime |
-| `StashDock_1.0.0_aarch64.dmg` | StashDock Desktop for macOS 14 or later, Apple silicon |
-| `stashdock-plugin-1.0.0-darwin-arm64.zip` | ChatGPT plugin for Mac, with its own Node runtime |
-| `stashdock-extension-chrome-1.0.0.zip` | Chrome extension for both systems, load unpacked |
+| `StashDock_1.0.0_x64-setup.exe` | Windows 10 or 11, x64 |
+| `StashDock_1.0.0_aarch64.dmg` | macOS 14 or later, Apple Silicon |
+| `stashdock-plugin-1.0.0-win32-x64.zip` | ChatGPT plugin for Windows x64 |
+| `stashdock-plugin-1.0.0-darwin-arm64.zip` | ChatGPT plugin for Apple Silicon Mac |
+| `stashdock-extension-chrome-1.0.0.zip` | Chrome extension for Windows and Mac |
 
-Neither installer is signed by a registered developer yet. Windows may show a
-SmartScreen prompt. On Mac, the first time you open StashDock, macOS may block it:
-open System Settings, go to Privacy & Security and click Open Anyway.
+See [the setup guide](https://stashdock.app/guide) for installation and usage.
+
+The installers are not signed by a registered developer; the Mac app is not
+notarized. Windows may show a SmartScreen prompt. If macOS blocks the first
+launch, open System Settings → Privacy & Security and choose Open Anyway.
+
+`SHA256SUMS.txt` contains checksums for all five downloads.

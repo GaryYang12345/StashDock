@@ -26,7 +26,7 @@ await cp(join(source, 'bin', platform), join(target, 'bin', platform), { recursi
 await mkdir(join(destination, '.agents/plugins'), { recursive: true });
 await cp(resolve(root, '.agents/plugins/marketplace.json'), join(destination, '.agents/plugins/marketplace.json'));
 await cp(resolve(root, 'LICENSE'), join(destination, 'LICENSE'));
-await cp(resolve(root, 'docs/macos-plugin-install.zh-CN.md'), join(destination, 'README.md'));
+await cp(resolve(root, 'docs/macos-plugin-install.md'), join(destination, 'README.md'));
 for (const path of ['StashDockRenderer.app', 'stashdock-preview', 'stashdock-storage', 'stashdock-browser', 'node']) {
   const result = spawnSync('/usr/bin/codesign', ['--verify', '--strict', '--deep', join(target, 'bin', platform, path)], { stdio: 'inherit' });
   if (result.status !== 0) throw Error('Packaged native signature is invalid.');
@@ -44,7 +44,7 @@ async function inventory(directory) {
   }
 }
 await inventory(destination);
-await writeFile(join(destination, 'RELEASE_MANIFEST.json'), JSON.stringify({ formatVersion: 1, platform, version: metadata.version, node: lock.version, developmentOnly: true, notarized: false, files: records }, null, 2) + '\n');
+await writeFile(join(destination, 'RELEASE_MANIFEST.json'), JSON.stringify({ formatVersion: 1, platform, version: metadata.version, node: lock.version, notarized: false, files: records }, null, 2) + '\n');
 const zip = spawnSync('/usr/bin/ditto', ['-c', '-k', '--norsrc', destination, destination + '.zip'], { stdio: 'inherit' });
 if (zip.status !== 0) throw Error('Mac plugin archive failed.');
 console.log(JSON.stringify({ folder: destination, zip: destination + '.zip', sha256: await sha(destination + '.zip') }));

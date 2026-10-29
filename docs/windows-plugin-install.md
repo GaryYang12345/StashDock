@@ -25,5 +25,6 @@ the system Evergreen WebView2 Runtime. If it is missing, install Microsoft's
 [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 
 The ZIP contains `RELEASE_MANIFEST.json` with individual file hashes and dependency
-licenses under `plugins/stashdock/notices`. It supports Windows x64 only. macOS
-needs a separately built and verified package.
+licenses under `plugins/stashdock/notices`. For Mac, choose the
+`stashdock-plugin-1.0.0-darwin-arm64.zip` package and follow the
+[Mac installation guide](https://stashdock.app/guide#install-plugin).
