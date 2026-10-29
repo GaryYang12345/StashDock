@@ -27,20 +27,19 @@ Save pages with the Chrome extension, import bookmarks, or add local files,
 notes, prompts and rules. Group references with tags, edit the context you want
 AI to receive, and use the same collection across conversations.
 
-## On your desktop, into any AI
-
-Browse your library in a standalone app. Copy or drag references into any AI
-conversation. Keep the floating folder nearby for quick search without opening
-the full library.
-
-![StashDock desktop library with sample references](assets/readme/desktop-library.jpg)
-
 ## Beside your AI conversation
 
 Open your library in the AI app's sidebar. Select references and choose
 **Add to chat**. The AI plugin is currently available for **ChatGPT**.
 
-![StashDock AI sidebar with a reference added to the conversation](assets/readme/ai-sidebar.jpg)
+![Select references and add them to your AI conversation](assets/readme/ai-sidebar.gif)
+
+## On your desktop, into any AI
+
+Copy or drag references into any AI conversation. Hover the floating folder to
+search, or click it to open your full library.
+
+![Hover the floating folder to search, then click to open the library](assets/readme/desktop-library.gif)
 
 *Product previews use sample references. [Try them on the website](https://stashdock.app/#how).*
 
