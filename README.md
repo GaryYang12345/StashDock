@@ -39,7 +39,7 @@ Open your library in the AI app's sidebar. Select references and choose
 Copy or drag references into any AI conversation. Hover the floating folder to
 search, or click it to open your full library.
 
-![Hover the floating folder to search, then click to open the library](assets/readme/desktop-library.gif)
+![Search, scroll through references, drag one into AI, then open the full library](assets/readme/desktop-workflow.gif)
 
 *Product previews use sample references. [Try them on the website](https://stashdock.app/#how).*
 
