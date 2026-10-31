@@ -274,6 +274,7 @@ test('both platforms send setup to the website guide, never to Windows-only inst
   assert.equal(mac.platform, 'macos');
   assert.equal(win.platform, 'windows');
   for (const links of [mac.links, win.links]) {
+    assert.equal(links.chrome, `https://chromewebstore.google.com/detail/${productLinks.browserExtensions.chrome.id}`);
     assert.equal(links.codex, 'https://stashdock.app/guide#install-plugin');
     assert.equal(links.desktop, 'https://stashdock.app/guide#install-desktop');
     assert.doesNotMatch(JSON.stringify(links), /windows-plugin-install|releases\/latest/);

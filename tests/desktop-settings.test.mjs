@@ -46,13 +46,13 @@ test('desktop settings stay small and use the published repository without fabri
   assert.match(source, /info\.githubUrl &&/);
   const links = JSON.parse(readFileSync('src-tauri/product-links.json', 'utf8'));
   assert.equal(links.githubRepository, 'StashDock/StashDock');
-  // Installation buttons open the matching section of the website guide.
+  // App installation opens the guide; the published extension opens its store listing.
   assert.equal(links.installationUrls.desktop, 'https://stashdock.app/guide#install-desktop');
   assert.equal(links.installationUrls.codex, 'https://stashdock.app/guide#install-plugin');
-  assert.equal(links.installationUrls.chrome, 'https://stashdock.app/guide#install-browser');
+  assert.equal(links.installationUrls.chrome, `https://chromewebstore.google.com/detail/${links.browserExtensions.chrome.id}`);
   for (const id of ['edge', 'firefox', 'safari', 'claude']) assert.equal(links.installationUrls[id], null);
   const guide = readFileSync('website/src/guide/Guide.tsx', 'utf8');
-  for (const url of Object.values(links.installationUrls).filter(Boolean)) assert.match(guide, new RegExp(`id="${new URL(url).hash.slice(1)}"`));
+  for (const url of Object.values(links.installationUrls).filter(value => value && new URL(value).hash)) assert.match(guide, new RegExp(`id="${new URL(url).hash.slice(1)}"`));
   assert.match(source, /<StorageSection/);
   assert.match(source, /await invoke\('restart_desktop'\)/);
   assert.match(readFileSync('src/features/library/LibraryView.tsx', 'utf8'), /hidden=\{settingsOpen\}/);

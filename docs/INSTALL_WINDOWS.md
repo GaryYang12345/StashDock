@@ -21,9 +21,8 @@ StashDock Desktop, Node.js or npm separately.
 
 ## Browser extension
 
-Download the Chrome extension ZIP and extract it to a permanent folder:
-
-- Chrome: `chrome://extensions` → Developer mode → Load unpacked → extracted folder.
+Open [StashDock Companion in the Chrome Web Store](https://chromewebstore.google.com/detail/bbglcpbhnobjhgccjinejnnlcefelkee).
+Click **Add to Chrome**, confirm **Add extension**, then pin StashDock in the toolbar.
 
 Install and open Desktop or the AI plugin once, then click the extension toolbar icon on a normal
 webpage and approve website access in the browser prompt. The sidebar refreshes

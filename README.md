@@ -65,7 +65,7 @@ preferred prompts and rules between AI apps. Start with your own workflow.
 | **Windows** · Windows 10/11, x64 | [Download installer](https://github.com/StashDock/StashDock/releases/download/v1.0.0/StashDock_1.0.0_x64-setup.exe) | [Download plugin](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-win32-x64.zip) |
 | **Mac** · macOS 14+, Apple Silicon | [Download DMG](https://github.com/StashDock/StashDock/releases/download/v1.0.0/StashDock_1.0.0_aarch64.dmg) | [Download plugin](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-darwin-arm64.zip) |
 
-[Download the Chrome extension](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-extension-chrome-1.0.0.zip) · [Installation guide](https://stashdock.app/guide)
+[Add to Chrome](https://chromewebstore.google.com/detail/bbglcpbhnobjhgccjinejnnlcefelkee) · [Installation guide](https://stashdock.app/guide#install-browser)
 
 Install Desktop, the AI plugin, or both. They share one library on your computer.
 Install and open either once to enable Chrome page saving, which works even when

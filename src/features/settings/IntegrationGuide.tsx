@@ -25,7 +25,8 @@ export function IntegrationGuide({ id, kind, info, openApp, openLink }: { id: In
     install ? 'Open the installation page below.' : 'Copy the GitHub link below.',
     install ? 'Install StashDock, then open {name}.' : 'Open {name} and ask it to install StashDock from that link.',
     'Open StashDock from the side panel.',
-  ] : id === 'desktop' ? ['Get StashDock Desktop from the link below.', 'Open the app after installation.', 'Click Import references to add a link, file or note.']
+  ] : id === 'chrome' ? ['Open the Chrome Web Store below.', 'Click Add to Chrome, then confirm with Add extension.', 'Pin StashDock, then open a page and click it to save.']
+    : id === 'desktop' ? ['Get StashDock Desktop from the link below.', 'Open the app after installation.', 'Click Import references to add a link, file or note.']
     : ['Get the browser extension from the link below.', 'Install the extension in {name}.', 'Open a page and click StashDock to save it.']);
   async function run(task: () => Promise<unknown>) {
     if (flight.current) return;
@@ -38,7 +39,7 @@ export function IntegrationGuide({ id, kind, info, openApp, openLink }: { id: In
     <ol className={styles.steps}>{steps.map(step => <li key={step}>{t(step, { name: entry.name })}</li>)}</ol>
     <Alert tone="danger" title={t('Try again.')} open={Boolean(error) || copy.state === 'error'}>{t(error || 'Clipboard access was blocked. Try again from the active window.')}</Alert>
     <div className={styles.footer}>
-      {kind === 'setup' && !bundledSafari && (install ? <Button variant="secondary" disabled={pending} onClick={() => void run(() => openLink(install))}>{t('Open installation page')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button>
+      {kind === 'setup' && !bundledSafari && (install ? <Button variant="secondary" disabled={pending} onClick={() => void run(() => openLink(install))}>{t(id === 'chrome' ? 'Open Chrome Web Store' : 'Open installation page')}<ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /></Button>
         : <Button variant={copy.state === 'copied' ? 'primary' : 'secondary'} className={copy.state === 'copied' ? copyStyles.success : undefined} disabled={!repository || pending} aria-label={t('Copy GitHub link')} data-tooltip={!repository ? t('GitHub link coming soon.') : undefined} onClick={() => { if (repository) void copy.copy(repository); }}>{copy.state === 'copied' ? <Check size={16} strokeWidth={1.75} aria-hidden="true" /> : <img src={githubMark} className={styles.githubIcon} alt="" width={16} height={16} aria-hidden="true" />}{t(copy.state === 'copied' ? 'Copied' : 'Copy')}</Button>)}
       <Button variant="primary" loading={pending} disabled={!canOpen} aria-label={t('Open {name}', { name: entry.name })} data-tooltip={!canOpen ? t('Desktop download link coming soon.') : undefined} onClick={() => void run(async () => { if (openApp) await openApp(id); else { const url = applicationWebsite(id) || install || repository; if (!url) throw Error('The app could not be opened. Try again.'); await openLink(url); } })}><IntegrationIcon id={id} />{t('Open {name}', { name: entry.name })}</Button>
     </div>

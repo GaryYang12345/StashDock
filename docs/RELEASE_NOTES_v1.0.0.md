@@ -26,6 +26,8 @@ Organize references with tags and reuse a group whenever you need it.
 | `stashdock-extension-chrome-1.0.0.zip` | Chrome extension for Windows and Mac |
 
 See [the setup guide](https://stashdock.app/guide) for installation and usage.
+Install the [Chrome extension from the Chrome Web Store](https://chromewebstore.google.com/detail/bbglcpbhnobjhgccjinejnnlcefelkee).
+The extension ZIP above is available for manual installation.
 
 The installers are not signed by a registered developer; the Mac app is not
 notarized. Windows may show a SmartScreen prompt. If macOS blocks the first

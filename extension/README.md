@@ -9,14 +9,24 @@ Install and open a matching StashDock Desktop or AI plugin once. The native save
 component is installed with either product; both applications may then be closed
 while you save pages.
 
-Use the Chrome Web Store listing when available. For manual installation:
+Install [StashDock Companion from the Chrome Web Store](https://chromewebstore.google.com/detail/bbglcpbhnobjhgccjinejnnlcefelkee):
+
+1. Click **Add to Chrome**, then confirm **Add extension**.
+2. Pin StashDock in the toolbar.
+3. Open a webpage, click StashDock and approve the requested page access.
+
+Chrome updates the extension automatically.
+
+### Development installation
+
+For local development:
 
 1. Download the Chrome extension ZIP from Releases and extract it to a permanent folder.
 2. Open chrome://extensions and enable Developer mode.
 3. Choose Load unpacked and select the folder containing manifest.json.
 4. Pin StashDock, open a webpage and approve the requested page access.
 
-For unpacked updates, replace files in that folder, choose Reload, then reopen
+For development updates, replace files in that folder, choose Reload, then reopen
 the sidebar. The store identity stays the same across versions and operating systems.
 
 ## Bookmarks

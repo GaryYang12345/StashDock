@@ -57,7 +57,7 @@
 | **Windows** · Windows 10/11，x64 | [下载安装包](https://github.com/StashDock/StashDock/releases/download/v1.0.0/StashDock_1.0.0_x64-setup.exe) | [下载插件](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-win32-x64.zip) |
 | **Mac** · macOS 14+，Apple 芯片 | [下载 DMG](https://github.com/StashDock/StashDock/releases/download/v1.0.0/StashDock_1.0.0_aarch64.dmg) | [下载插件](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-plugin-1.0.0-darwin-arm64.zip) |
 
-[下载 Chrome 扩展](https://github.com/StashDock/StashDock/releases/download/v1.0.0/stashdock-extension-chrome-1.0.0.zip) · [安装指南](https://stashdock.app/guide)
+[添加至 Chrome](https://chromewebstore.google.com/detail/bbglcpbhnobjhgccjinejnnlcefelkee) · [安装指南](https://stashdock.app/guide#install-browser)
 
 桌面应用与 AI 插件可任选其一，也可以同时安装，在同一台电脑上共享收藏库。安装并打开其中一个，即可配置 Chrome 网页保存功能；此后即使两端都已退出，扩展仍能保存网页。
 
