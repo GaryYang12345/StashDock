@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$PluginArchive,
   [Parameter(Mandatory=$true)][string]$PublicSource,
+  [string]$ChromeArchive = '',
   [string]$Destination = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -31,11 +32,25 @@ Copy-Item -LiteralPath $taskInstaller -Destination (Join-Path $taskRelease ([IO.
 Copy-Item -LiteralPath $taskPluginZip -Destination (Join-Path $taskRelease "stashdock-plugin-$taskPluginVersion-win32-x64.zip")
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $taskProductLinks = Get-Content -Raw -LiteralPath (Join-Path $taskRoot 'src-tauri/product-links.json') | ConvertFrom-Json
+$taskChromeStoreUrl = "https://chromewebstore.google.com/detail/$($taskProductLinks.browserExtensions.chrome.id)"
 foreach ($taskBrowser in $taskProductLinks.publicBrowserExtensions) {
   $taskBrowserFolder = Join-Path $taskRoot "output/extensions/$taskBrowser"
   $taskManifest = Get-Content -Raw -LiteralPath (Join-Path $taskBrowserFolder 'manifest.json') | ConvertFrom-Json
   if ($taskManifest.version -ne $taskExtensionVersion) { throw "Rebuild $taskBrowser extension." }
-  [IO.Compression.ZipFile]::CreateFromDirectory($taskBrowserFolder,(Join-Path $taskRelease "stashdock-extension-$taskBrowser-$taskExtensionVersion.zip"),[IO.Compression.CompressionLevel]::Optimal,$false)
+  $taskBrowserZip = Join-Path $taskRelease "stashdock-extension-$taskBrowser-$taskExtensionVersion.zip"
+  if ($taskBrowser -eq 'chrome' -and $ChromeArchive) {
+    $taskArchive = [IO.Compression.ZipFile]::OpenRead([IO.Path]::GetFullPath($ChromeArchive))
+    try {
+      $taskEntry = $taskArchive.GetEntry('manifest.json')
+      if (-not $taskEntry) { throw 'Chrome archive is missing manifest.json.' }
+      $taskReader = [IO.StreamReader]::new($taskEntry.Open())
+      try { $taskArchivedManifest = $taskReader.ReadToEnd() | ConvertFrom-Json } finally { $taskReader.Dispose() }
+      if ($taskArchivedManifest.version -ne $taskExtensionVersion -or $taskArchivedManifest.key -ne $taskProductLinks.browserExtensions.chrome.publicKey) { throw 'Chrome archive version or identity does not match this release.' }
+    } finally { $taskArchive.Dispose() }
+    Copy-Item -LiteralPath $ChromeArchive -Destination $taskBrowserZip
+  } else {
+    [IO.Compression.ZipFile]::CreateFromDirectory($taskBrowserFolder,$taskBrowserZip,[IO.Compression.CompressionLevel]::Optimal,$false)
+  }
 }
 # Internal handoff archives contain development rules and must never be public release assets.
 $taskFiles = @(Get-ChildItem -LiteralPath $taskRelease -File | Sort-Object Name | ForEach-Object {
@@ -44,7 +59,7 @@ $taskFiles = @(Get-ChildItem -LiteralPath $taskRelease -File | Sort-Object Name 
 $taskMetadata = [ordered]@{
   formatVersion=1;repository='https://github.com/StashDock/StashDock';tag="v$taskVersion";sourceCommit=$taskCommit;
   versions=[ordered]@{desktop=$taskVersion;chatgptPlugin=$taskPluginVersion;browserExtensions=$taskExtensionVersion};
-  platform='win32-x64';windowsCodeSigned=$false;browserStorePublished=$false;files=$taskFiles
+  platform='win32-x64';windowsCodeSigned=$false;browserStorePublished=($taskProductLinks.installationUrls.chrome -eq $taskChromeStoreUrl);files=$taskFiles
 }
 $taskMetadataPath = Join-Path $taskRelease 'release.json'
 [IO.File]::WriteAllText($taskMetadataPath,($taskMetadata | ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
